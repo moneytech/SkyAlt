@@ -15,7 +15,7 @@ Linux users: *Right-click on skyalt file. Select "Properties". Go into "Permissi
 1. cd linux
 2. sh build_release
 
-Add "languages" and "licenses" folders to same folder with binary file
+Add "languages" and "licenses" folders to same folder with binary file.
 
 ### Windows
 1. Visual studio project is in "windows/SkyAlt.sln".
@@ -38,8 +38,8 @@ Feel free to file any issues in this repository. Before you file an issue, pleas
 ## E-mail
 milan@skyalt.com
 
-##License
-Bussiness Source License(https://mariadb.com/bsl11/)
+## License
+Bussiness Source License(https://mariadb.com/bsl11/).
 More in LICENSE file.
 
 ## Disclaimer
