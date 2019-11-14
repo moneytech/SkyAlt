@@ -1,0 +1,61 @@
+/*
+ * Copyright (c) 2018 Milan Suk
+ *
+ * Use of this software is governed by the Business Source License included
+ * in the LICENSE file and at www.mariadb.com/bsl11.
+ *
+ * Change Date: 2024-11-01
+ *
+ * On the date above, in accordance with the Business Source License, use
+ * of this software will be governed by version 2 or later of the General
+ * Public License.
+ */
+
+void UiDialogLicense_clickChooseLanguage(GuiItem* item)
+{
+	Lang_setPos(Std_max(0, GuiItemComboStatic_getValue(GuiItem_findName(item, "language"))));
+}
+
+void UiDialogLicense_clickYes(GuiItem* item)
+{
+	UiIniSettings_setLicenseAccept();
+	UiScreen_setStartup();
+}
+void UiDialogLicense_clickNo(GuiItem* item)
+{
+	BOOL onlyText = GuiItem_findAttribute(item, "onlyText");
+
+	if (onlyText)
+		GuiItem_closeParentLevel(item);
+	else
+	{
+		printf("License declined\n");
+		UiIniSettings_setLicenseVersion(-1);
+	}
+}
+
+GuiItemLayout* UiDialogLicense_new(BOOL onlyText)
+{
+	//layout
+	GuiItemLayout* layout = GuiItemLayout_new(Quad2i_init4(0, 0, 1, 1));
+	GuiItemLayout_addColumn(layout, 0, onlyText ? 1 : 100);
+	GuiItemLayout_addColumn(layout, 1, 7);
+	GuiItemLayout_addColumn(layout, 3, 7);
+	GuiItemLayout_addColumn(layout, 5, 7);
+	GuiItemLayout_addColumn(layout, 6, onlyText ? 1 : 100);
+	GuiItemLayout_addRow(layout, 0, 100);
+	GuiItem_setAttribute((GuiItem*)layout, "onlyText", onlyText);
+
+	GuiItem_addSubName((GuiItem*)layout, "license", GuiItemTextMulti_new(Quad2i_init4(1, 0, 5, 5), DbValue_initLang("LICENSE_TEXT")));
+
+	if (!onlyText)
+	{
+		//Laguage
+		GuiItem_addSubName((GuiItem*)layout, "language", GuiItemComboStatic_newEx(Quad2i_init4(1, 6, 1, 1), DbValue_initNumber(Lang_getPos()), Lang_find("LANGUAGE_LIST"), DbValue_initLang("LANGUAGE"), &UiDialogLicense_clickChooseLanguage));
+
+		GuiItem_addSubName((GuiItem*)layout, "accept", GuiItemButton_newClassicEx(Quad2i_init4(3, 6, 1, 1), DbValue_initLang("ACCEPT"), &UiDialogLicense_clickYes));
+		GuiItem_addSubName((GuiItem*)layout, "decline", GuiItemButton_newClassicEx(Quad2i_init4(5, 6, 1, 1), DbValue_initLang("DECLINE"), &UiDialogLicense_clickNo));
+	}
+
+	return layout;
+}

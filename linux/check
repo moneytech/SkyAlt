@@ -1,0 +1,7 @@
+clear
+clear
+
+echo "\n\e[43m-- -- Analyzing -- --\e[m"
+cppcheck ../src/main.c
+
+
