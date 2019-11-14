@@ -40,10 +40,8 @@ milan@skyalt.com
 
 ## License
 Bussiness Source License(https://mariadb.com/bsl11/).
+
 More in LICENSE file.
 
 ## Disclaimer
 SkyAlt is currently at an public beta stage of development. This means that some important features are missing and current features can be changed as well, which can break your project. Please don’t use it for anything important!
-
-## Contributor License Agreement
-As a Contributor, you need to accept the Contributor License Agreement(CLA). We will ask you to sign the CLA after you make your first pull request. Any work intentionally submitted for inclusion in SkyAlt shall be licensed under the CLA.
