@@ -3,11 +3,9 @@ Build.1 (14/Nov/2019)
 
 Build.2 (30/Jan/2020)
 	Fixed: Tons
-	
 	Changed:
 		Few icons
 		QuickShort() for shorting
-	
 	Added:
 		Menu - Report Problem
 		Expand/Hide items in side panel Tree view
@@ -21,24 +19,16 @@ Build.2 (30/Jan/2020)
 		Commercial license file support
 		Color picker
 		View as reference
-		
 		Internet manager + GUI status/bandwidth
 		Geolocation
-		
 		Map view
 		Map disk cache
-		
 		Chart view
-		
 		Summary column
 		Summary view
-		
 		Quick Filter for Cards/Map/Chart
-		
 		Link - Mirrored column
 		Link - Jointed column
 		Link - Filtered column
-		
-		Remote data sources(ODBC)
-		
-		Ported: Linux
+		Remote data sources(ODBC)	
+	Ported: Linux
