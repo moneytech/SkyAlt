@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -207,28 +207,78 @@ void OsLockEvent_free(OsLockEvent* self)
 	pthread_cond_destroy((pthread_cond_t*)self->m_cond);
 #endif
 }
+
 BOOL OsLockEvent_wait(OsLockEvent* self, int timeout_ms)
 {
 #ifdef _WIN32
 	return WaitForSingleObject(self->m_event, (timeout_ms > 0) ? timeout_ms : INFINITE) == WAIT_OBJECT_0;	//true = triggered, false = timeout/failed
 #else
-	BOOL trig = TRUE;
-	struct timeval now;
-	gettimeofday(&now, NULL);
+	BOOL trig = FALSE;
+	//printf("pthread_mutex_t = %ld\n", sizeof(pthread_mutex_t));
+	//printf("pthread_cond_t = %ld\n", sizeof(pthread_cond_t));
 
-	struct timespec timeToWait;
-	timeToWait.tv_sec = now.tv_sec + 5;
-	timeToWait.tv_nsec = (now.tv_usec + 1000UL * timeout_ms) * 1000UL;
+	double time = Os_time();
 
-	pthread_mutex_lock((pthread_mutex_t*)self->m_mutex);
-	while (!self->m_signalled)
+	while (!trig && (timeout_ms <= 0 || (Os_time() - time) * 1000 < timeout_ms))
 	{
-		if (timeout_ms > 0)
-			trig = pthread_cond_timedwait((pthread_cond_t*)self->m_cond, (pthread_mutex_t*)self->m_mutex, &timeToWait) != ETIMEDOUT;
-		else
-			pthread_cond_wait((pthread_cond_t*)self->m_cond, (pthread_mutex_t*)self->m_mutex);
+		pthread_mutex_lock((pthread_mutex_t*)self->m_mutex);
+		trig = self->m_signalled;
+		if (trig)
+			self->m_signalled = FALSE;
+		pthread_mutex_unlock((pthread_mutex_t*)self->m_mutex);
+
+		OsThread_sleep(1);
 	}
-	self->m_signalled = FALSE;
+
+	return trig;
+#endif
+}
+void OsLockEvent_trigger(OsLockEvent* self)
+{
+#ifdef _WIN32
+	SetEvent(self->m_event);
+#else
+	pthread_mutex_lock((pthread_mutex_t*)self->m_mutex);
+	self->m_signalled = TRUE;
+	pthread_mutex_unlock((pthread_mutex_t*)self->m_mutex);
+#endif
+}
+
+/*BOOL OsLockEvent_wait(OsLockEvent* self, int timeout_ms)
+{
+#ifdef _WIN32
+	return WaitForSingleObject(self->m_event, (timeout_ms > 0) ? timeout_ms : INFINITE) == WAIT_OBJECT_0;	//true = triggered, false = timeout/failed
+#else
+	BOOL trig = TRUE;
+	pthread_mutex_lock((pthread_mutex_t*)self->m_mutex);
+
+	if (timeout_ms > 0)
+	{
+		struct timeval now;
+		gettimeofday(&now, NULL);
+
+		struct timespec timeout_abs;
+		timeout_abs.tv_sec = now.tv_sec;
+		timeout_abs.tv_nsec = (now.tv_usec + 1000UL * timeout_ms) * 1000UL;
+
+		while (!self->m_signalled)
+		{
+			int result = pthread_cond_timedwait((pthread_cond_t*)self->m_cond, (pthread_mutex_t*)self->m_mutex, &timeout_abs);
+			trig = (result != ETIMEDOUT);
+			if (result != EINTR)
+				break;
+		}
+	}
+	else
+	{
+		while (!self->m_signalled)
+		{
+			pthread_cond_wait((pthread_cond_t*)self->m_cond, (pthread_mutex_t*)self->m_mutex);
+		}
+	}
+
+	if(self->m_signalled)
+		self->m_signalled = FALSE;
 	pthread_mutex_unlock((pthread_mutex_t*)self->m_mutex);
 	return trig;
 #endif
@@ -243,4 +293,4 @@ void OsLockEvent_trigger(OsLockEvent* self)
 	pthread_mutex_unlock((pthread_mutex_t*)self->m_mutex);
 	pthread_cond_signal((pthread_cond_t*)self->m_cond);
 #endif
-}
+}*/

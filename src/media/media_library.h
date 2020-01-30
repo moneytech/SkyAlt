@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -32,17 +32,20 @@ THREAD_FUNC(MediaLibrary_loopAudio, param);
 
 void MediaLibrary_delete(void)
 {
-	OsThread_free(&g_MediaLibrary->images_thread, TRUE);
-	OsThread_free(&g_MediaLibrary->audio_thread, TRUE);
-	OsLock_free(&g_MediaLibrary->lock);
+	if (g_MediaLibrary)
+	{
+		OsThread_free(&g_MediaLibrary->images_thread, TRUE);
+		OsThread_free(&g_MediaLibrary->audio_thread, TRUE);
+		OsLock_free(&g_MediaLibrary->lock);
 
-	StdArr_freeFn(&g_MediaLibrary->images, (StdArrFREE)&MediaImage_delete);
-	//StdArr_freeFn(&g_MediaLibrary->flacs, (StdArrFREE)&MediaFlac_delete);
-	//StdArr_freeFn(&g_MediaLibrary->opuss, (StdArrFREE)&MediaOpus_delete);
-	//StdArr_freeFn(&g_MediaLibrary->texts, (StdArrFREE)&MediaText_delete);
+		StdArr_freeFn(&g_MediaLibrary->images, (StdArrFREE)&MediaImage_delete);
+		//StdArr_freeFn(&g_MediaLibrary->flacs, (StdArrFREE)&MediaFlac_delete);
+		//StdArr_freeFn(&g_MediaLibrary->opuss, (StdArrFREE)&MediaOpus_delete);
+		//StdArr_freeFn(&g_MediaLibrary->texts, (StdArrFREE)&MediaText_delete);
 
-	Os_free(g_MediaLibrary, sizeof(MediaLibrary));
-	g_MediaLibrary = 0;
+		Os_free(g_MediaLibrary, sizeof(MediaLibrary));
+		g_MediaLibrary = 0;
+	}
 }
 
 BOOL MediaLibrary_new(void)

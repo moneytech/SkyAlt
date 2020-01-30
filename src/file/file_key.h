@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -106,7 +106,7 @@ static void _FileKey_computehash(UCHAR arr[64])
 	Os_memcpy(&arr[32], &hash, 32);
 }
 
-BOOL FileKey_decrypt(FileKey* self, const UNI* password, volatile StdProgress* progress)
+BOOL FileKey_decrypt(FileKey* self, const UNI* password)
 {
 	if (!FileKey_hasPassword(self->cycles))
 		return TRUE;
@@ -116,7 +116,6 @@ BOOL FileKey_decrypt(FileKey* self, const UNI* password, volatile StdProgress* p
 
 	BIG cycles = self->cycles;
 	BIG orig_cycles = cycles;
-	progress->done = 0;
 
 	UCHAR in[64];
 	UCHAR out[64];
@@ -124,16 +123,14 @@ BOOL FileKey_decrypt(FileKey* self, const UNI* password, volatile StdProgress* p
 	UCHAR* a = in;
 	UCHAR* b = out;
 
-	while (cycles > 0 && progress->running)
+	while (cycles > 0 && StdProgress_is())
 	{
 		OsCryptoKey_aesDecrypt(&pass, a, b, 64);
 		_FileKey_ptrSwitch(&a, &b);
 		cycles--;
-		progress->done = 1.0f - (cycles / (float)orig_cycles);
+		StdProgress_set("DECRYPTING", 1.0f - (cycles / (float)orig_cycles));
 	}
 	ok = _FileKey_checkHash(a);
-
-	progress->done = 1;
 
 	Os_memcpy(self->key, a, 32);
 	Os_memset(in, 64);
@@ -142,7 +139,7 @@ BOOL FileKey_decrypt(FileKey* self, const UNI* password, volatile StdProgress* p
 	return ok;
 }
 
-BOOL FileKey_encrypt(FileKey* self, const UNI* password, volatile StdProgress* progress)
+BOOL FileKey_encrypt(FileKey* self, const UNI* password)
 {
 	if (!FileKey_hasPassword(self->cycles))
 		return TRUE;
@@ -151,7 +148,6 @@ BOOL FileKey_encrypt(FileKey* self, const UNI* password, volatile StdProgress* p
 
 	BIG cycles = self->cycles;
 	BIG orig_cycles = cycles;
-	progress->done = 0;
 
 	UCHAR in[64];
 	Os_memcpy(in, self->key, 32);
@@ -159,15 +155,13 @@ BOOL FileKey_encrypt(FileKey* self, const UNI* password, volatile StdProgress* p
 	UCHAR* a = in;
 	UCHAR* b = self->encKey;
 
-	while (cycles && progress->running)
+	while (cycles && StdProgress_is())
 	{
 		OsCryptoKey_aesEncrypt(&pass, a, b, 64);
 		_FileKey_ptrSwitch(&a, &b);
 		cycles--;
-		progress->done = 1.0f - (cycles / (float)orig_cycles);
+		StdProgress_set("ENCRYPTING", 1.0f - (cycles / (float)orig_cycles));
 	}
-
-	progress->done = 1;
 
 	Os_memcpy(b, a, 64);
 	Os_memset(in, 64);
@@ -178,20 +172,20 @@ BOOL FileKey_encrypt(FileKey* self, const UNI* password, volatile StdProgress* p
 
 void FileKey_aesEncryptDirect(const FileKey* self, const UBIG block, unsigned char* plain_text, unsigned char* cipher_text, int size)
 {
-	if (self->cycles <= 0)
+	if (!self || self->cycles <= 0)
 		Os_memcpy(cipher_text, plain_text, size);
 	else
 		OsCryptoKey_aesEncryptDirect(self->key, block, plain_text, cipher_text, size);
 }
 void FileKey_aesDecryptDirect(const FileKey* self, const UBIG block, unsigned char* cipher_text, unsigned char* plain_text, int size)
 {
-	if (self->cycles <= 0)
+	if (!self || self->cycles <= 0)
 		Os_memcpy(plain_text, cipher_text, size);
 	else
 		OsCryptoKey_aesDecryptDirect(self->key, block, cipher_text, plain_text, size);
 }
 
-BOOL FileKey_readFile(FileKey* self, const char* path, const char* path2, const UNI* password, volatile StdProgress* progress)
+BOOL FileKey_readFile(FileKey* self, const char* path, const char* path2, const UNI* password)
 {
 	//open & compare with backup file + warning ...
 	BOOL ok = FALSE;
@@ -207,7 +201,7 @@ BOOL FileKey_readFile(FileKey* self, const char* path, const char* path2, const 
 				{
 					if (OsFile_read(&f, self->encKey, 64) == 64)
 					{
-						if (FileKey_decrypt(self, password, progress))
+						if (FileKey_decrypt(self, password))
 						{
 							ok = TRUE;
 						}
@@ -238,9 +232,9 @@ BOOL FileKey_writeFile(FileKey* self, const char* path)
 	return ok;
 }
 
-BOOL FileKey_writeFile2(FileKey* self, char* keyPath, char* keyPath2, const UNI* password, volatile StdProgress* progress)
+BOOL FileKey_writeFile2(FileKey* self, char* keyPath, char* keyPath2, const UNI* password)
 {
-	BOOL ok = FileKey_encrypt(self, password, progress);
+	BOOL ok = FileKey_encrypt(self, password);
 	if (ok)
 	{
 		ok |= FileKey_writeFile(self, keyPath);
@@ -263,14 +257,14 @@ static FileKey* _FileKey_new(const char* projectPath, BIG cycles)
 	return self;
 }
 
-FileKey* FileKey_newCreate(const char* projectPath, const UNI* password, BIG cycles, volatile StdProgress* progress)
+FileKey* FileKey_newCreate(const char* projectPath, const UNI* password, BIG cycles)
 {
 	FileKey* self = _FileKey_new(projectPath, cycles);
 
 	char* keyPath = _FileKey_getProjectPath(self, TRUE);
 	char* keyPath2 = _FileKey_getProjectPath(self, FALSE);
 
-	if (!FileKey_writeFile2(self, keyPath, keyPath2, password, progress))
+	if (!FileKey_writeFile2(self, keyPath, keyPath2, password))
 	{
 		FileKey_delete(self);
 		self = 0;
@@ -282,14 +276,14 @@ FileKey* FileKey_newCreate(const char* projectPath, const UNI* password, BIG cyc
 	return self;
 }
 
-FileKey* FileKey_newLoad(const char* projectPath, const UNI* password, volatile StdProgress* progress)
+FileKey* FileKey_newLoad(const char* projectPath, const UNI* password)
 {
 	FileKey* self = _FileKey_new(projectPath, 0);
 
 	char* keyPath = _FileKey_getProjectPath(self, TRUE);
 	char* keyPath2 = _FileKey_getProjectPath(self, FALSE);
 
-	if (!FileKey_readFile(self, keyPath, keyPath2, password, progress))
+	if (!FileKey_readFile(self, keyPath, keyPath2, password))
 	{
 		FileKey_delete(self);
 		self = 0;

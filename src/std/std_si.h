@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -44,13 +44,13 @@ double SI_mass_cross_oz_g(double oz)
 UNI* SI_mass_oz(double oz)
 {
 	UNI* str;
-	if(oz >= 16 * 2000)
+	if (oz >= 16 * 2000)
 		str = Std_addAfterUNI_char(Std_newNumber(oz / (16 * 2000)), " ton"); //ton
 	else
-		if(oz >= 16)
-		str = Std_addAfterUNI_char(Std_newNumber(oz / 16), " lb"); //pound
-	else
-		str = Std_addAfterUNI_char(Std_newNumber(oz), " oz"); //ounce 
+		if (oz >= 16)
+			str = Std_addAfterUNI_char(Std_newNumber(oz / 16), " lb"); //pound
+		else
+			str = Std_addAfterUNI_char(Std_newNumber(oz), " oz"); //ounce
 
 	return str;
 }
@@ -58,18 +58,18 @@ UNI* SI_mass_oz(double oz)
 UNI* SI_mass_g(double g)
 {
 	UNI* str;
-	if(g >= 1000 * 1000)
+	if (g >= 1000 * 1000)
 		str = Std_addAfterUNI_char(Std_newNumber(g / (1000 * 1000)), " t"); //tonne
 	else
-		if(g >= 1000)
-		str = Std_addAfterUNI_char(Std_newNumber(g / 1000), " kg"); //kilogram
-	else
-		str = Std_addAfterUNI_char(Std_newNumber(g), " g"); //gram
+		if (g >= 1000)
+			str = Std_addAfterUNI_char(Std_newNumber(g / 1000), " kg"); //kilogram
+		else
+			str = Std_addAfterUNI_char(Std_newNumber(g), " g"); //gram
 
 	return str;
 }
 
-/*LENGTH*/
+//LENGTH
 double SI_length_in_p(double in)
 {
 	return in * 6;
@@ -118,19 +118,19 @@ double SI_length__cross_p_mm(double p)
 UNI* SI_length_p(double p)
 {
 	UNI* str;
-	if(p >= 1760 * 3 * 12 * 6)
+	if (p >= 1760 * 3 * 12 * 6)
 		str = Std_addAfterUNI_char(Std_newNumber(p / (1760 * 3 * 12 * 6)), " mi");
 	else
-		if(p >= 3 * 12 * 6)
-		str = Std_addAfterUNI_char(Std_newNumber(p / (3 * 12 * 6)), " yd");
-	else
-		if(p >= 12 * 6)
-		str = Std_addAfterUNI_char(Std_newNumber(p / (12 * 6)), " ft");
-	else
-		if(p >= 6)
-		str = Std_addAfterUNI_char(Std_newNumber(p / 6), " in");
-	else
-		str = Std_addAfterUNI_char(Std_newNumber(p), " P");
+		if (p >= 3 * 12 * 6)
+			str = Std_addAfterUNI_char(Std_newNumber(p / (3 * 12 * 6)), " yd");
+		else
+			if (p >= 12 * 6)
+				str = Std_addAfterUNI_char(Std_newNumber(p / (12 * 6)), " ft");
+			else
+				if (p >= 6)
+					str = Std_addAfterUNI_char(Std_newNumber(p / 6), " in");
+				else
+					str = Std_addAfterUNI_char(Std_newNumber(p), " P");
 
 	return str;
 }
@@ -138,21 +138,21 @@ UNI* SI_length_p(double p)
 UNI* SI_length_mm(double mm)
 {
 	UNI* str;
-	if(mm >= 1000 * 100 * 10)
+	if (mm >= 1000 * 100 * 10)
 		str = Std_addAfterUNI_char(Std_newNumber(mm / (3 * 12 * 6)), " km");
 	else
-		if(mm >= 100 * 10)
-		str = Std_addAfterUNI_char(Std_newNumber(mm / (12 * 6)), " m");
-	else
-		if(mm >= 10)
-		str = Std_addAfterUNI_char(Std_newNumber(mm / 6), " cm");
-	else
-		str = Std_addAfterUNI_char(Std_newNumber(mm), " mm");
+		if (mm >= 100 * 10)
+			str = Std_addAfterUNI_char(Std_newNumber(mm / (12 * 6)), " m");
+		else
+			if (mm >= 10)
+				str = Std_addAfterUNI_char(Std_newNumber(mm / 6), " cm");
+			else
+				str = Std_addAfterUNI_char(Std_newNumber(mm), " mm");
 
 	return str;
 }
 
-/*POWER*/
+//POWER
 double SI_power_kw_hp_us(double kw)
 {
 	return kw * 1.3404825737;
@@ -172,4 +172,3 @@ double SI_power_hp_kw_eu(double hp)
 {
 	return hp / 1.3605442177;
 }
-

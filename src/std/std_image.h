@@ -4,50 +4,16 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
  * Public License.
  */
 
-Rgb Rgb_init3(UCHAR r, UCHAR g, UCHAR b)
-{
-	Rgb self;
-	self.r = r;
-	self.g = g;
-	self.b = b;
-	return self;
-}
-Rgb Rgb_multV(const Rgb self, float t)
-{
-	Rgb cd;
-	cd.r = (UCHAR)(self.r * t);
-	cd.g = (UCHAR)(self.g * t);
-	cd.b = (UCHAR)(self.b * t);
-	return cd;
-}
-Rgb Rgb_aprox(const Rgb s, const Rgb e, float t)
-{
-	Rgb self;
-	self.r = (UCHAR)(s.r + (e.r - s.r) * t);
-	self.g = (UCHAR)(s.g + (e.g - s.g) * t);
-	self.b = (UCHAR)(s.b + (e.b - s.b) * t);
-	return self;
-}
-BOOL Rgb_cmp(Rgb a, Rgb b)
-{
-	return a.r == b.r && a.g == b.g && a.b == b.b;;
-}
-UINT Rgb_getUINT(Rgb self)
-{
-	return *(UINT*)&self;
-}
-
 Rgba Rgba_init4(UCHAR r, UCHAR g, UCHAR b, UCHAR a)
 {
 	Rgba self;
-
 #ifdef _WIN32
 	self.r = b;
 	self.b = r;
@@ -58,6 +24,27 @@ Rgba Rgba_init4(UCHAR r, UCHAR g, UCHAR b, UCHAR a)
 	self.g = g;
 	self.a = a;
 	return self;
+}
+
+UCHAR Rgba_r(Rgba self)
+{
+#ifdef _WIN32
+	return self.b;
+#else
+	return self.r;
+#endif
+}
+UCHAR Rgba_g(Rgba self)
+{
+	return self.g;
+}
+UCHAR Rgba_b(Rgba self)
+{
+#ifdef _WIN32
+	return self.r;
+#else
+	return self.b;
+#endif
 }
 
 static float _HueToRGB(float v1, float v2, float vH)
@@ -80,6 +67,7 @@ Rgba Rgba_initHSL(int H, float S, float L)
 	if (S == 0)
 	{
 		self.r = self.g = self.b = (UCHAR)(L * 255);
+		self.a = 255;
 	}
 	else
 	{
@@ -89,31 +77,58 @@ Rgba Rgba_initHSL(int H, float S, float L)
 		v2 = (L < 0.5) ? L * (1 + S) : (L + S) - (L * S);
 		v1 = 2 * L - v2;
 
-		self.r = (unsigned char)(255 * _HueToRGB(v1, v2, hue + (1.0f / 3)));
-		self.g = (unsigned char)(255 * _HueToRGB(v1, v2, hue));
-		self.b = (unsigned char)(255 * _HueToRGB(v1, v2, hue - (1.0f / 3)));
+		self = Rgba_init4((unsigned char)(255 * _HueToRGB(v1, v2, hue + (1.0f / 3))),
+			(unsigned char)(255 * _HueToRGB(v1, v2, hue)),
+			(unsigned char)(255 * _HueToRGB(v1, v2, hue - (1.0f / 3))),
+			255);
 	}
-
-	self.a = 255;
 
 	return self;
 }
 
 UINT Rgba_asNumber(const Rgba self)
 {
-	return *(UINT*)&self;
+	Rgba s;
+#ifdef _WIN32
+	s.r = self.b;
+	s.b = self.r;
+#else
+	s.r = self.r;
+	s.b = self.b;
+#endif
+	s.g = self.g;
+	s.a = self.a;
+
+	return *(UINT*)&s;
 }
 Rgba Rgba_initFromNumber(UINT number)
 {
 	Rgba self = *(Rgba*)&number;
-	return self;
+	Rgba s;
+
+#ifdef _WIN32
+	s.r = self.b;
+	s.b = self.r;
+#else
+	s.r = self.r;
+	s.b = self.b;
+#endif
+
+	s.g = self.g;
+	s.a = self.a;
+	return s;
 }
 
-void Rgba_getHSL(Rgba* self, int* H, float* S, float* L)
+void Rgba_getHSL(const Rgba* self, int* H, float* S, float* L)
 {
+#ifdef _WIN32
+	float r = (self->b / 255.0f);
+	float b = (self->r / 255.0f);
+#else
 	float r = (self->r / 255.0f);
-	float g = (self->g / 255.0f);
 	float b = (self->b / 255.0f);
+#endif
+	float g = (self->g / 255.0f);
 
 	float min = Std_fmin(Std_fmin(r, g), b);
 	float max = Std_fmax(Std_fmax(r, g), b);
@@ -173,10 +188,21 @@ Rgba Rgba_initWhite(void)
 {
 	return Rgba_init4(255, 255, 255, 255);
 }
-
 Rgba Rgba_initRed(void)
 {
 	return Rgba_init4(250, 50, 50, 255);
+}
+Rgba Rgba_initGreyLight(void)
+{
+	return Rgba_init4(50, 50, 50, 255);
+}
+Rgba Rgba_initGrey(void)
+{
+	return Rgba_init4(125, 125, 125, 255);
+}
+Rgba Rgba_initGreyDark(void)
+{
+	return Rgba_init4(200, 200, 200, 255);
 }
 
 BOOL Rgba_isBlack(const Rgba* self)
@@ -203,6 +229,19 @@ Rgba Rgba_aprox(const Rgba s, const Rgba e, float t)
 	return self;
 }
 
+Rgba Rgba_aproxInt(const Rgba s, const Rgba e, unsigned int alpha)
+{
+	alpha += 1;
+	unsigned int inv_alpha = 256 - alpha;
+
+	Rgba self;
+	self.r = (UCHAR)((alpha * e.r + inv_alpha * s.r) >> 8);
+	self.g = (UCHAR)((alpha * e.g + inv_alpha * s.g) >> 8);
+	self.b = (UCHAR)((alpha * e.b + inv_alpha * s.b) >> 8);
+	self.a = 255;
+	return self;
+}
+
 Rgba Rgba_aproxQuad(Rgba st, Rgba et, Rgba sb, Rgba eb, float x, float y)
 {
 	Rgba top = Rgba_aprox(st, et, x);
@@ -224,6 +263,14 @@ void Rgba_mulV(Rgba* self, float t)
 	self->r = (UCHAR)(self->r * t);
 	self->g = (UCHAR)(self->g * t);
 	self->b = (UCHAR)(self->b * t);
+	self->a = 255;
+}
+
+void Rgba_mulAlpha(Rgba* self, unsigned int alpha)
+{
+	self->r = (UCHAR)((alpha * self->r) >> 8);
+	self->g = (UCHAR)((alpha * self->g) >> 8);
+	self->b = (UCHAR)((alpha * self->b) >> 8);
 	self->a = 255;
 }
 
@@ -263,6 +310,63 @@ void Rgba_getHex(Rgba* self, char hex[8])	//#RRGGBB
 	snprintf(hex, 8, "#%02x%02x%02x", self->r, self->g, self->b);
 }
 
+Rgba Rgba_getAproxHSL(Rgba mid, float t, float range360)
+{
+	int H;
+	float S;
+	float L;
+	Rgba_getHSL(&mid, &H, &S, &L);
+
+	float start = H - range360 / 2;
+	float end = H + range360 / 2;
+
+	if (start < 0)
+	{
+		end += -start;
+		start = 0;
+	}
+	if (end > 360)
+	{
+		start -= end - 360;
+		end = 0;
+	}
+
+	//t = OsCrypto_random01();
+	return Rgba_initHSL(start + range360 * t, S, L);
+}
+
+Rgba Rgba_getRandomHue(Rgba srcSL)
+{
+	int H;
+	float S;
+	float L;
+	Rgba_getHSL(&srcSL, &H, &S, &L);
+	return Rgba_initHSL(OsCrypto_random01() * 360, S, L);
+}
+
+Rgba Rgba_getNextHue(Rgba* src)
+{
+	int H;
+	float S;
+	float L;
+	Rgba_getHSL(src, &H, &S, &L);
+
+	OsCryptoSha2 sha = OsCryptoSha2_init();
+
+	int newH = H;
+	while (Std_abs(H - newH) < 30)
+	{
+		OsCryptoSha2_exe(&newH, sizeof(int), &sha);
+		newH = (*(USHORT*)sha.m_key) % 360;
+	}
+
+	*src = Rgba_initHSL(newH, S, L);
+
+	OsCryptoSha2_free(&sha);
+
+	return *src;
+}
+
 UBIG Image1_num(const Image1* self)
 {
 	return Vec2i_num(self->size);
@@ -297,6 +401,10 @@ Image1 Image1_initCopy(const Image1* src)
 void Image1_free(Image1* self)
 {
 	Os_free(self->data, Image1_bytes(self));
+}
+BOOL Image1_is(const Image1* self)
+{
+	return Vec2i_is(self->size);
 }
 void Image1_resize(Image1* self, Vec2i size)
 {
@@ -360,7 +468,7 @@ Image4 Image4_init2(Rgba* data, Vec2i size)
 }
 Image4 Image4_initSize(Vec2i size)
 {
-	return Image4_init2(Os_malloc(size.x * size.y * sizeof(Rgba)), size);
+	return Image4_init2(Os_calloc(size.x * size.y, sizeof(Rgba)), size);
 }
 
 Image4 Image4_initCopy(const Image4* src)
@@ -411,6 +519,17 @@ Rgba* Image4_getLast(Image4* self)
 BOOL Image4_is(Image4* self, Vec2i p)
 {
 	return Vec2i_inside(Vec2i_init(), self->size, p);
+}
+
+void Image4_setAlpha0(Image4* self)
+{
+	Rgba* dst = self->data;
+	UBIG i;
+	for (i = 0; i < Image4_num(self); i++)
+	{
+		dst->a = 0;
+		dst++;
+	}
 }
 
 Image1 Image4_convertToImage1(Image4* img4)
@@ -602,7 +721,7 @@ BIG _Image4File_read(void* selff, UCHAR* buff, int buff_size)
 
 	self->offset += N;
 
-	return N ? N : -1/*AVERROR_EOF*/;	//is -1 EOF?
+	return N ? N : -1;
 }
 
 BIG _Image4File_seek(void* selff, BIG offset)
@@ -623,7 +742,7 @@ BOOL Image4_initFile(Image4* self, const char* path, const char* ext)	//ext = ".
 	f.data = data;
 	f.offset = 0;
 
-	OSMedia* media = OSMedia_new(&_Image4File_read, &_Image4File_seek, &f, ext);
+	OSMedia* media = OSMedia_newOpen(&_Image4File_read, &_Image4File_seek, &f, ext);
 
 	*self = Image4_initSize(*OSMedia_getOrigSize(media));
 	OSMedia_loadVideo(media, self);
@@ -640,10 +759,33 @@ BOOL Image4_initBuffer(Image4* self, const UCHAR* buffer, const UINT buffer_size
 	f.bytes = buffer_size;
 	f.offset = 0;
 
-	OSMedia* media = OSMedia_new(&_Image4File_read, &_Image4File_seek, &f, ext);
+	OSMedia* media = OSMedia_newOpen(&_Image4File_read, &_Image4File_seek, &f, ext);
 
 	*self = Image4_initSize(*OSMedia_getOrigSize(media));
 	OSMedia_loadVideo(media, self);
 
+	//Std_array_print((UCHAR*)self->data, 32 * 32*4);
+
 	return TRUE;
+}
+
+BOOL Image4_saveJpeg(Image4* self, const char* filename)
+{
+	BOOL ok = FALSE;
+	UBIG buff_bytes;
+	UCHAR* buff = OSMedia_newSave(".jpeg", self->size, (UCHAR*)self->data, Image4_bytes(self), &buff_bytes);
+	if (buff)
+	{
+		OsFile f;
+		ok = OsFile_init(&f, filename, OsFile_W);
+		if (ok)
+		{
+			OsFile_write(&f, buff, buff_bytes);
+			OsFile_free(&f);
+		}
+
+		Os_free(buff, buff_bytes);
+	}
+
+	return ok;
 }

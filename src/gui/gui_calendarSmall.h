@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -262,8 +262,8 @@ void GuiItemCalendarSmall_update(GuiItemCalendarSmall* self, Quad2i coord, Win* 
 
 		//date
 		DbValue_setNumber(&((GuiItemButton*)GuiItem_getSub(layout, self->subs_man_days + 0))->text, self->currDate.m_year);
-		DbValue_setNumber(&((GuiItemButton*)GuiItem_getSub(layout, self->subs_man_days + 1))->text, self->currDate.m_month+1);
-		DbValue_setNumber(&((GuiItemButton*)GuiItem_getSub(layout, self->subs_man_days + 2))->text, self->currDate.m_day+1);
+		DbValue_setNumber(&((GuiItemButton*)GuiItem_getSub(layout, self->subs_man_days + 1))->text, self->currDate.m_month + 1);
+		DbValue_setNumber(&((GuiItemButton*)GuiItem_getSub(layout, self->subs_man_days + 2))->text, self->currDate.m_day + 1);
 
 		//time
 		if (self->subs_man_time > 0)

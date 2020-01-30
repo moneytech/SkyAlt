@@ -1,7 +1,7 @@
 # SkyAlt
-A private place for organizing life & work data
+Accessible database and analytics
 
-![alt text](https://raw.githubusercontent.com/MilanSuk/SkyAlt_web/master/screenshots/high_1.png)
+![alt text](https://skyalt.com/screens/table.png)
 
 
 ## Installing
@@ -12,18 +12,17 @@ Linux users: *Right-click on skyalt file. Select "Properties". Go into "Permissi
 ## Compilation
 
 ### Linux
-1. cd linux
-2. sh build_release
-
-Add "languages" and "licenses" folders to same folder with binary file.
+cd linux
+sh install_libs
+sh build_release
+Add "languages" and "eula" folders to same folder with binary file
 
 ### Windows
-1. Visual studio project is in "windows/SkyAlt.sln".
-2. Goto project properties
-3. Change paths in: C/C++ -> General -> Additional Include Directories
-4. Change paths in: Linker -> General -> Additional Library Directories
-
-Add "languages" and "licenses" folders to same folder with binary file.
+Visual studio project is in "windows/SkyAlt.sln".
+Goto project properties
+Change paths in: C/C++ -> General -> Additional Include Directories
+Change paths in: Linker -> General -> Additional Library Directories
+Add "languages" and "eula" folders to same folder with binary file
 All libraries can be download with Microsoft vcpkg.
 
 ## Website
@@ -38,10 +37,6 @@ Feel free to file any issues in this repository. Before you file an issue, pleas
 ## E-mail
 milan@skyalt.com
 
-## License
-Bussiness Source License(https://mariadb.com/bsl11/).
-
+##License
+Bussiness Source License(https://mariadb.com/bsl11/)
 More in LICENSE file.
-
-## Disclaimer
-SkyAlt is currently at an public beta stage of development. This means that some important features are missing and current features can be changed as well, which can break your project. Please don’t use it for anything important!

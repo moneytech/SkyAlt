@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -176,11 +176,43 @@ const char* OsFont_loadBitmap(OsFont* self, const UNI CH, const int Hpx, OsFontL
 	if (FT_Set_Pixel_Sizes(self->m_face, 0, Hpx))
 		err = "FT_Set_Pixel_Sizes";
 
+	//transform
+	/*{
+		const float angle = M_PI / 4;
+		FT_Matrix matrix;
+		matrix.xx = (FT_Fixed)(cos(angle) * 0x10000L);
+		matrix.xy = (FT_Fixed)(-sin(angle) * 0x10000L);
+		matrix.yx = (FT_Fixed)(sin(angle) * 0x10000L);
+		matrix.yy = (FT_Fixed)(cos(angle) * 0x10000L);
+
+		FT_Vector delta;
+		delta.x = 0;
+		delta.y = 0;
+
+		FT_Set_Transform(self->m_face, &matrix, &delta);
+	}*/
+
 	if (FT_Load_Glyph(self->m_face, FT_Get_Char_Index(self->m_face, CH), FT_LOAD_DEFAULT))
 		err = "FT_Load_Glyph";
 
 	if (FT_Get_Glyph(self->m_face->glyph, &glyph))
 		err = "FT_Get_Glyph";
+
+	//transform
+	{
+		const double angle = 0;// M_PI / 4;	//45 degree - try 90deg to see bbox ...
+		FT_Matrix matrix;
+		matrix.xx = (FT_Fixed)(cos(angle) * 0x10000L);
+		matrix.xy = (FT_Fixed)(-sin(angle) * 0x10000L);
+		matrix.yx = (FT_Fixed)(sin(angle) * 0x10000L);
+		matrix.yy = (FT_Fixed)(cos(angle) * 0x10000L);
+
+		//FT_Vector delta;
+		//delta.x = 0;
+		//delta.y = 0;
+
+		FT_Glyph_Transform(glyph, &matrix, 0);
+	}
 
 	if (FT_Glyph_To_Bitmap(&glyph, self->m_num_subpixels == 3 ? FT_RENDER_MODE_LCD : FT_RENDER_MODE_NORMAL, 0, 1))
 		err = "FT_Glyph_To_Bitmap";
@@ -260,6 +292,12 @@ Vec2i OsFont_getTextSize(OsFont* self, const UNI* text, const int Hpx, const int
 	*extra_down = max_down_move_y;
 
 	return size;
+}
+
+int OsFont_getTextSizeX(OsFont* self, const UNI* text, const int Hpx)
+{
+	int extra_down = 0;
+	return OsFont_getTextSize(self, text, Hpx, 0, &extra_down).x;
 }
 
 int OsFont_getCharPixelPos(OsFont* self, const int Hpx, const UNI* text, int cur_pos)

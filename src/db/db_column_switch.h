@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -43,26 +43,6 @@ void DbColumn_delete(DbColumn* self)
 
 		case DbColumn_STRING_32:
 		DbColumnString32_delete((DbColumnString32*)self);
-		break;
-	}
-}
-
-void DbColumn_deleteRowData(DbColumn* self, const UBIG r)
-{
-	//note: file is deleted during save(test which files need to be kept)
-
-	switch (self->type)
-	{
-		case DbColumn_1:
-		DbColumn1_deleteRowData((DbColumn1*)self, r);
-		break;
-
-		case DbColumn_N:
-		DbColumnN_deleteRowData((DbColumnN*)self, r);
-		break;
-
-		case DbColumn_STRING_32:
-		DbColumnString32_deleteRowData((DbColumnString32*)self, r);
 		break;
 	}
 }
@@ -124,6 +104,37 @@ double DbColumn_getFlt(const DbColumn* self, const UBIG r, UBIG index)
 
 		case DbColumn_N:
 		return DbColumnN_getIndex((DbColumnN*)self, r, index);
+	}
+	return 0;
+}
+
+double DbColumn_getFlt_min(const DbColumn* self)
+{
+	switch (self->type)
+	{
+		case DbColumn_1:
+		return DbColumn1_min((DbColumn1*)self);
+
+		case DbColumn_STRING_32:
+		return 0;
+
+		case DbColumn_N:
+		return DbColumnN_min((DbColumnN*)self);
+	}
+	return 0;
+}
+double DbColumn_getFlt_max(const DbColumn* self)
+{
+	switch (self->type)
+	{
+		case DbColumn_1:
+		return DbColumn1_max((DbColumn1*)self);
+
+		case DbColumn_STRING_32:
+		return 0;
+
+		case DbColumn_N:
+		return DbColumnN_max((DbColumnN*)self);
 	}
 	return 0;
 }
@@ -246,13 +257,13 @@ void DbColumn_setFileId(DbColumn* self, const UBIG r, const UBIG ri, FileRow val
 		DbColumnN_setFileId((DbColumnN*)self, r, ri, value);
 }
 
-BOOL DbColumn_fileImportData(DbColumn* self, const UBIG r, const UBIG ri, UNI ext[8], UBIG size, UCHAR* data, volatile StdProgress* progress)
+BOOL DbColumn_fileImportData(DbColumn* self, const UBIG r, const UBIG ri, UNI ext[8], UBIG size, UCHAR* data)
 {
 	BOOL ok = FALSE;
 	FileFile* file = FileUser_createFile(FileProject_getUserMe());
 	if (file)
 	{
-		ok = FileFile_importData(file, data, size, ext, progress);
+		ok = FileFile_importData(file, data, size, ext);
 		if (ok)
 			DbColumn_setFileId(self, r, ri, FileFile_getId(file));
 
@@ -261,13 +272,13 @@ BOOL DbColumn_fileImportData(DbColumn* self, const UBIG r, const UBIG ri, UNI ex
 	return ok;
 }
 
-BOOL DbColumn_fileImport(DbColumn* self, const UBIG r, const UBIG ri, OsFile* srcFile, UNI ext[8], volatile StdProgress* progress)
+BOOL DbColumn_fileImport(DbColumn* self, const UBIG r, const UBIG ri, OsFile* srcFile, UNI ext[8])
 {
 	BOOL ok = FALSE;
 	FileFile* file = FileUser_createFile(FileProject_getUserMe());
 	if (file)
 	{
-		ok = FileFile_import(file, srcFile, ext, progress);
+		ok = FileFile_import(file, srcFile, ext);
 		if (ok)
 			DbColumn_setFileId(self, r, ri, FileFile_getId(file));
 
@@ -276,7 +287,7 @@ BOOL DbColumn_fileImport(DbColumn* self, const UBIG r, const UBIG ri, OsFile* sr
 	return ok;
 }
 
-BOOL DbColumn_fileExport(DbColumn* self, const UBIG r, const UBIG ri, OsFile* dstFile, volatile StdProgress* progress)
+BOOL DbColumn_fileExport(DbColumn* self, const UBIG r, const UBIG ri, OsFile* dstFile)
 {
 	BOOL ok = FALSE;
 	FileRow filePos = DbColumn_fileGetPos(self, r, ri);
@@ -286,7 +297,7 @@ BOOL DbColumn_fileExport(DbColumn* self, const UBIG r, const UBIG ri, OsFile* ds
 		FileFile* file = FileProject_openFile(filePos, FALSE);
 		if (file)
 		{
-			ok = (FileFile_export(file, dstFile, progress) > 0);
+			ok = (FileFile_export(file, dstFile) > 0);
 			FileFile_delete(file);
 		}
 	}
@@ -295,6 +306,8 @@ BOOL DbColumn_fileExport(DbColumn* self, const UBIG r, const UBIG ri, OsFile* ds
 
 DbTable* DbColumn_getBTable(const DbColumn* self)
 {
+	//co když je mirror nebo filtered? ...
+
 	if (self->type == DbColumn_1)
 		return ((DbColumn1*)self)->btable;
 	if (self->type == DbColumn_N)
@@ -316,13 +329,30 @@ UBIG DbColumn_sizeHard(const DbColumn* self, UBIG r)
 	return (self->type == DbColumn_1) ? 1 : DbColumnN_sizeHard((DbColumnN*)self, r);
 }
 
+void DbColumn_getArrayPoses(const DbColumn* self, UBIG row, StdBigs* out)
+{
+	StdBigs_clear(out);
+
+	if (self->type == DbColumn_1)
+		DbColumn1_getArrayPoses((DbColumn1*)self, row, out);
+	else
+		if (self->type == DbColumn_N)
+			DbColumnN_getArrayPoses((DbColumnN*)self, row, out);
+}
 
 void DbColumn_add(DbColumn* self, const UBIG rSrc, const UBIG rDst)
 {
-	if (self->type == DbColumn_1)
-		DbColumn1_addLink((DbColumn1*)self, rSrc, rDst);
+	if (self->links_mirrored)
+	{
+		DbColumn_add(self->links_mirrored, rDst, rSrc);
+	}
 	else
-		DbColumnN_add((DbColumnN*)self, rSrc, rDst);
+	{
+		if (self->type == DbColumn_1)
+			DbColumn1_addLink((DbColumn1*)self, rSrc, rDst);
+		else
+			DbColumnN_add((DbColumnN*)self, rSrc, rDst);
+	}
 }
 void DbColumn_set(DbColumn* self, const UBIG rSrc, const UBIG rDst)
 {
@@ -334,10 +364,17 @@ void DbColumn_set(DbColumn* self, const UBIG rSrc, const UBIG rDst)
 
 void DbColumn_remove(DbColumn* self, const UBIG rSrc, const double rDst)
 {
-	if (self->type == DbColumn_1)
-		DbColumn1_removeLink((DbColumn1*)self, rSrc, rDst);
+	if (self->links_mirrored)
+	{
+		DbColumn_remove(self->links_mirrored, rDst, rSrc);
+	}
 	else
-		DbColumnN_remove((DbColumnN*)self, rSrc, rDst);
+	{
+		if (self->type == DbColumn_1)
+			DbColumn1_removeLink((DbColumn1*)self, rSrc, rDst);
+		else
+			DbColumnN_remove((DbColumnN*)self, rSrc, rDst);
+	}
 }
 
 void DbColumn_insert_before(DbColumn* self, const UBIG rSrc, const UBIG rDst, const UBIG rDstAfter)
@@ -452,6 +489,20 @@ UNI* DbColumn_getStringCopyLong(const DbColumn* self, const UBIG r, StdString* o
 	return out->str;
 }
 
+static void _DbColumn_buildNumber(double value, int precision, UINT units, UNI out[64])
+{
+	value /= Os_pow(1000, units);
+
+	Std_buildNumberUNI(value, precision, out);
+	Std_separNumberThousands(out, ' ');
+
+	BIG n = Std_sizeUNI(out);
+	if (units == 1)
+		Std_copyUNI_char(out + n, 64 - n, "K");
+	if (units == 2)	Std_copyUNI_char(out + n, 64 - n, "M");
+	if (units == 3)	Std_copyUNI_char(out + n, 64 - n, "B");
+}
+
 UNI* DbColumn_getStringCopyWithFormatLong(const DbColumn* self, const UBIG r, StdString* out)
 {
 	StdString_empty(out);
@@ -466,14 +517,14 @@ UNI* DbColumn_getStringCopyWithFormatLong(const DbColumn* self, const UBIG r, St
 		case DbFormat_CHECK:
 		{
 			const UNI precision = DbColumn_getOptionNumber(self, "precision");
+			const UINT units = DbColumn_getOptionNumber(self, "units");
+
 			UNI nmbr[64];
 			const UBIG N = DbColumn_sizeActive(self, r);
 			BIG i;
 			for (i = 0; i < N; i++)
 			{
-				Std_buildNumberUNI(DbColumn_getFlt(self, r, i), precision, nmbr);
-				if (type == DbFormat_NUMBER_1 || type == DbFormat_NUMBER_N)
-					Std_separNumberThousands(nmbr, ' ');
+				_DbColumn_buildNumber(DbColumn_getFlt(self, r, i), precision, units, nmbr);
 
 				_DbColumn_addSeparEx(out, nmbr, i, N, 0);
 			}
@@ -493,6 +544,9 @@ UNI* DbColumn_getStringCopyWithFormatLong(const DbColumn* self, const UBIG r, St
 
 		case DbFormat_LINK_1:
 		case DbFormat_LINK_N:
+		case DbFormat_LINK_MIRRORED:
+		case DbFormat_LINK_JOINTED:
+		case DbFormat_LINK_FILTERED:
 		{
 			DbTable* btable = DbColumn_getBTable(self);
 			const UBIG numColumns = Std_clamp(DbColumn_getOptionNumber(self, "numColumns"), 1, DbColumns_num(DbTable_getColumns(btable)) - 1);	//-1 because first is ColumnRowID
@@ -531,26 +585,25 @@ UNI* DbColumn_getStringCopyWithFormatLong(const DbColumn* self, const UBIG r, St
 
 		case DbFormat_CURRENCY:
 		{
-			UNI precision = DbColumn_getOptionNumber(self, "precision");
-			BOOL before = DbColumn_getOptionNumber(self, "before");
-			UNI currency[32];
-			DbColumn_getOption(self, "currency", currency, 32);
+			const UNI precision = DbColumn_getOptionNumber(self, "precision");
+			const UINT units = DbColumn_getOptionNumber(self, "units");
+			UNI currency_before[32];
+			UNI currency_after[32];
+			DbColumn_getOption(self, "currency_before", currency_before, 32);
+			DbColumn_getOption(self, "currency_after", currency_after, 32);
 
 			UNI nmbr[64];
 			const UBIG N = DbColumn_sizeActive(self, r);
 			BIG i;
 			for (i = 0; i < N; i++)
 			{
-				Std_buildNumberUNI(DbColumn_getFlt(self, r, i), precision, nmbr);
-				Std_separNumberThousands(nmbr, ' ');
+				_DbColumn_buildNumber(DbColumn_getFlt(self, r, i), precision, units, nmbr);
 
-				if (before)
-					StdString_addUNI(out, currency);
-
+				StdString_addUNI(out, currency_before);
 				StdString_addUNI(out, nmbr);
-
-				if (!before)
-					StdString_addUNI(out, currency);
+				if (units)
+					StdString_addCHAR(out, " ");
+				StdString_addUNI(out, currency_after);
 
 				_DbColumn_addSepar(out, i, N, 0);
 			}
@@ -560,7 +613,7 @@ UNI* DbColumn_getStringCopyWithFormatLong(const DbColumn* self, const UBIG r, St
 
 		case DbFormat_PERCENTAGE:
 		{
-			UNI precision = DbColumn_getOptionNumber(self, "precision");
+			const UNI precision = DbColumn_getOptionNumber(self, "precision");
 			double mult = DbColumn_getOptionNumber(self, "mult100") ? 100 : 1;
 
 			UNI nmbr[64];
@@ -596,9 +649,17 @@ UNI* DbColumn_getStringCopyWithFormatLong(const DbColumn* self, const UBIG r, St
 		case DbFormat_LOCATION:
 		{
 			DbColumn_getStringCopyLong(self, r, out);
-			BIG pos = Std_findUNI_last(out->str, ';');
-			if (pos >= 0)
-				out->str[pos] = 0;
+
+			Vec2f pos;
+			const MapPolyIndex* poly;
+			if (DbRoot_searchMapLocation(out->str, &pos, &poly))
+			{
+				StdString_addCHAR(out, "{");
+				StdString_addNumber(out, 2, pos.x);
+				StdString_addCHAR(out, ", ");
+				StdString_addNumber(out, 2, pos.y);
+				StdString_addCHAR(out, "}");
+			}
 			break;
 		}
 
@@ -645,8 +706,15 @@ UNI* DbColumn_getStringCopyWithFormatLong(const DbColumn* self, const UBIG r, St
 
 				_DbRoot_getOptionString(optionRow, "name", 0, option, 64);
 				_DbColumn_addSeparEx(out, option, i, N, _UNI32(" | "));
-
 			}
+			break;
+		}
+
+		case DbFormat_SUMMARY:
+		{
+			UNI nmbr[64];
+			_DbColumn_buildNumber(DbColumn_getFlt(self, r, 0), 2, 0, nmbr);
+			_DbColumn_addSeparEx(out, nmbr, 0, 0, 0);
 			break;
 		}
 
@@ -717,7 +785,6 @@ DbColumn* DbColumn_moveToTable(DbColumn* self)
 	return dst;
 }
 
-
 void DbColumn_addLinksToColumn(DbColumn* dst, DbColumn* src, DbRows* rows)
 {
 	if (DbColumn_getTable(dst) != DbColumn_getTable(src))
@@ -738,3 +805,131 @@ void DbColumn_addLinksToColumn(DbColumn* dst, DbColumn* src, DbRows* rows)
 	}
 }
 
+int DbColumn_getFormatPrecision(const DbColumn* self)
+{
+	return DbColumn_getOptionNumber(self, "precision");
+}
+
+void DbColumn_refreshInsight(DbColumn* self)
+{
+	if (self->insight)
+		DbInsight_execute(self->insight);
+}
+
+void DbColumn_refreshLinkMirrored(DbColumn* self)
+{
+	if (!self->links_mirrored || self->links_mirrored->numChanges == self->links_mirror_changes)
+		return;
+
+	//clear
+	DbColumnN_removeAllLinks((DbColumnN*)self);
+
+	//mirror links
+	DbTable* btable = DbColumn_getTable(self->links_mirrored);
+	UBIG i = 0;
+	while (DbTable_jumpRows(btable, &i, 1) >= 0)
+	{
+		const UBIG size = DbColumn_sizeActive(self->links_mirrored, i);
+		BIG ii;
+		for (ii = 0; ii < size; ii++)
+		{
+			DbColumnN_add((DbColumnN*)self, DbColumn_getIndex(self->links_mirrored, i, ii), i);
+			//DbColumn_add(self, DbColumn_getIndex(self->mirror, i, ii), i);
+		}
+		i++;
+	}
+
+	self->links_mirror_changes = self->links_mirrored->numChanges;
+}
+
+void DbColumn_refreshLinkFiltered(DbColumn* self)
+{
+	if (!self->links_filtered || !self->links_filtered_filter || !_DbFilter_needUpdate(self->links_filtered_filter))
+		return;
+
+	//clear
+	DbColumnN_removeAllLinks((DbColumnN*)self);
+
+	StdBigs poses = StdBigs_init();
+
+	//filter links
+	DbTable* btable = DbColumn_getTable(self);
+	UBIG i = 0;
+	while (DbTable_jumpRows(btable, &i, 1) >= 0)
+	{
+		//get
+		DbColumn_getArrayPoses(self->links_filtered, i, &poses);
+
+		//filter
+		_DbFilter_executeEx(self->links_filtered_filter, &poses);
+
+		//set
+		DbColumnN_setArrayBigs((DbColumnN*)self, i, &poses);
+
+		i++;
+	}
+	StdBigs_free(&poses);
+}
+
+void DbColumn_refreshLinkJointed(DbColumn* self)
+{
+	if (!self->links_jointed || !DbJointed_needUpdate(self->links_jointed))
+		return;
+
+	//clear
+	DbColumnN_removeAllLinks((DbColumnN*)self);
+
+	DbJointed_execute(self->links_jointed);
+}
+
+void DbColumn_deleteRowData(DbColumn* self, const UBIG r)
+{
+	if (self->links_mirrored)
+	{
+		const UBIG size = DbColumn_sizeActive(self, r);
+		BIG ii;
+		for (ii = 0; ii < size; ii++)
+		{
+			BIG removeRow = DbColumn_getIndex(self, r, ii);
+			DbColumn_remove(self->links_mirrored, removeRow, r);
+		}
+	}
+	else
+	{
+		//note: file is deleted during save(test which files need to be kept) ...
+
+		switch (self->type)
+		{
+			case DbColumn_1:
+			DbColumn1_deleteRowData((DbColumn1*)self, r);
+			break;
+
+			case DbColumn_N:
+			DbColumnN_deleteRowData((DbColumnN*)self, r);
+			break;
+
+			case DbColumn_STRING_32:
+			DbColumnString32_deleteRowData((DbColumnString32*)self, r);
+			break;
+		}
+	}
+}
+
+void DbColumn_addAllTable(DbColumn* self, const UBIG rSrc)
+{
+	if (self->links_mirrored)
+	{
+		DbTable* btable = DbColumn_getTable(self->links_mirrored);
+		UBIG i = 0;
+		while (DbTable_jumpRows(btable, &i, 1) >= 0)
+		{
+			DbColumn_add(self->links_mirrored, i, rSrc);
+			i++;
+		}
+	}
+	else
+	{
+		if (self->type == DbColumn_N)
+			DbColumnN_addAllTable((DbColumnN*)self, rSrc);
+	}
+}

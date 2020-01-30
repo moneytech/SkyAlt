@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -101,11 +101,11 @@ void Win_savePrintscreen(Win* self)
 	UBIG i = 0;
 	do
 	{
-		snprintf(path, 255, "image_%lld.bmp", i++);
+		snprintf(path, 255, "image_%lld.jpg", i++);
 	} while (OsFile_existFile(path) && i < 1000000);
 
 	Image4 img = Win_getImage(self);
-	Image4_saveBmp(&img, path);
+	Image4_saveJpeg(&img, path);
 }
 
 void Win_updateCursor(Win* self, Win_CURSOR cursor)
@@ -125,7 +125,6 @@ void Win_updateCursor(Win* self, Win_CURSOR cursor)
 			break;
 		case Win_CURSOR_FLEUR: self->actual_cursor = self->cursor_fleur;
 			break;
-
 		case Win_CURSOR_COL_RESIZE: self->actual_cursor = self->cursor_col_resize;
 			break;
 		case Win_CURSOR_ROW_RESIZE: self->actual_cursor = self->cursor_row_resize;
@@ -158,7 +157,12 @@ static void _Win_setKeyExtra(UNI key)
 		key_extra |= Win_EXTRAKEY_CTRL;
 
 	if (GetAsyncKeyState(VK_SHIFT) & 0x8000)
+	{
 		key_extra |= Win_EXTRAKEY_SHIFT;
+
+		if (GetAsyncKeyState(VK_RETURN))
+			key_extra |= Win_EXTRAKEY_SELECT_ROW;
+	}
 
 	if (GetAsyncKeyState(VK_CONTROL) & 0x8000)
 	{
@@ -172,6 +176,7 @@ static void _Win_setKeyExtra(UNI key)
 		if (key == 'v' || key == 'V') key_extra |= Win_EXTRAKEY_PASTE;
 		if (key == 'd' || key == 'D') key_extra |= Win_EXTRAKEY_DUPLICATE;
 
+		if (key == 'f' || key == 'F') key_extra |= Win_EXTRAKEY_SEARCH;
 		if (key == 't' || key == 'T') key_extra |= Win_EXTRAKEY_THEME;
 
 		if (key == 'n' || key == 'N') key_extra |= Win_EXTRAKEY_NEW;
@@ -182,8 +187,11 @@ static void _Win_setKeyExtra(UNI key)
 		if (key == 'z' || key == 'Z') key_extra |= Win_EXTRAKEY_BACK;
 		if (key == 'y' || key == 'Y') key_extra |= Win_EXTRAKEY_FORWARD;
 
-		if (key == 'b' || key == 'B') key_extra |= Win_EXTRAKEY_BYPASS; //B
+		if (key == 'b' || key == 'B') key_extra |= Win_EXTRAKEY_BYPASS;
 		if (key == ';') key_extra |= Win_EXTRAKEY_COMMENT; //;
+
+		if (GetAsyncKeyState(VK_RETURN)) key_extra |= Win_EXTRAKEY_SELECT_COLUMN;
+		if (key == 'r' || key == 'R') key_extra |= Win_EXTRAKEY_ADD_RECORD;
 	}
 	else
 	{
@@ -242,7 +250,8 @@ LRESULT CALLBACK Win_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			case WM_ACTIVATE:
 			{
 				//win->readyToDraw = !HIWORD(wParam);
-				//Win_pleaseResize(self);
+				if (!HIWORD(wParam))
+					Win_pleaseResize(self);
 				return 0;
 			}
 
@@ -265,15 +274,23 @@ LRESULT CALLBACK Win_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 				return 0;
 			}
 
-			case WM_LBUTTONDOWN: { SetCapture(hWnd); _Win_setKeyExtra(0); OsWinIO_setTouch(&v, Win_TOUCH_DOWN_S, FALSE);		InvalidateRect(hWnd, NULL, FALSE);	break; }
+			case WM_LBUTTONDOWN:
+			{
+				SetCapture(hWnd); _Win_setKeyExtra(0);
+				OsWinIO_setTouch(&v, Win_TOUCH_DOWN_S, FALSE);		InvalidateRect(hWnd, NULL, FALSE);	break;
+			}
 			case WM_RBUTTONDOWN: { SetCapture(hWnd); _Win_setKeyExtra(0); OsWinIO_setTouch(&v, Win_TOUCH_FORCE_DOWN_S, FALSE);	InvalidateRect(hWnd, NULL, FALSE); break; }
 			case WM_MBUTTONDOWN: { SetCapture(hWnd); _Win_setKeyExtra(0); OsWinIO_setTouch(&v, Win_TOUCH_FORCE_DOWN_S, FALSE);	InvalidateRect(hWnd, NULL, FALSE); break; }
 
-			case WM_LBUTTONUP: { _Win_setKeyExtra(0); OsWinIO_setTouch(&v, Win_TOUCH_DOWN_E, FALSE);		ReleaseCapture(); break; }
+			case WM_LBUTTONUP:
+			{
+				_Win_setKeyExtra(0);
+				OsWinIO_setTouch(&v, Win_TOUCH_DOWN_E, FALSE);		ReleaseCapture(); break;
+			}
 			case WM_RBUTTONUP: { _Win_setKeyExtra(0); OsWinIO_setTouch(&v, Win_TOUCH_FORCE_DOWN_E, FALSE);	ReleaseCapture(); break; }
 			case WM_MBUTTONUP: { _Win_setKeyExtra(0); OsWinIO_setTouch(&v, Win_TOUCH_FORCE_DOWN_E, FALSE);	ReleaseCapture(); break; }
 
-			 //case WM_LBUTTONDBLCLK: { OsWinIO_setTouch(&v, Win_TOUCH_DOWN_S, FALSE); OsWinIO_setTouch(&v, Win_TOUCH_DOWN_S, FALSE);	break; }
+							 //case WM_LBUTTONDBLCLK: { OsWinIO_setTouch(&v, Win_TOUCH_DOWN_S, FALSE); OsWinIO_setTouch(&v, Win_TOUCH_DOWN_S, FALSE);	break; }
 
 			case WM_MOUSEWHEEL:
 			{
@@ -305,7 +322,6 @@ LRESULT CALLBACK Win_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 				_Win_setKeyExtra(0);
 				break;
 			}
-
 
 			case WM_CHAR:
 			{
@@ -519,7 +535,7 @@ BOOL _Win_tick(Win* self)
 	}
 
 	MSG msg;
-	while (PeekMessage(&msg, 0, 0, 0, PM_REMOVE))	//without "m_hWnd" => faster response!
+	if (PeekMessage(&msg, 0, 0, 0, PM_REMOVE))	//without "m_hWnd" => faster response! Also must by if() not while(), because otherwise it can do clickDown and clickUp in once and Gui will never know
 	{
 		if (msg.message == WM_QUIT)
 			OsWinIO_pleaseExit();
@@ -529,6 +545,9 @@ BOOL _Win_tick(Win* self)
 			DispatchMessage(&msg);
 		}
 	}
+
+	//if (OsWinIO_getKeyExtra())
+	//	OsWinIO_resetKeyID();
 
 	if (OsWinIO_getKeyExtra() & Win_EXTRAKEY_PRINTSCREEN)
 		Win_savePrintscreen(self);
@@ -556,7 +575,7 @@ void Win_start(Win* self)
 
 void Win_setTitle(Win* self, const char* title)
 {
-	if(!Std_cmpCHAR(self->title, title))
+	if (!Std_cmpCHAR(self->title, title))
 	{
 		Std_deleteCHAR(self->title);
 		self->title = Std_newCHAR(title);

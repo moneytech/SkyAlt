@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -52,6 +52,10 @@ const UNI* DbColumnString32_get(const DbColumnString32* self, const UBIG r)
 void DbColumnString32_setEq(DbColumnString32* self, const UBIG r, UNI* value)
 {
 	UNI** v = &DbColumn_getItem(&self->base, r)->string;
+
+	//Std_printlnUNI(*v);
+	//Std_printlnUNI(value);
+
 	if (!Std_cmpUNI(*v, value))
 		DbColumn_setChange(&self->base, r);
 	*v = value;
@@ -140,60 +144,30 @@ void DbColumnString32_toNumber(const DbColumnString32* self, DbColumn* dst)
 {
 	const UBIG NUM_ROWS = DbColumn_numRows(&self->base);
 	UBIG i;
-	for (i = 0; i < NUM_ROWS; i++)
+	for (i = 0; i < NUM_ROWS && StdProgress_is(); i++)
 	{
 		TableItems_get(&dst->data, i)->flt = Std_getNumberFromUNI(TableItems_getConst(&self->base.data, i)->string);
-		DbRoot_getProgress()->done = i / (float)NUM_ROWS;
+		StdProgress_setEx("CONVERTING", i, NUM_ROWS);
 	}
 }
 
-void DbColumnString32_short(const DbColumnString32* self, StdBigs* poses, const BIG start, const BIG end, const BOOL ascending)
+int _DbColumnString32_cmp(const void* context, const void* a, const void* b)
 {
-	volatile StdProgress* progress = DbRoot_getProgress();
+	const DbColumnString32* self = context;
 
-	//slow, very slow!
-	BIG i, j;
-	for (i = start; i < end && progress->running; i++)
-		for (j = start; j < end && progress->running; j++)
-			if (!Std_cmpUNIascending(DbColumnString32_get(self, poses->ptrs[j]), DbColumnString32_get(self, poses->ptrs[i])))
-				StdBigs_swap(poses, i, j);
+	const UNI* fa = DbColumnString32_get(self, *(BIG*)a);
+	const UNI* fb = DbColumnString32_get(self, *(BIG*)b);
 
-	if (!ascending && i == end && progress->running)
-		StdBigs_reversEx(poses, start, end);
+	return Std_cmpUNIascending(fa, fb);
 }
 
 void DbColumnString32_qshort(const DbColumnString32* self, StdBigs* poses, const BIG start, const BIG end, const BOOL ascending)
 {
-	volatile StdProgress* progress = DbRoot_getProgress();
+	Os_qsort(&poses->ptrs[start], end - start, sizeof(BIG), _DbColumnString32_cmp, (void*)self);
 
-	BIG i;
-	for (i = start + 1; i < end && progress->running; i++)
-	{
-		BIG lo = start;	//0
-		BIG hi = i;		//i
-		BIG m = start + (i-start) / 2;	//i / 2
-
-		do
-		{
-			if (!Std_cmpUNIascending(DbColumnString32_get(self, poses->ptrs[i]), DbColumnString32_get(self, poses->ptrs[m])))
-				lo = m + 1;
-			else if (Std_cmpUNIascending(DbColumnString32_get(self, poses->ptrs[i]), DbColumnString32_get(self, poses->ptrs[m])))
-				hi = m;
-			else
-				break;
-			m = lo + ((hi - lo) / 2);
-		} while (lo < hi);
-
-		if (m < i)
-			StdBigs_rotate(poses, m, i);
-
-		progress->done = ((float)i - start) / (end - start);
-	}
-
-	if (!ascending && i == end && progress->running)
+	if (!ascending && StdProgress_is())
 		StdBigs_reversEx(poses, start, end);
 }
-
 
 BIG DbColumnString32_searchString(DbColumnString32* self, const UNI* value)
 {
@@ -324,11 +298,16 @@ UNI* _DbColumnString32_addOptionValue(const UNI* orig, const char* name, const U
 		ret = Std_addAfterUNI(ret, st);
 		ret = Std_addAfterUNI(ret, value);
 		ret = Std_addAfterUNI(ret, en);
-
-
 	}
 
 	return ret;
+}
+
+UNI* _DbColumnString32_addOptionValueNumber(const UNI* orig, const char* name, const double value)
+{
+	UNI str[64];
+	Std_buildNumberUNI(value, -1, str);
+	return _DbColumnString32_addOptionValue(orig, name, str);
 }
 
 void DbColumnString32_setOption(DbColumnString32* self, BIG row, const char* name, const UNI* value)
@@ -354,6 +333,8 @@ void DbColumnString32_getOption(DbColumnString32* self, BIG row, const char* nam
 	{
 		if (defValue)
 		{
+			//Std_printlnUNI(orig);
+
 			DbColumnString32_setOption(self, row, name, defValue);	//add default one
 			Std_copyUNI(out, outMaxSize, defValue);	//copy def to out
 		}

@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -31,7 +31,7 @@ GuiItemLayout* UiStartup_new(void)
 
 	//Logo
 	Image1 logo = UiLogo_init();
-	GuiItemParticles* particles = GuiItemParticles_new(Quad2i_init4(1, 1, 1, 1), logo);
+	GuiItemParticles* particles = GuiItemParticles_new(Quad2i_init4(1, 1, 1, 1), logo, FALSE);
 	GuiItem_setCallClick((GuiItem*)particles, &UiStartup_clickCancel);
 	GuiItemParticles_startAnim(particles, 5);	//5seconds
 	GuiItem_addSubName((GuiItem*)layout, "effect", (GuiItem*)particles);

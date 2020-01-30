@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -30,6 +30,7 @@ GuiItem* GuiItemBox_newEmpty(Quad2i coord)
 	self->empty = TRUE;
 	self->image = 0;
 	self->value = DbValue_initEmpty();
+	self->base.icon_draw_back = FALSE;
 	return (GuiItem*)self;
 }
 
@@ -87,7 +88,7 @@ void GuiItemBox_draw(GuiItemBox* self, Image4* img, Quad2i coord, Win* win)
 void GuiItemBox_update(GuiItemBox* self, Quad2i coord, Win* win)
 {
 	if (self->image)
-		GuiImage_update(self->image, coord);
+		GuiImage_update(self->image, coord.size);
 }
 
 void GuiItemBox_touch(GuiItemBox* self, Quad2i coord, Win* win)

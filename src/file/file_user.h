@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -179,7 +179,7 @@ UBIG FileUser_getProjectSize(FileUser* self)
 	return sum;
 }
 
-static BOOL _FileUser_changePasswordColumn(FileProject* oldWorkspace, FileUser* self, FileUser* newUser, volatile StdProgress* progress)
+static BOOL _FileUser_changePasswordColumn(FileProject* oldWorkspace, FileUser* self, FileUser* newUser)
 {
 	char* pth = FileUser_getPath(self);
 
@@ -210,7 +210,7 @@ static BOOL _FileUser_changePasswordColumn(FileProject* oldWorkspace, FileUser* 
 
 	return ok;
 }
-static BOOL _FileUser_changePasswordFile(FileProject* oldWorkspace, FileUser* self, FileUser* newUser, volatile StdProgress* progress)
+static BOOL _FileUser_changePasswordFile(FileProject* oldWorkspace, FileUser* self, FileUser* newUser)
 {
 	char* pth = FileUser_getPathF(self);
 
@@ -242,12 +242,12 @@ static BOOL _FileUser_changePasswordFile(FileProject* oldWorkspace, FileUser* se
 	return ok;
 }
 
-BOOL FileUser_changePassword(FileProject* oldWorkspace, FileUser* self, FileUser* newUser, volatile StdProgress* progress)
+BOOL FileUser_changePassword(FileProject* oldWorkspace, FileUser* self, FileUser* newUser)
 {
 	BOOL ok = TRUE;
 
-	ok &= _FileUser_changePasswordColumn(oldWorkspace, self, newUser, progress);
-	ok &= _FileUser_changePasswordFile(oldWorkspace, self, newUser, progress);
+	ok &= _FileUser_changePasswordColumn(oldWorkspace, self, newUser);
+	ok &= _FileUser_changePasswordFile(oldWorkspace, self, newUser);
 
 	return ok;
 }
@@ -256,6 +256,17 @@ BOOL FileUser_updateIndex(FileUser* self)
 {
 	FileIndexes_update(&self->index, self, FALSE);
 	BOOL changed = FileIndexes_isChanged(&self->index);
-	FileIndexes_reset(&self->index);
+	//FileIndexes_reset(&self->index);
 	return changed;
+}
+void FileUser_resetIndex(FileUser* self)
+{
+	FileIndexes_reset(&self->index);
+}
+
+char* FileUser_getMapPath(FileUser* self)
+{
+	char* mapPatch = FileUser_getPath(self);
+	mapPatch = Std_addAfterCHAR(mapPatch, "/map_std.tiles");
+	return mapPatch;
 }

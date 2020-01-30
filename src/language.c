@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -87,6 +87,8 @@ void Lang_freeGlobal(void)
 	g_lang_select = -1;
 	g_lang_list = 0;
 }
+
+const UNI* Lang_findEx(const char* id, int langPos);
 
 BOOL Lang_initGlobal(const char* lang_selectName)
 {
@@ -173,7 +175,7 @@ BOOL Lang_initGlobal(const char* lang_selectName)
 
 	//license files
 	{
-		char* dir = Std_addCHAR(currPath, "/licenses");
+		char* dir = Std_addCHAR(currPath, "/eula");
 		char** pathes;
 		const BIG num_files = OsFileDir_getFileList(dir, TRUE, FALSE, TRUE, &pathes);
 
@@ -204,7 +206,7 @@ BOOL Lang_initGlobal(const char* lang_selectName)
 				if (str)
 				{
 					Std_removeLetterUNI(str, '\r');
-					Lang_addItem(findLang, LangItem_init(Std_newCHAR("LICENSE_TEXT"), Std_newUNI(str + 1)));	//+1 skip BOM
+					Lang_addItem(findLang, LangItem_init(Std_newCHAR("EULA_TEXT"), Std_newUNI(str + 1)));	//+1 skip BOM
 				}
 				Os_free(str, N);
 			}
@@ -243,6 +245,14 @@ BOOL Lang_initGlobal(const char* lang_selectName)
 			g_lang_select = i;
 	}
 
+	//copy english EULA if there are not available in langauge
+	const UNI* eulaStr = Lang_findEx("EULA_TEXT", Lang_findLangNamePos("en"));
+	for (i = 0; i < g_lang_num; i++)
+	{
+		if (!Lang_is("EULA_TEXT"))
+			Lang_addItem(&g_lang_langs[i], LangItem_init(Std_newCHAR("EULA_TEXT"), Std_newUNI(eulaStr)));
+	}
+
 	Std_deleteCHAR(currPath);
 
 	return (g_lang_select >= 0);
@@ -272,9 +282,10 @@ BOOL Lang_is(const char* id)
 
 	return FALSE;
 }
-const UNI* Lang_find(const char* id)
+
+const UNI* Lang_findEx(const char* id, int langPos)
 {
-	Lang* self = &g_lang_langs[g_lang_select];
+	Lang* self = &g_lang_langs[langPos];
 
 	int i;
 	for (i = 0; i < self->num; i++)
@@ -290,6 +301,10 @@ const UNI* Lang_find(const char* id)
 	Os_showConsole(TRUE);
 
 	return _UNI32("--No translation--");
+}
+const UNI* Lang_find(const char* id)
+{
+	return Lang_findEx(id, g_lang_select);
 }
 
 static const char* _Lang_findId(const Lang* self, const UNI* translation)

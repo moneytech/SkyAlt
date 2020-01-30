@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -74,12 +74,9 @@ typedef struct GuiItem_s
 	BOOL touch;
 	BOOL touchRecommend;
 
-	DbValue enableValue; //shader color
-	BOOL enableValueReverse;
+	GuiItemCallbackEnable* enableCallback;
 	BOOL enableThis;
 	BOOL enableFinal;
-
-	BOOL notDelete;
 
 	BOOL redraw;
 
@@ -99,7 +96,8 @@ typedef struct GuiItem_s
 	char* name;
 
 	GuiImage* icon;
-	BOOL icon_transparent_back;
+	BOOL icon_draw_back;
+	BOOL icon_alternativeColor;
 
 	BOOL changeSizeVertical;	//always right or bottom border(edge)
 	DbValue changeSizeValue;
@@ -113,15 +111,20 @@ typedef struct GuiItem_s
 	DbRows dropMoveIn;
 	char* dropInName;
 
-	BOOL changeSizeActive;
-	BOOL dropActive;
+	GuiItemCallbackMove* dropCallback;
 
-	GuiItemCallbackMove* dragDropMove;
+	BOOL changeSizeActive;
 
 	StdArr attrsNames;	//<char*>
 	StdBigs attrsValues;
 
 	BOOL drawTable;
+
+	GuiItemCallback* loopTouch;
+
+	GuiItemCallback* iconDoubleTouch;
+
+	GuiItemCallback* iconCallback;
 } GuiItem;
 
 GuiItem GuiItem_init(GuiItemTYPE type, Quad2i grid)
@@ -143,12 +146,9 @@ GuiItem GuiItem_init(GuiItemTYPE type, Quad2i grid)
 	self.show = TRUE;
 	self.touch = TRUE;
 	self.touchRecommend = TRUE;
-	self.enableValue = DbValue_initNumber(1);
-	self.enableValueReverse = FALSE;
+	self.enableCallback = 0;
 	self.enableFinal = TRUE;
 	self.enableThis = TRUE;
-
-	self.notDelete = FALSE;
 
 	self.redraw = TRUE;
 
@@ -170,7 +170,8 @@ GuiItem GuiItem_init(GuiItemTYPE type, Quad2i grid)
 	self.remove = FALSE;
 
 	self.icon = 0;
-	self.icon_transparent_back = TRUE;
+	self.icon_draw_back = TRUE;
+	self.icon_alternativeColor = FALSE;
 
 	self.changeSizeVertical = FALSE;
 	self.changeSizeValue = DbValue_initEmpty();
@@ -182,18 +183,19 @@ GuiItem GuiItem_init(GuiItemTYPE type, Quad2i grid)
 	self.dropMoveNameDst = 0;
 	self.dropMove = DbRows_initEmpty();
 	self.dropMoveIn = DbRows_initEmpty();
-	self.dragDropMove = 0;
-
 	self.dropInName = 0;
+	self.dropCallback = 0;
 
 	self.drawTable = FALSE;
 
 	self.changeSizeActive = FALSE;
-	self.dropActive = FALSE;
 
 	self.attrsNames = StdArr_init();
 	self.attrsValues = StdBigs_init();
 
+	self.loopTouch = 0;
+	self.iconDoubleTouch = 0;
+	self.iconCallback = 0;
 	return self;
 }
 
@@ -202,11 +204,29 @@ GuiItem* GuiItem_getParent(const GuiItem* self)
 	return self->parent;
 }
 
+void GuiItem_setLoopTouch(GuiItem* self, GuiItemCallback* loopTouch)
+{
+	self->loopTouch = loopTouch;
+}
+
+void GuiItem_setIconDoubleTouchCall(GuiItem* self, GuiItemCallback* iconDoubleTouch)
+{
+	self->iconDoubleTouch = iconDoubleTouch;
+}
+void GuiItem_setIconCallback(GuiItem* self, GuiItemCallback* iconCallback)
+{
+	self->iconCallback = iconCallback;
+}
+
+void GuiItem_setAlternativeIconCd(GuiItem* self, BOOL alternativeColor)
+{
+	self->icon_alternativeColor = alternativeColor;
+}
+
 GuiItem* GuiItem_getBaseParent(GuiItem* self)
 {
 	while (self->parent)
 		self = self->parent;
-
 	return self;
 }
 
@@ -231,7 +251,12 @@ void* GuiItem_findParentType(GuiItem* self, GuiItemTYPE type)
 	return 0;
 }
 
-BIG GuiItem_findAttributeName(GuiItem* self, const char* name)
+GuiItemList* GuiItem_findParentTypeLIST(GuiItem* self)
+{
+	return GuiItem_findParentType(self, GuiItem_LIST);
+}
+
+BIG _GuiItem_findAttributeName(GuiItem* self, const char* name)
 {
 	BIG i;
 	for (i = 0; i < self->attrsNames.num; i++)
@@ -239,19 +264,13 @@ BIG GuiItem_findAttributeName(GuiItem* self, const char* name)
 		if (Std_cmpCHAR(self->attrsNames.ptrs[i], name))
 			return i;
 	}
+
 	return -1;
 }
 
 void GuiItem_setAttribute(GuiItem* self, const char* name, BIG value)
 {
-	{
-		const UBIG N_SUBS = GuiItem_numSub(self);
-		BIG i;
-		for (i = 0; i < N_SUBS; i++)
-			GuiItem_setAttribute(GuiItem_getSub(self, i), name, value);
-	}
-
-	BIG i = GuiItem_findAttributeName(self, name);
+	BIG i = _GuiItem_findAttributeName(self, name);
 	if (i >= 0)
 	{
 		self->attrsValues.ptrs[i] = value;
@@ -263,36 +282,41 @@ void GuiItem_setAttribute(GuiItem* self, const char* name, BIG value)
 	}
 }
 
-void GuiItem_copyAttributes(GuiItem* self, const GuiItem* src)
+BOOL _GuiItem_findAttributeSub(GuiItem* self, const char* name, BIG* out_value)
 {
-	BIG i;
-	for (i = 0; i < src->attrsNames.num; i++)
+	BIG i = _GuiItem_findAttributeName(self, name);
+	if (i >= 0)
 	{
-		if (GuiItem_findAttributeName(self, src->attrsNames.ptrs[i]) < 0)	//not found
-			GuiItem_setAttribute(self, src->attrsNames.ptrs[i], src->attrsValues.ptrs[i]);
+		*out_value = self->attrsValues.ptrs[i];
+		return TRUE;
 	}
-}
 
+	if (self->type == GuiItem_LEVEL)
+	{
+		GuiItem* parent = GuiItemLevel_getBackChain((GuiItemLevel*)self);
+		if (parent)
+			return _GuiItem_findAttributeSub(parent, name, out_value);
+	}
+
+	if (self->parent)
+	{
+		return _GuiItem_findAttributeSub(self->parent, name, out_value);
+	}
+
+	return FALSE;
+}
 BIG GuiItem_findAttribute(GuiItem* self, const char* name)
 {
-	BIG i = GuiItem_findAttributeName(self, name);
-	if (i >= 0)
-		return self->attrsValues.ptrs[i];
+	BIG v = -1;
 
-	printf("Warning: Attribute(%s) not found", name);
-	return -1;
+	if (!_GuiItem_findAttributeSub(self, name, &v))
+		printf("Warning: Attribute(%s) not found\n", name);
+
+	return v;
 }
 
 Image1 GuiItem_getColumnIcon(DbFormatTYPE format)
 {
-	if (format == DbFormat_NUMBER_1)	return UiIcons_init_column_number();
-	if (format == DbFormat_NUMBER_N)	return UiIcons_init_column_number();
-	if (format == DbFormat_TEXT)	return UiIcons_init_column_text();
-	if (format == DbFormat_FILE_1)	return UiIcons_init_column_file();
-	if (format == DbFormat_FILE_N)	return UiIcons_init_column_file();
-	if (format == DbFormat_LINK_1)	return UiIcons_init_column_link();
-	if (format == DbFormat_LINK_N)	return UiIcons_init_column_link();
-
 	switch (format)
 	{
 		case DbFormat_NUMBER_1:
@@ -309,6 +333,9 @@ Image1 GuiItem_getColumnIcon(DbFormatTYPE format)
 
 		case DbFormat_LINK_1:	return UiIcons_init_column_link();
 		case DbFormat_LINK_N:	return UiIcons_init_column_link();
+		case DbFormat_LINK_MIRRORED:	return UiIcons_init_column_link();
+		case DbFormat_LINK_JOINTED:	return UiIcons_init_column_link();
+		case DbFormat_LINK_FILTERED:	return UiIcons_init_column_link();
 
 		case DbFormat_FILE_1:	return UiIcons_init_column_file();
 		case DbFormat_FILE_N:	return UiIcons_init_column_file();
@@ -320,6 +347,8 @@ Image1 GuiItem_getColumnIcon(DbFormatTYPE format)
 		case DbFormat_LOCATION: return UiIcons_init_column_location();
 
 		case DbFormat_DATE: return UiIcons_init_column_date();
+
+		case DbFormat_SUMMARY:	return UiIcons_init_column_insight();
 
 		case DbFormat_ROW: return UiIcons_init_unknown();
 	}
@@ -347,13 +376,12 @@ void GuiItem_removeSubs(GuiItem* self)
 		if (it)
 		{
 			it->remove = TRUE;
-			//GuiItem_removeMark(it);
 			GuiItem_removeSubs(it);
 		}
 	}
 }
 
-GuiItem* GuiItem_findChildType(GuiItem* self, GuiItemTYPE type)
+void* GuiItem_findChildType(GuiItem* self, GuiItemTYPE type)
 {
 	int i;
 	for (i = 0; i < self->subs.num; i++)
@@ -429,19 +457,6 @@ UBIG GuiItem_getDepth(GuiItem* self)
 	return depth;
 }
 
-/*static BOOL GuiItem_isChild(GuiItem* self, GuiItem* test)
-{
-	if (self == test)
-		return TRUE;
-
-	int i;
-	for (i = 0; i < self->subs.num; i++)
-		if (GuiItem_isChild(self->subs.ptrs[i], test))
-			return TRUE;
-
-	return FALSE;
-}*/
-
 GuiItem* GuiItem_findSubPos(GuiItem* self, Vec2i touch)
 {
 	int i;
@@ -500,7 +515,7 @@ void GuiItem_setChangeSize(GuiItem* self, UINT changeSizeVertical, DbValue chang
 	self->changeSizeValue = changeSizeValue;
 }
 
-int GuiItem_getChangeSizeWidth(const GuiItem* self, Vec2i touchPos)
+int GuiItem_getChangeSizePos(const GuiItem* self, Vec2i touchPos)
 {
 	float width;
 	if (self->changeSizeVertical)
@@ -513,9 +528,13 @@ int GuiItem_getChangeSizeWidth(const GuiItem* self, Vec2i touchPos)
 	return Std_max(1, (t < 0.5) ? width - t : width + (1 - t));
 }
 
+int GuiItem_getChangeSizeWidth(void)
+{
+	return Std_max(2, OsWinIO_cellSize() / 8);
+}
 Quad2i GuiItem_getChangeSizeRect(const GuiItem* self)
 {
-	const int SPACE = OsWinIO_cellSize() / 4;
+	const int SPACE = GuiItem_getChangeSizeWidth();
 	Quad2i coord = self->coordMove;
 
 	if (self->changeSizeVertical)
@@ -526,14 +545,14 @@ Quad2i GuiItem_getChangeSizeRect(const GuiItem* self)
 
 Quad2i GuiItem_getChangeSizeRectMove(const GuiItem* self, Vec2i touchPos)
 {
-	int width = GuiItem_getChangeSizeWidth(self, touchPos);
+	int width = GuiItem_getChangeSizePos(self, touchPos);
 
 	Quad2i rect = GuiItem_getChangeSizeRect(self);
 
 	if (self->changeSizeVertical)
-		rect = Quad2i_addSpaceX(rect, 5);
+		rect.size.x = GuiItem_getChangeSizeWidth();
 	else
-		rect = Quad2i_addSpaceY(rect, 5);
+		rect.size.y = GuiItem_getChangeSizeWidth();
 
 	if (self->changeSizeVertical)
 		rect.start.x = self->coordMove.start.x + width * OsWinIO_cellSize();
@@ -541,14 +560,6 @@ Quad2i GuiItem_getChangeSizeRectMove(const GuiItem* self, Vec2i touchPos)
 		rect.start.y = self->coordMove.start.y + width * OsWinIO_cellSize();
 
 	return rect;
-}
-
-void GuiItem_setDropCallback(GuiItem* self, const char* nameSrc, const char* nameDst, BOOL dropVertival, GuiItemCallbackMove* dragDropMove)
-{
-	self->dropMoveNameSrc = Std_newCHAR(nameSrc);
-	self->dropMoveNameDst = Std_newCHAR(nameDst);
-	self->dropVertival = dropVertival;
-	self->dragDropMove = dragDropMove;
 }
 
 void GuiItem_setDrop(GuiItem* self, const char* nameSrc, const char* nameDst, BOOL dropVertival, DbRows dropMove, BIG row)
@@ -565,6 +576,11 @@ void GuiItem_setDropIN(GuiItem* self, const char* name, DbRows dropMoveIn)
 {
 	self->dropInName = Std_newCHAR(name);
 	self->dropMoveIn = dropMoveIn;
+}
+
+void GuiItem_setDropCallback(GuiItem* self, GuiItemCallbackMove* dropCallback)
+{
+	self->dropCallback = dropCallback;
 }
 
 BOOL GuiItem_isDropBefore(const GuiItem* self, Vec2i touchPos)
@@ -637,7 +653,7 @@ GuiItem* GuiItem_findDropName(GuiItem* self, const char* name, Vec2i pos, GuiIte
 	if (*out_in && beforeAfter)	//both => IN is small rect inside
 		*out_in = Quad2i_inside(Quad2i_addSpaceY(self->coordMove, OsWinIO_lineSpace()), pos);
 
-	return (self != ignore && self->show && testCoord && ((*out_in) || beforeAfter)) ? self : 0;
+	return (self != ignore && DbRows_is(&self->dropMove) && self->show && testCoord && ((*out_in) || beforeAfter)) ? self : 0;
 }
 
 UBIG GuiItem_numSub(const GuiItem* self)
@@ -664,9 +680,8 @@ void* _GuiItem_addSub(GuiItem* self, GuiItem* sub)
 		sub->show = self->show;
 		sub->touch = self->touch;
 		sub->redraw = self->redraw;
-		sub->parent = self;
 
-		GuiItem_copyAttributes(sub, self);
+		sub->parent = self;
 
 		GuiItem_setResize(self, TRUE);
 	}
@@ -828,8 +843,6 @@ void GuiItem_initCopy(GuiItem* self, const GuiItem* src, BOOL copySub)
 			_GuiItem_addSub(self, GuiItem_newCopy(src->subs.ptrs[i], copySub));
 	}
 
-	self->enableValue = DbValue_initCopy(&src->enableValue);
-
 	self->name = Std_newCHAR(src->name);
 
 	if (self->icon)	self->icon = GuiImage_newCopy(src->icon);
@@ -857,8 +870,6 @@ void GuiItem_free(GuiItem* self)
 	Std_deleteCHAR(self->name);
 
 	if (self->icon)	GuiImage_delete(self->icon);
-
-	DbValue_free(&self->enableValue);
 
 	DbValue_free(&self->changeSizeValue);
 	DbRows_free(&self->dropMove);
@@ -892,12 +903,13 @@ Quad2i GuiItem_getIconCoordBack(Quad2i coord)
 {
 	Quad2i q = coord;
 	q.size.x = GuiItem_getIconSizeX();
-	q.size.y = OsWinIO_cellSize();
 	return q;
 }
 
 Quad2i GuiItem_getIconCoord(Quad2i* coord)
 {
+	Quad2i origCoord = *coord;
+
 	const int cell = OsWinIO_cellSize();
 
 	Quad2i q = *coord;
@@ -908,7 +920,7 @@ Quad2i GuiItem_getIconCoord(Quad2i* coord)
 	coord->start.x += q.size.x * 1.5;
 	coord->size.x -= q.size.x * 1.5;
 
-	return q;
+	return Quad2i_getIntersect(q, origCoord);
 }
 
 Quad2i GuiItem_getSubMaxGrid(GuiItem* self)
@@ -1072,15 +1084,17 @@ void GuiItem_setEnable(GuiItem* self, BOOL enable)
 		GuiItem_setEnable(self->subs.ptrs[i], enable);
 }
 
+BOOL GuiItem_enableEnableAttr(GuiItem* self)
+{
+	BIG row = GuiItem_findAttribute(self, "row");
+	return DbValue_getOptionNumber(row, "enable", 1);
+}
+
 static void _GuiItem_updateEnable(GuiItem* self)
 {
 	BOOL enable = self->parent ? self->parent->enableFinal : TRUE;
 
-	//DbValue
-	GuiItem_setRedraw(self, DbValue_hasChanged(&self->enableValue));
-	BOOL value = DbValue_getNumber(&self->enableValue);
-	if (self->enableValueReverse)
-		value = !value;
+	BOOL value = self->enableCallback ? self->enableCallback(self) : TRUE;//DbValue_getNumber(&self->enableValue);
 
 	//this
 	enable &= (value && self->enableThis);
@@ -1091,26 +1105,16 @@ static void _GuiItem_updateEnable(GuiItem* self)
 
 	//set
 	self->enableFinal = enable;
-
-	//int i;
-	//for (i = 0; i < self->subs.num; i++)
-	//	_GuiItem_updateEnable(self->subs.ptrs[i], enable);
 }
 
-void GuiItem_setEnableMsg(GuiItem* self, DbValue msg, BOOL reverse)
+void GuiItem_setEnableCallback(GuiItem* self, GuiItemCallbackEnable* enableCallback)
 {
-	DbValue_free(&self->enableValue);
-	self->enableValue = msg;
-	self->enableValueReverse = reverse;
-
-	int i;
-	for (i = 0; i < self->subs.num; i++)
-		GuiItem_setEnableMsg(self->subs.ptrs[i], DbValue_initCopy(&msg), reverse);
+	self->enableCallback = enableCallback;
 }
 
 BOOL GuiItem_isEnable(GuiItem* self)
 {
-	return self->enableFinal;
+	return self->enableFinal && self->enableThis;
 }
 
 void GuiItem_showSub(GuiItem* self, BOOL show)
@@ -1310,7 +1314,7 @@ void GuiItem_print(GuiItem* self, UINT depth)
 		GuiItem_print(self->subs.ptrs[i], depth + 1);
 }
 
-void GuiItem_clickUnderline(DbValue* text, BOOL formatURL, BOOL formatEmail)
+void GuiItem_clickUnderline(GuiItem* self, DbValue* text, BOOL formatURL, BOOL formatEmail)
 {
 	DbFormatTYPE type = DbValue_getFormat(text);
 	const UNI* result = DbValue_result(text);
@@ -1325,19 +1329,28 @@ void GuiItem_clickUnderline(DbValue* text, BOOL formatURL, BOOL formatEmail)
 		if (formatEmail || type == DbFormat_EMAIL)
 		{
 			char* str = Std_newCHAR_uni(result);
-			OsWeb_openEmail(str);
+			OsWeb_openEmail(str, 0);
 			Std_deleteCHAR(str);
 		}
 		else
 			if (type == DbFormat_LOCATION)
 			{
-				//? ...
+				GuiItemLayout* layout = GuiItemLayout_new(Quad2i_init4(0, 0, 1, 1));
+				GuiItemLayout_addColumn(layout, 0, 20);
+				GuiItemLayout_addRow(layout, 1, 20);
+
+				GuiItem_addSubName((GuiItem*)layout, "title", GuiItemText_new(Quad2i_init4(0, 0, 1, 1), TRUE, DbValue_initCopy(text), DbValue_initEmpty()));
+
+				DbValue search = DbValue_initCopy(text);
+				search.formated = FALSE;
+				GuiItemMap* map = (GuiItemMap*)GuiItem_addSubName((GuiItem*)layout, "map", GuiItemMap_new(Quad2i_init4(0, 1, 1, 1), -1, DbRows_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), search));
+				GuiItemMap_focusSearch(map);
+
+				GuiItemRoot_addDialogRel((GuiItem*)layout, self, self->coordMove, TRUE);
 			}
 			else
 				if (type == DbFormat_PHONE)
 				{
-					char* str = Std_newCHAR_uni(result);
 					//...
-					Std_deleteCHAR(str);
 				}
 }

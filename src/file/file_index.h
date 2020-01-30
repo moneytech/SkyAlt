@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -116,15 +116,15 @@ void FileIndexes_update(FileIndexes* self, const FileUser* user, BOOL first)
 				self->indexes[self->num - 1] = FileIndex_init(fileId);
 			}
 		}
-		else
-			printf("File with wrong name(lenght)\n");
+		//else
+		//	printf("File with wrong name(lenght)\n");
 
 		Std_deleteCHAR(names[i]);
 	}
 	Os_free(names, num_files * sizeof(char*));
 	Std_deleteCHAR(userPath);
 
-	//udpate file sizes
+	//update file sizes
 	for (i = 0; i < self->num; i++)
 		FileIndex_update(&self->indexes[i], user, first);
 }

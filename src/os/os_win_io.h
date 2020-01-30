@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -206,21 +206,6 @@ UINT OsWinIO_lineSpace(void)
 	return OsWinIO_cellSize() / 4;
 }
 
-int OsWinIO_rounded(void)
-{
-	return OsWinIO_cellSize() / 5;
-}
-
-int OsWinIO_shadows(void)
-{
-	return OsWinIO_cellSize() / 10;
-}
-
-float OsWinIO_shadowsAlpha(void)
-{
-	return 0.25f;
-}
-
 BOOL OsWinIO_new(void)
 {
 	g_winIO = malloc(sizeof(OsWinIO));
@@ -254,7 +239,7 @@ BOOL OsWinIO_new(void)
 	{
 		BOOL fontLoaded = FALSE;
 
-	//	fontLoaded = !fontLoaded ? (OsFont_initFile(OsWinIO_getFontDefault(), _UNI32("Default"), "freeSans") == 0) : fontLoaded;
+		//	fontLoaded = !fontLoaded ? (OsFont_initFile(OsWinIO_getFontDefault(), _UNI32("Default"), "freeSans") == 0) : fontLoaded;
 		fontLoaded = !fontLoaded ? (OsFont_initFile(OsWinIO_getFontDefault(), _UNI32("Default"), "arial") == 0) : fontLoaded;
 
 		char* currPath = OsFileDir_currentDir();
@@ -293,7 +278,6 @@ BOOL OsWinIO_new(void)
 
 	return TRUE;
 }
-
 
 void OsWinIO_delete(void)
 {
@@ -421,12 +405,17 @@ BOOL OsWinIO_isCursorGuiItem(void* item)
 
 BOOL OsWinIO_isCursorGuiItemInTime(void* item)
 {
-	return OsWinIO_isCursorGuiItem(item) && g_winIO->cursor_render_item_pos.x == g_winIO->cursor_render_item_pos.y && (Os_time() - g_winIO->cursor_live_time) < 5;
+	return OsWinIO_isCursorGuiItem(item) && g_winIO->cursor_render_item_pos.x == g_winIO->cursor_render_item_pos.y && (Os_time() - g_winIO->cursor_live_time) < 6;
 }
 
 void OsWinIO_updateCursorTimeout(void)
 {
 	g_winIO->cursor_live_time = Os_time();
+}
+
+double OsWinIO_getEditboxAnim(void* item)
+{
+	return OsWinIO_isCursorGuiItemInTime(item) ? Std_timeAprox3(g_winIO->cursor_stime, 2) : 1.0;
 }
 
 void OsWinIO_tryRemoveCursorGuiItem(void* item)
@@ -465,19 +454,6 @@ void OsWinIO_resetCursorGuiItem(void)
 	g_winIO->cursor_render_item = 0;
 	g_winIO->cursor_render_item_pos = Vec2i_init();
 	OsWinIO_setCursorGuiItem(0);
-}
-
-float OsWinIO_getEditboxAnim(void)
-{
-	float v = Os_time() - g_winIO->cursor_stime;
-	int vv = (int)v;
-	v = v - vv;
-
-	if (vv % 3 == 0) return 1.0f; //stay
-	else
-		if (vv % 3 == 1) return(1.0f - v); //down
-		else
-			return v; //up
 }
 
 void OsWinIO_pleaseExit(void)
@@ -551,6 +527,11 @@ void OsWinIO_resetTouch(void)
 	g_winIO->m_touch_action = Win_TOUCH_NONE;
 	//g_winIO->m_touch_pos = Vec2i_init2(-1, -1);
 	g_winIO->m_touch_wheel = 0;
+	//g_winIO->m_touch_num = 0;
+}
+
+void OsWinIO_resetNumTouch(void)
+{
 	g_winIO->m_touch_num = 0;
 }
 

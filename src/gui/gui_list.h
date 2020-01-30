@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -26,6 +26,11 @@ typedef struct GuiItemList_s
 	BOOL showScroll;
 	BOOL showRemove;
 	BOOL showBorder;
+	BOOL warningIfEmpty;
+
+	BOOL whiteScroll;
+
+	BOOL drawBackground;
 
 	UINT asGrid;	//value = #cells
 	GuiItemCallback* clickRemove;
@@ -45,12 +50,17 @@ GuiItem* GuiItemList_new(Quad2i grid, DbRows filter, GuiItem* skin, DbValue desc
 	self->showScroll = TRUE;
 	self->showRemove = FALSE;
 	self->showBorder = TRUE;
+	self->warningIfEmpty = FALSE;
 
 	self->oldNumRows = -1;
 
 	self->asGrid = 0;
 
 	self->clickRemove = 0;
+
+	self->drawBackground = FALSE;
+
+	self->whiteScroll = FALSE;
 
 	return (GuiItem*)self;
 }
@@ -113,6 +123,10 @@ void GuiItemList_setShowBorder(GuiItemList* self, BOOL showBorder)
 {
 	self->showBorder = showBorder;
 }
+void GuiItemList_setShowWarningIfEmpty(GuiItemList* self, BOOL warningIfEmpty)
+{
+	self->warningIfEmpty = warningIfEmpty;
+}
 
 void GuiItemList_setAsGrid(GuiItemList* self, UINT numCells)
 {
@@ -123,6 +137,11 @@ void GuiItemList_setSource(GuiItemList* self, DbRows filter)
 {
 	DbRows_free(&self->filter);
 	self->filter = filter;
+}
+
+void GuiItemList_setDrawBackground(GuiItemList* self, BOOL drawBackground)
+{
+	self->drawBackground = drawBackground;
 }
 
 void GuiItemList_delete(GuiItemList* self)
@@ -161,10 +180,23 @@ UBIG GuiItemList_numColumns(const GuiItemList* self)
 	return self->asGrid ? Std_max(1, sizeX / cell / self->asGrid) : 1;
 }
 
+static BOOL _GuiItemList_isBackgroundWarning(const GuiItemList* self)
+{
+	return (self->warningIfEmpty && self->oldNumRows == 0);
+}
+
 void GuiItemList_draw(GuiItemList* self, Image4* img, Quad2i coord, Win* win)
 {
 	const int scroll_width = GuiScroll_widthWin(win);
 	const int cell = OsWinIO_cellSize();
+
+	if (_GuiItemList_isBackgroundWarning(self))
+	{
+		Quad2i q = coord;
+		q.size.x -= scroll_width;
+		q = Quad2i_addSpace(q, 2);
+		Image4_drawBorder(img, q, 1, self->base.back_cd);
+	}
 
 	//scroll
 	int titleMove = _GuiItemList_hasDescription(self) ? cell : 0;
@@ -188,6 +220,9 @@ void GuiItemList_draw(GuiItemList* self, Image4* img, Quad2i coord, Win* win)
 
 		const UBIG maxY = num_rows * itemY;
 
+		if (self->whiteScroll)
+			self->scroll.cd = g_theme.white;
+
 		GuiScroll_set(&self->scroll, maxY, sreenY, itemY);
 		GuiScroll_drawV(&self->scroll, Vec2i_init2(coord.start.x + coord.size.x - scroll_width, coord.start.y), img, win);
 	}
@@ -198,12 +233,12 @@ void GuiItemList_draw(GuiItemList* self, Image4* img, Quad2i coord, Win* win)
 		{
 			//background
 			coord = Quad2i_addSpace(coord, 3);
-			Image4_drawBoxQuad(img, coord, self->base.front_cd);
+			Image4_drawBoxQuad(img, coord, self->base.back_cd);
 
 			//text
 			int textH = _GuiItem_textSize(2, coord.size.y);
 			OsFont* font = OsWinIO_getFontDefault();
-			Image4_drawText(img, Quad2i_getMiddle(coord), TRUE, font, _UNI32("+"), textH, 0, self->base.back_cd);
+			Image4_drawText(img, Quad2i_getMiddle(coord), TRUE, font, _UNI32("+"), textH, 0, self->base.front_cd);
 		}
 	}
 }
@@ -215,6 +250,11 @@ BIG GuiItemList_getRow(GuiItemList* self)
 void GuiItemList_setRow(GuiItemList* self, BIG row)
 {
 	DbRows_setBaseRow(&self->filter, row);
+}
+
+BIG GuiItemList_getClickPos(GuiItemList* self, BIG row)
+{
+	return Std_max(0, DbRows_findLinkPos(&self->filter, row));
 }
 
 void GuiItemList_setClickRemove(GuiItemList* self, GuiItemCallback* clickRemove)
@@ -231,6 +271,8 @@ void GuiItemList_clickRemove(GuiItem* self)
 
 		if (list->clickRemove)
 			list->clickRemove(self);
+
+		//GuiItem_setResize(self, TRUE);
 	}
 }
 
@@ -266,7 +308,7 @@ void GuiItemList_update(GuiItemList* self, Quad2i coord, Win* win)
 		}
 	}
 
-	GuiItem_setRedraw(&self->base, (DbValue_hasChanged(&self->description) || oldNumRows != self->oldNumRows || GuiScroll_getRedrawAndReset(&self->scroll)));
+	GuiItem_setRedraw(&self->base, (DbRows_hasChanged(&self->filter) || DbValue_hasChanged(&self->description) || oldNumRows != self->oldNumRows || GuiScroll_getRedrawAndReset(&self->scroll)));
 }
 
 void GuiItemList_touch(GuiItemList* self, Quad2i coord, Win* win)
@@ -274,7 +316,7 @@ void GuiItemList_touch(GuiItemList* self, Quad2i coord, Win* win)
 	const int scroll_width = GuiScroll_widthWin(win);
 	const int cell = OsWinIO_cellSize();
 
-	Rgba back_cd = g_theme.background;
+	Rgba back_cd = _GuiItemList_isBackgroundWarning(self) ? g_theme.warning : g_theme.background;
 	Rgba front_cd = g_theme.main;
 
 	if (self->base.touch && GuiItem_isEnable(&self->base) && OsWinIO_canActiveRenderItem(self))
@@ -309,9 +351,9 @@ GuiItemLayout* GuiItemList_resize(GuiItemList* self, GuiItemLayout* layout, Win*
 
 	//Root layout
 	layout = GuiItemLayout_newCoord(&self->base, tree->showScroll, FALSE, win);
-	GuiItemLayout_setDrawBackground(layout, FALSE);
+	GuiItemLayout_setDrawBackground(layout, self->drawBackground);
 	layout->drawBorder = !tree->showScroll && tree->showBorder;
-	layout->smallerCoord = TRUE;
+	layout->extraSpace = 3;
 	GuiItemLayout_addColumn(layout, 0, 100);
 	GuiItem_addSubName(&self->base, "layout_main", &layout->base);
 
@@ -337,8 +379,8 @@ GuiItemLayout* GuiItemList_resize(GuiItemList* self, GuiItemLayout* layout, Win*
 	layout2->drawBackground = FALSE;
 	layout2->drawBorder = tree->showScroll && tree->showBorder;
 	layout2->showScrollV = FALSE;
-	if (tree->showRemove)
-		GuiItemLayout_addColumn(layout2, 1, 1);
+	//if (tree->showRemove)
+	//	GuiItemLayout_addColumn(layout2, 1, 1);
 	GuiItem_addSubName(&layout->base, "layout2", &layout2->base);
 
 	//Skins
@@ -359,18 +401,18 @@ GuiItemLayout* GuiItemList_resize(GuiItemList* self, GuiItemLayout* layout, Win*
 	}
 
 	const BOOL spaceBetween = (self->asGrid > 0);
-	/*int N_ROWS_VISIBLE = 0;
+	int N_ROWS_VISIBLE = 0;
 	if (skinGridH)
 	{
 		const int itemH = skinGridH * cell;
 		N_ROWS_VISIBLE = sizeY / itemH;
 		if (sizeY % itemH)
 			N_ROWS_VISIBLE++;
-	}*/
+	}
 
-	Vec2i screenSize;
-	OsScreen_getMonitorResolution(&screenSize);
-	const int N_ROWS_VISIBLE = Std_max(1, screenSize.y / cell / skinGridH);
+	//Vec2i screenSize;
+	//OsScreen_getMonitorResolution(&screenSize);
+	//const int N_ROWS_VISIBLE = Std_max(1, screenSize.y / cell / skinGridH);
 
 	const int N_COLUMNS = GuiItemList_numColumns(self);
 
@@ -392,11 +434,22 @@ GuiItemLayout* GuiItemList_resize(GuiItemList* self, GuiItemLayout* layout, Win*
 			if (tree->showRemove)
 			{
 				snprintf(nameId, 64, "%lld_%lld_remove", y, x);
-
 				itemPos.x++;
-				cit = GuiItemButton_newClassicEx(Quad2i_init4(itemPos.x, itemPos.y, 1, skinGridH), DbValue_initStaticCopy(_UNI32("X")), &GuiItemList_clickRemove);
+
+				GuiItemLayout* layout3 = GuiItemLayout_new(Quad2i_init4(itemPos.x, itemPos.y, 1, skinGridH));
+				layout3->drawBackground = FALSE;
+				GuiItem_addSubName(&layout2->base, nameId, &layout3->base);
+				BOOL center = (skinGridH >= 3);
+				if (center)
+				{
+					GuiItemLayout_addRow(layout3, 0, 99);
+					GuiItemLayout_addRow(layout3, 1, 2);
+					GuiItemLayout_addRow(layout3, 2, 99);
+				}
+
+				cit = GuiItemButton_newClassicEx(Quad2i_init4(0, center, 1, 1), DbValue_initStaticCopy(_UNI32("X")), &GuiItemList_clickRemove);
 				cit->show = FALSE;
-				GuiItem_addSubName(&layout2->base, nameId, cit);
+				GuiItem_addSubName(&layout3->base, "x", cit);
 			}
 
 			itemPos.x += spaceBetween;

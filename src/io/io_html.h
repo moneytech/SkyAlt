@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -42,11 +42,10 @@ BOOL IOHtml_isImage(const char* ext)
 		Std_cmpCHARsmall(ext, "bmp");
 }
 
-BOOL IOHtml_write(const char* path, BOOL renderImages, DbRows* rows, DbValues* columns, volatile StdProgress* progress)
+BOOL IOHtml_write(const char* path, BOOL renderImages, DbRows* rows, DbValues* columns)
 {
 	BOOL ok = FALSE;
 
-	progress->done = 0;
 	const double maxRows = DbRows_getSize(rows);
 
 	char* folderPath;
@@ -112,51 +111,51 @@ BOOL IOHtml_write(const char* path, BOOL renderImages, DbRows* rows, DbValues* c
 					const UBIG N_indexes = DbValue_getN(column);
 					for (ri = 0; ri < N_indexes; ri++)
 					{
-					if (DbValue_getFileSize(column, ri))
-					{
-						//create folder
-						if (!folderMade)
+						if (DbValue_getFileSize(column, ri))
 						{
-							OsFileDir_makeDir(folderPath);
-							folderMade = TRUE;
+							//create folder
+							if (!folderMade)
+							{
+								OsFileDir_makeDir(folderPath);
+								folderMade = TRUE;
+							}
+
+							//create/save file
+							char number[64];
+							Std_buildNumber(r, 0, number);
+							char number_index[64];
+							Std_buildNumber(ri, 0, number_index);
+
+							UNI nameUni[64];
+							DbColumn_getName(column->column, nameUni, 64);
+
+							char ext[8];
+							DbValue_getFileExt_char(column, ri, ext);
+
+							char* ff_name = Std_addAfterCHAR(Std_addAfterCHAR(Std_addAfterCHAR(Std_addAfterCHAR(Std_addAfterCHAR(Std_addAfterCHAR(Std_newCHAR_uni(nameUni), "_"), number), "_"), number_index), "."), ext);
+							char* ff_path_short = Std_addAfterCHAR(Std_addCHAR(folderName, "/"), ff_name);
+							char* ff_path = Std_addAfterCHAR(Std_addCHAR(folderPath, "/"), ff_name);
+							OsFile ff;
+							if (OsFile_init(&ff, ff_path, OsFile_W))
+							{
+								DbValue_exportFile(column, &ff, ri);
+								OsFile_free(&ff);
+							}
+
+							//create link(render)
+							fprintf(f.m_file, "<a href=\"%s\">", ff_path_short);
+
+							if (renderImages && IOHtml_isImage(ext))
+								fprintf(f.m_file, "<img src=\"%s\" alt=\"%s\" height=\"100\">", ff_path_short, ff_name);
+							else
+								fprintf(f.m_file, "%s", ff_name);
+
+							OsFile_writeUNI(&f, _UNI32("</a>\n"));
+
+							Std_deleteCHAR(ff_name);
+							Std_deleteCHAR(ff_path_short);
+							Std_deleteCHAR(ff_path);
 						}
-
-						//create/save file
-						char number[64];
-						Std_buildNumber(r, 0, number);
-						char number_index[64];
-						Std_buildNumber(ri, 0, number_index);
-
-						UNI nameUni[64];
-						DbColumn_getName(column->column, nameUni, 64);
-
-						char ext[8];
-						DbValue_getFileExt_char(column, ri, ext);
-
-						char* ff_name = Std_addAfterCHAR(Std_addAfterCHAR(Std_addAfterCHAR(Std_addAfterCHAR(Std_addAfterCHAR(Std_addAfterCHAR(Std_newCHAR_uni(nameUni), "_"), number), "_"), number_index), "."), ext);
-						char* ff_path_short = Std_addAfterCHAR(Std_addCHAR(folderName, "/"), ff_name);
-						char* ff_path = Std_addAfterCHAR(Std_addCHAR(folderPath, "/"), ff_name);
-						OsFile ff;
-						if (OsFile_init(&ff, ff_path, OsFile_W))
-						{
-							DbValue_exportFile(column, &ff, ri, progress);
-							OsFile_free(&ff);
-						}
-
-						//create link(render)
-						fprintf(f.m_file, "<a href=\"%s\">", ff_path_short);
-
-						if (renderImages && IOHtml_isImage(ext))
-							fprintf(f.m_file, "<img src=\"%s\" alt=\"%s\" height=\"100\">", ff_path_short, ff_name);
-						else
-							fprintf(f.m_file, "%s", ff_name);
-
-						OsFile_writeUNI(&f, _UNI32("</a>\n"));
-
-						Std_deleteCHAR(ff_name);
-						Std_deleteCHAR(ff_path_short);
-						Std_deleteCHAR(ff_path);
-					}
 					}
 				}
 				else
@@ -166,7 +165,7 @@ BOOL IOHtml_write(const char* path, BOOL renderImages, DbRows* rows, DbValues* c
 			}
 			OsFile_writeUNI(&f, _UNI32("</tr>\n"));
 
-			progress->done = r / maxRows;
+			StdProgress_setEx("EXPORTING", r, maxRows);
 		}
 
 		//End

@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -31,8 +31,6 @@ GuiItem* GuiItemLevel_newCenter(BOOL closeAfter, GuiItem* sub)
 	self->removeLater = FALSE;
 
 	GuiItem_addSubName(&self->base, "level", sub);
-
-	GuiItem_setFirstCursor(&self->base);
 
 	self->relativeCoord = Quad2i_init();
 
@@ -84,7 +82,6 @@ BOOL GuiItemLevel_isBackChainValid(const GuiItemLevel* self)
 	return GuiItemLevel_getBackChain(self) != 0;
 }
 
-
 void GuiItemLevel_tryCloseLater(GuiItemLevel* self)
 {
 	if (self && self->closeAfter)
@@ -95,7 +92,8 @@ void GuiItemLevel_close(GuiItemLevel* self)
 {
 	GuiItemEdit_saveCache();
 
-	self->base.remove = TRUE;
+	GuiItem_getBaseParent(&self->base)->remove = TRUE;
+	//self->base.remove = TRUE;
 
 	GuiItemRoot_redrawAll();
 }
@@ -107,7 +105,7 @@ GuiItem* _GuiItemLevel_content(GuiItemLevel* self)
 
 void GuiItemLevel_draw(GuiItemLevel* self, Image4* img, Quad2i coord, Win* win)
 {
-	Image4_mulVSubQ(img, img->rect, 0.5f);
+	Image4_mulVSubQ(img, img->rect, 127);
 }
 
 void GuiItemLevel_update(GuiItemLevel* self, Quad2i coord, Win* win)
@@ -122,11 +120,11 @@ void GuiItemLevel_touch(GuiItemLevel* self, Quad2i coord, Win* win)
 	if (self->base.touch && GuiItem_isEnable(&self->base) && OsWinIO_canActiveRenderItem(self))
 	{
 		GuiItem* content = _GuiItemLevel_content(self);
-		if(content)
+		if (content)
 		{
-		BOOL inside = Quad2i_inside(content->coordMoveCut, OsWinIO_getTouchPos());
-		if (startTouch && !inside)
-			GuiItemLevel_close(self);
+			BOOL inside = Quad2i_inside(content->coordMoveCut, OsWinIO_getTouchPos());
+			if (startTouch && !inside)
+				GuiItemLevel_close(self);
 		}
 	}
 
@@ -145,8 +143,6 @@ void GuiItemLevel_key(GuiItemLevel* self, Quad2i coord, Win* win)
 		OsWinIO_resetKeyEXTRA();
 	}
 }
-
-
 
 void GuiItemLevel_resizeCenter(GuiItemLevel* self, Win* win)
 {
@@ -246,7 +242,6 @@ GuiItemLayout* GuiItemLevel_resize(GuiItemLevel* self, GuiItemLayout* layout, Wi
 		GuiItemLevel_resizeCenter(self, win);
 	else
 		GuiItemLevel_resizeToParent(self, win);
-
 
 	GuiItem_setResizeOff(&self->base);	//don't resize children
 

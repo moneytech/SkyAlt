@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -86,7 +86,7 @@ static double _GuiItemRating_getValueT(GuiItemRating* self)
 static void _GuiItemRating_setValueT(GuiItemRating* self, double t)
 {
 	double v = DbValue_getNumber(&self->maxValue) * t;
-	DbValue_setNumber(&self->value, v);
+	GuiItemRating_setNumber(self, v);
 }
 
 static int _GuiItemRating_starSize()
@@ -143,10 +143,10 @@ void GuiItemRating_draw(GuiItemRating* self, Image4* img, Quad2i coord, Win* win
 
 	int i;
 	for (i = 0; i < n; i++)
-		GuiImage_draw(self->starBlack, img, Quad2i_init4(st.x + i * sz, st.y, sz, sz), Rgba_initBlack());
+		GuiImage_draw(self->starBlack, img, Quad2i_init4(st.x + i * sz, st.y, sz, sz), self->base.front_cd);
 
 	for (i = n; i < max; i++)
-		GuiImage_draw(self->starWhite, img, Quad2i_init4(st.x + i * sz, st.y, sz, sz), Rgba_initBlack());
+		GuiImage_draw(self->starWhite, img, Quad2i_init4(st.x + i * sz, st.y, sz, sz), self->base.front_cd);
 
 	if (self->base.drawTable)
 	{
@@ -161,8 +161,8 @@ void GuiItemRating_update(GuiItemRating* self, Quad2i coord, Win* win)
 {
 	Quad2i q = coord;
 	q.size.x = q.size.y = _GuiItemRating_starSize();
-	GuiImage_update(self->starBlack, q);
-	GuiImage_update(self->starWhite, q);
+	GuiImage_update(self->starBlack, q.size);
+	GuiImage_update(self->starWhite, q.size);
 
 	GuiItem_setRedraw(&self->base, (DbValue_hasChanged(&self->maxValue) || DbValue_hasChanged(&self->value) || DbValue_hasChanged(&self->description)));
 }

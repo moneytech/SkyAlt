@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -63,13 +63,14 @@ BOOL DbFilterGroup_cmp(const DbFilterGroup* a, const DbFilterGroup* b)
 	return same;
 }
 
-BOOL DbFilterGroup_needUpdate(DbFilterGroup* self)
+BOOL DbFilterGroup_needUpdate(DbFilterGroup* self, BOOL saveChanges)
 {
 	BOOL update = (self->column->numChanges != self->column_numChanges);
-	self->column_numChanges = self->column->numChanges;
+	if (saveChanges)
+		self->column_numChanges = self->column->numChanges;
 
 	if (self->next)
-		update |= DbFilterGroup_needUpdate(self->next);
+		update |= DbFilterGroup_needUpdate(self->next, saveChanges);
 
 	return update;
 }
@@ -88,9 +89,6 @@ UBIG DbFilterGroup_num(const DbFilterGroup* self)
 
 BIG DbFilterGroup_execute(DbFilterGroup* self, StdBigs* poses, const BIG start, const BIG end, DbTable* groupTable, DbColumnN* group_subs, DbColumnN* group_rows, DbColumn1* group_count)
 {
-	volatile StdProgress* progress = DbRoot_getProgress();
-	StdProgress_addNextPhase(progress, Lang_find("FILTER_GROUP"));
-
 	if (start >= end)
 		return -1;
 
@@ -105,12 +103,12 @@ BIG DbFilterGroup_execute(DbFilterGroup* self, StdBigs* poses, const BIG start, 
 	else
 	{
 		//DbColumnN_add_bigs(poses, start, end); //faster ...
-		for (i = start; i < end && progress->running; i++)
+		for (i = start; i < end && StdProgress_is(); i++)
 			DbColumnN_add(group_rows, r, poses->ptrs[i]);
 	}
 
 	UBIG last = start;
-	for (i = start + 1; i < end && progress->running; i++)
+	for (i = start + 1; i < end && StdProgress_is(); i++)
 	{
 		//Std_printlnUNI(DbColumnString32_get((DbColumnString32*)self->column, poses->ptrs[i]));
 
@@ -134,7 +132,7 @@ BIG DbFilterGroup_execute(DbFilterGroup* self, StdBigs* poses, const BIG start, 
 		}
 	}
 
-	if (progress->running)
+	if (StdProgress_is())
 	{
 		if (self->next)
 		{
@@ -146,7 +144,7 @@ BIG DbFilterGroup_execute(DbFilterGroup* self, StdBigs* poses, const BIG start, 
 			UBIG rr = DbTable_addRow(groupTable);
 			DbColumnN_add(group_subs, r, rr);
 			UBIG ii;
-			for (ii = last; ii < i && progress->running; ii++)
+			for (ii = last; ii < i && StdProgress_is(); ii++)
 				DbColumnN_add(group_rows, rr, poses->ptrs[ii]);
 			DbColumn1_set(group_count, rr, (i - last));
 		}
@@ -216,32 +214,30 @@ BOOL DbFilterShort_cmp(const DbFilterShort* a, const DbFilterShort* b)
 	return same;
 }
 
-BOOL DbFilterShort_needUpdate(DbFilterShort* self)
+BOOL DbFilterShort_needUpdate(DbFilterShort* self, BOOL saveChanges)
 {
 	BOOL update = (self->column->numChanges != self->column_numChanges);
-	self->column_numChanges = self->column->numChanges;
+	if (saveChanges)
+		self->column_numChanges = self->column->numChanges;
 
 	if (self->next)
-		update |= DbFilterShort_needUpdate(self->next);
+		update |= DbFilterShort_needUpdate(self->next, saveChanges);
 
 	return update;
 }
 
 void DbFilterShort_execute(DbFilterShort* self, StdBigs* poses, const BIG start, const BIG end)
 {
-	volatile StdProgress* progress = DbRoot_getProgress();
-	StdProgress_addNextPhase(progress, Lang_find("FILTER_SHORT"));
-
 	if (start >= end)
 		return;
 
 	DbColumn_short(self->column, poses, start, end, self->ascending);
 
-	if (self->next && progress->running)
+	if (self->next && StdProgress_is())
 	{
 		UBIG last = start;
 		UBIG i;
-		for (i = start + 1; i < end && progress->running; i++)
+		for (i = start + 1; i < end && StdProgress_is(); i++)
 		{
 			if (!DbColumn_cmpRow(self->column, poses->ptrs[i - 1], poses->ptrs[i]))
 			{
@@ -260,18 +256,20 @@ typedef struct DbFilterSelect_s
 	const DbFilterSelectFunc* func;
 	BOOL andd;
 	UNI* value;
+	double valueEx;
 
 	BIG column_numChanges;
 	struct DbFilterSelect_s* next;
 }DbFilterSelect;
 
-DbFilterSelect* DbFilterSelect_new(BOOL andd, DbColumn* column, const DbFilterSelectFunc* func, const UNI* value)
+DbFilterSelect* DbFilterSelect_new(BOOL andd, DbColumn* column, const DbFilterSelectFunc* func, const UNI* value, double valueEx)
 {
 	DbFilterSelect* self = Os_malloc(sizeof(DbFilterSelect));
 	self->column = column;
 	self->column_numChanges = -1;
 	self->func = func;
 	self->value = Std_newUNI(value);
+	self->valueEx = valueEx;
 	self->andd = andd;
 	self->next = 0;
 	return self;
@@ -311,7 +309,7 @@ BOOL DbFilterSelect_cmp(const DbFilterSelect* a, const DbFilterSelect* b)
 {
 	BOOL same = (a->next && b->next) || (!a->next && !b->next);
 
-	same &= a->column == b->column && a->func == b->func && a->andd == b->andd && Std_cmpUNI(a->value, b->value);
+	same &= a->column == b->column && a->func == b->func && a->andd == b->andd && Std_cmpUNI(a->value, b->value) && a->valueEx == b->valueEx;
 
 	if (same && a->next)
 		same &= DbFilterSelect_cmp(a->next, b->next);
@@ -319,34 +317,30 @@ BOOL DbFilterSelect_cmp(const DbFilterSelect* a, const DbFilterSelect* b)
 	return same;
 }
 
-BOOL DbFilterSelect_needUpdate(DbFilterSelect* self)
+BOOL DbFilterSelect_needUpdate(DbFilterSelect* self, BOOL saveChanges)
 {
 	BOOL update = (self->column->numChanges != self->column_numChanges);
-	self->column_numChanges = self->column->numChanges;
+	if (saveChanges)
+		self->column_numChanges = self->column->numChanges;
 
 	if (self->next)
-		update |= DbFilterSelect_needUpdate(self->next);
+		update |= DbFilterSelect_needUpdate(self->next, saveChanges);
 
 	return update;
 }
 
-
 void DbFilterSelect_executeEx(DbFilterSelect* self, StdBigs* poses, UCHAR* marks)
 {
-	volatile StdProgress* progress = DbRoot_getProgress();
-	if(self->func)
-		self->func->func(self->column, self->value, self->andd, poses, marks, progress);
+	if (self->func)
+		self->func->func(self->column, self->value, self->valueEx, self->andd, poses, marks);
 
 	//next
-	if (self->next && progress->running)
+	if (self->next && StdProgress_is())
 		DbFilterSelect_executeEx(self->next, poses, marks);
 }
 
 void DbFilterSelect_execute(DbFilterSelect* self, StdBigs* poses)
 {
-	volatile StdProgress* progress = DbRoot_getProgress();
-	StdProgress_addNextPhase(progress, Lang_find("FILTER_SELECT"));
-
 	UBIG oldN = poses->num;
 	UCHAR* marks = Os_calloc(oldN, sizeof(UCHAR));
 	DbFilterSelect_executeEx(self, poses, marks);
@@ -354,7 +348,7 @@ void DbFilterSelect_execute(DbFilterSelect* self, StdBigs* poses)
 	//remove unmarked "poses"
 	UBIG p = 0;
 	UBIG i;
-	for (i = 0; i < oldN && progress->running; i++)
+	for (i = 0; i < oldN && StdProgress_is(); i++)
 		if (marks[i])
 			poses->ptrs[p++] = poses->ptrs[i];
 	StdBigs_resize(poses, p);
@@ -365,8 +359,7 @@ void DbFilterSelect_execute(DbFilterSelect* self, StdBigs* poses)
 
 typedef struct DbFilter_s
 {
-	FileRow fileId;
-	DbTable* srcTable;
+	BIG row;
 
 	DbFilterGroup* group;
 	DbFilterShort* shortt;
@@ -384,16 +377,15 @@ typedef struct DbFilter_s
 
 	UBIG maxRecords;
 
-	BIG refs;
-	double ref_time;
+	//BIG refs;
+	//double ref_time;
 }DbFilter;
 
-DbFilter* DbFilter_new(DbTable* srcTable, FileRow fileId)
+DbFilter* DbFilter_new(BIG row)
 {
 	DbFilter* self = Os_malloc(sizeof(DbFilter));
-	self->fileId = fileId;
-	self->srcTable = srcTable;
 
+	self->row = row;
 	self->group = 0;
 	self->shortt = 0;
 	self->select = 0;
@@ -404,28 +396,31 @@ DbFilter* DbFilter_new(DbTable* srcTable, FileRow fileId)
 
 	self->groupTable = DbRoot_addTableNotSave();
 	self->group_subs = DbColumns_addColumnN(self->groupTable->columns, self->groupTable);
-	self->group_rows = DbColumns_addColumnN(self->groupTable->columns, srcTable);
+	self->group_rows = DbColumns_addColumnN(self->groupTable->columns, DbFilter_getTable(self));
 	self->group_count = DbColumns_addColumn1(self->groupTable->columns, 0);
 
 	self->numChanges = -1;
 	self->parent = 0;
 
-	self->refs = 0;
-	self->ref_time = 0;
+	//self->refs = 0;
+	//self->ref_time = 0;
 
 	return self;
 }
 
 DbFilter* DbFilter_newCopy(const DbFilter* src)
 {
-	DbFilter* self = DbFilter_new(src->srcTable, src->fileId);
+	DbFilter* self = DbFilter_new(src->row);
 
 	StdBigs_free(&self->rows);
 	self->rows = StdBigs_initCopy(&src->rows);
 
-	if (src->group)	self->group = DbFilterGroup_newCopy(src->group);
+	if (src->group)		self->group = DbFilterGroup_newCopy(src->group);
 	if (src->shortt)	self->shortt = DbFilterShort_newCopy(src->shortt);
 	if (src->select)	self->select = DbFilterSelect_newCopy(src->select);
+
+	if (src->parent)
+		self->parent = DbFilter_newCopy(src->parent);
 
 	return self;
 }
@@ -443,6 +438,9 @@ void DbFilter_delete(DbFilter* self)
 
 	DbRoot_removeTable(self->groupTable);
 
+	//if (self->parent)
+	//	DbFilter_delete(self->parent);
+
 	Os_free(self, sizeof(DbFilter));
 }
 
@@ -451,16 +449,27 @@ const StdBigs* DbFilter_getRows(const DbFilter* self)
 	return &self->rows;
 }
 
+DbTable* DbFilter_getTable(const DbFilter* self)
+{
+	const BOOL isSummary = DbRoot_isTypeView_summary(self->row);
+	return DbRoot_findParentTable(isSummary ? DbRoot_findParent(self->row) : self->row);
+}
+
 void DbFilter_addParent(DbFilter* self, DbFilter* parent)
 {
-	self->parent = parent;
+	DbFilter** p = &self->parent;
+	while (*p)
+		p = &(*p)->parent;
+
+	*p = parent;
 }
 
 BOOL DbFilter_cmp(const DbFilter* a, const DbFilter* b)
 {
 	BOOL same = TRUE;
 
-	same &= a->srcTable == b->srcTable;
+	same &= a->row == b->row;
+	//same &= a->srcTable == b->srcTable;
 
 	same &= a->maxRecords == b->maxRecords;
 
@@ -482,18 +491,14 @@ BOOL DbFilter_cmp(const DbFilter* a, const DbFilter* b)
 	return same;
 }
 
-void DbFilter_clearShortsAndGroups(DbFilter* self)
+void DbFilter_clearGroups(DbFilter* self)
 {
-	if (self->shortt)
-		DbFilterShort_delete(self->shortt);
-	self->shortt = 0;
-
 	if (self->group)
 		DbFilterGroup_delete(self->group);
 	self->group = 0;
 
 	if (self->parent)
-		DbFilter_clearShortsAndGroups(self->parent);
+		DbFilter_clearGroups(self->parent);
 }
 
 UBIG DbFilter_numGroupTable(const DbFilter* self)
@@ -514,7 +519,7 @@ DbColumn1* DbFilter_getColumnGroupCount(const DbFilter* self)
 	return self->group_count;
 }
 
-void DbFilter_getMinMaxCount(DbFilter* self, BIG* minV, BIG* maxV)
+void DbFilter_getMinMaxCount(DbFilter* self, double* minV, double* maxV)
 {
 	UBIG i = 0;
 	while (DbTable_jumpRows(self->groupTable, &i, 1) >= 0)
@@ -522,8 +527,8 @@ void DbFilter_getMinMaxCount(DbFilter* self, BIG* minV, BIG* maxV)
 		if (DbColumnN_sizeActive(self->group_subs, i) == 0)
 		{
 			double v = DbColumn1_get(self->group_count, i);
-			*minV = Std_bmin(*minV, v);
-			*maxV = Std_bmax(*maxV, v);
+			*minV = Std_dmin(*minV, v);
+			*maxV = Std_dmax(*maxV, v);
 		}
 		i++;
 	}
@@ -537,11 +542,6 @@ UBIG DbFilter_numGroups(const DbFilter* self)
 BOOL DbFilter_isEmpty(const DbFilter* self)
 {
 	return self && !self->group && !self->shortt && !self->select && !self->parent && self->maxRecords <= 0;
-}
-
-DbTable* DbFilter_getTable(const DbFilter* self)
-{
-	return DbColumnN_getBTable(self->group_rows);
 }
 
 void DbFilter_setMaxRecords(DbFilter* self, UBIG maxRecords)
@@ -569,37 +569,68 @@ void DbFilter_addShort(DbFilter* self, DbColumn* column, BOOL ascending)
 		*next = DbFilterShort_new(column, ascending);
 	}
 }
-void DbFilter_addSelect(DbFilter* self, BOOL andd, DbColumn* column, const DbFilterSelectFunc* func, const UNI* value)
+void DbFilter_addSelect(DbFilter* self, BOOL andd, DbColumn* column, const DbFilterSelectFunc* func, const UNI* value, double valueEx)
 {
 	if (column)
 	{
 		DbFilterSelect** next = &self->select;
 		while (*next)
 			next = &(*next)->next;
-		*next = DbFilterSelect_new((!self->select ? FALSE : andd), column, func, value);	//first is always OR
+		*next = DbFilterSelect_new((!self->select ? FALSE : andd), column, func, value, valueEx);	//first is always OR
 	}
 }
 
-static BOOL DbFilter_needUpdate(DbFilter* self)
+void DbFilter_addShortCopy(DbFilter* self, DbFilter* src)
+{
+	if (src->shortt)
+	{
+		DbFilterShort** next = &self->shortt;
+		while (*next)
+			next = &(*next)->next;
+		*next = DbFilterShort_newCopy(src->shortt);
+	}
+}
+
+static BOOL _DbFilter_needUpdateEx(DbFilter* self, BOOL saveChanges)
 {
 	BOOL update = FALSE;
 
-	BIG numChanges = DbTable_numChanges(self->srcTable);
+	DbTable* srcTable = DbFilter_getTable(self);
+
+	BIG numChanges = DbTable_numChanges(srcTable);
 	update |= (self->numChanges != numChanges);
 
-	self->numChanges = numChanges;
+	if (saveChanges)
+		self->numChanges = numChanges;
+
+	//columns insights
+	if (DbRoot_isTypeView_summary(self->row))
+	{
+		int c;
+		UBIG N_COLS = DbRows_getSubsNum(self->row, "columns", TRUE);
+		for (c = 0; c < N_COLS; c++)
+		{
+			DbColumn* column = DbRows_getSubsColumn(self->row, "columns", TRUE, c);
+			if (column->insightTable)
+				update |= DbInsight_needUpdate(column->insightTable);
+		}
+	}
 
 	if (self->select)
-		update |= DbFilterSelect_needUpdate(self->select);
+		update |= DbFilterSelect_needUpdate(self->select, saveChanges);
 	if (self->shortt)
-		update |= DbFilterShort_needUpdate(self->shortt);
+		update |= DbFilterShort_needUpdate(self->shortt, saveChanges);
 	if (self->group)
-		update |= DbFilterGroup_needUpdate(self->group);
+		update |= DbFilterGroup_needUpdate(self->group, saveChanges);
 
 	if (self->parent)
-		update |= DbFilter_needUpdate(self->parent);
+		update |= _DbFilter_needUpdateEx(self->parent, FALSE);
 
 	return update;
+}
+static BOOL _DbFilter_needUpdate(DbFilter* self)
+{
+	return _DbFilter_needUpdateEx(self, TRUE);
 }
 
 UBIG DbFilter_num(const DbFilter* self)
@@ -614,12 +645,104 @@ UBIG DbFilter_num(const DbFilter* self)
 	return n;
 }
 
+static void _DbFilter_buildSummaryTable(DbFilter* self)
+{
+	DbTable* newTable = DbRoot_findTable(self->row);
+
+	DbColumnN* subs = DbFilter_getColumnGroupSubs(self);
+	DbColumnN* rows = DbFilter_getColumnGroupRows(self);
+	if (subs && rows)
+	{
+		DbColumn* linksColumn = 0;
+
+		UBIG N_COLS = DbRows_getSubsNum(self->row, "columns", TRUE);
+		BIG c;
+		for (c = 0; c < N_COLS; c++)
+		{
+			DbColumn* column = DbRows_getSubsColumn(self->row, "columns", TRUE, c);
+			if (column->summary_links)		linksColumn = column;
+		}
+
+		for (c = 0; c < N_COLS; c++)
+		{
+			DbColumn* column = DbRows_getSubsColumn(self->row, "columns", TRUE, c);
+			BIG crow = DbRows_getSubsRow(self->row, "columns", TRUE, c);
+			if (!DbColumn_isSummaryLinks(column) && !DbColumn_isSummaryGroup(column))
+			{
+				const DbInsightFunc* func = DbInsightSelectFunc_get(DbValue_getOptionNumber(crow, "insight_func", 0));
+
+				DbInsight* insight = DbInsight_new(func, newTable, 0, column);
+				DbInsight_addItem(insight, linksColumn);
+				DbInsight_addItem(insight, column->summary_origColumn);
+
+				DbColumn_setInsightTable(column, insight);
+			}
+		}
+	}
+}
+
+static void _DbFilter_rewriteSummaryTable(DbFilter* self)
+{
+	DbTable* newTable = DbRoot_findTable(self->row);
+	DbTable_clear(newTable);
+
+	DbColumnN* subs = DbFilter_getColumnGroupSubs(self);
+	DbColumnN* rows = DbFilter_getColumnGroupRows(self);
+
+	if (subs && rows && DbFilter_numGroupTable(self))
+	{
+		DbColumn* groupColumn = 0;
+		DbColumn* linksColumn = 0;
+
+		UBIG N_COLS = DbRows_getSubsNum(self->row, "columns", TRUE);
+		BIG c;
+		for (c = 0; c < N_COLS; c++)
+		{
+			DbColumn* column = DbRows_getSubsColumn(self->row, "columns", TRUE, c);
+			if (column->summary_group)		groupColumn = column;
+			if (column->summary_links)		linksColumn = column;
+		}
+
+		//add rows and fill links
+		BIG it;
+		UBIG i = 0;
+		while ((it = DbColumnN_jump(subs, 0, &i, 1)) >= 0)
+		{
+			UBIG newRow = DbTable_addRow(newTable);
+
+			//copy "group column" value
+			if (groupColumn)	//is visible
+				DbColumn_copyRowEx(groupColumn, groupColumn->summary_origColumn, newRow, DbColumnN_getFirstRow(rows, it));
+
+			//copy links
+			if (linksColumn)
+				DbColumnN_copyRow((DbColumnN*)linksColumn, newRow, rows, it);
+			i++;
+		}
+
+		//columns insights
+		for (c = 0; c < N_COLS; c++)
+		{
+			DbColumn* column = DbRows_getSubsColumn(self->row, "columns", TRUE, c);
+			if (column->insightTable)
+				DbInsight_execute(column->insightTable);
+		}
+	}
+
+	StdBigs_clear(&self->rows);
+	DbTable_getArrayPoses(newTable, &self->rows);
+}
+
 static void _DbFilter_executeEx(DbFilter* self, StdBigs* poses)
 {
 	DbTable_clear(self->groupTable);
 
-	if (self->parent)
-		_DbFilter_executeEx(self->parent, poses);
+	if (self->group)
+		DbFilterGroup_execute(self->group, poses, 0, poses->num, self->groupTable, self->group_subs, self->group_rows, self->group_count);
+
+	//needs to be call after Group and before short!
+	if (DbRoot_isTypeView_summary(self->row))
+		_DbFilter_rewriteSummaryTable(self);
 
 	if (self->select)
 		DbFilterSelect_execute(self->select, poses);
@@ -627,25 +750,33 @@ static void _DbFilter_executeEx(DbFilter* self, StdBigs* poses)
 	if (self->shortt)
 		DbFilterShort_execute(self->shortt, poses, 0, poses->num);
 
-	if (self->group)
-		DbFilterGroup_execute(self->group, poses, 0, poses->num, self->groupTable, self->group_subs, self->group_rows, self->group_count);
-
 	if (self->maxRecords > 0 && self->maxRecords < poses->num)
 		StdBigs_resize(poses, self->maxRecords);
 }
 
 BOOL DbFilter_execute(DbFilter* self)
 {
-	volatile StdProgress* progress = DbRoot_getProgress();
-	StdProgress_setNumPhases(progress, DbFilter_num(self));
+	if (_DbFilter_needUpdate(self))
+	{
+		StdBigs_clear(&self->rows);
 
-	if (!DbFilter_needUpdate(self))
-		return FALSE;
+		if (self->parent)
+		{
+			DbFilter_execute(self->parent);
+			StdBigs_free(&self->rows);
+			self->rows = StdBigs_initCopy(&self->parent->rows);
+		}
+		else
+		{
+			DbTable* srcTable = DbFilter_getTable(self);
+			if (srcTable)
+				DbTable_getArrayPoses(srcTable, &self->rows);
+		}
 
-	StdBigs_free(&self->rows);
-	self->rows = self->srcTable ? DbTable_getArrayPoses(self->srcTable) : StdBigs_init();
+		_DbFilter_executeEx(self, &self->rows);
 
-	_DbFilter_executeEx(self, &self->rows);
-
-	return TRUE;
+		_DbFilter_needUpdate(self);	//reset numChanges - so SummaryTable will NOT re-update!
+		return TRUE;
+	}
+	return FALSE;
 }

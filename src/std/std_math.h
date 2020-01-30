@@ -4,20 +4,20 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
  * Public License.
  */
 
-float Std_minDouble(void)
-{
-	return 1.175494351e-38F;	//FLT_MIN;	//DBL_MIN
-}
-float Std_maxDouble(void)
+double Std_maxDouble(void)
 {
 	return 3.402823466e+38F;	//FLT_MAX;	//DBL_MAX
+}
+double Std_minDouble(void)
+{
+	return -Std_maxDouble();
 }
 
 float Std_fmin(float a, float b)
@@ -70,6 +70,11 @@ BIG Std_bmax(BIG a, BIG b)
 BIG Std_bclamp(BIG v, BIG mi, BIG mx)
 {
 	return Std_bmin(Std_bmax(v, mi), mx);
+}
+
+BOOL Std_isBetween(double v, double mi, double mx)
+{
+	return (v >= mi && v <= mx) || (v <= mi && v >= mx);
 }
 
 double Std_roundHalf(double v)
@@ -153,6 +158,10 @@ BOOL Vec2i_cmp(Vec2i a, Vec2i b)
 {
 	return a.x == b.x && a.y == b.y;
 }
+Vec2i Vec2i_abs(Vec2i a)
+{
+	return Vec2i_init2(Std_abs(a.x), Std_abs(a.y));
+}
 int Vec2i_dot(Vec2i a, Vec2i b)
 {
 	return a.x * b.x + a.y * b.y;
@@ -179,9 +188,22 @@ Vec2i Vec2i_div(Vec2i a, Vec2i b)
 }
 Vec2i Vec2i_divV(const Vec2i vec, float v)
 {
-	return Vec2i_init2((int)(vec.x / v), (int)(vec.y / v));
+	return v ? Vec2i_init2((int)(vec.x / v), (int)(vec.y / v)) : Vec2i_init();
 }
-
+Vec2i Vec2i_normalize(const Vec2i vec)
+{
+	const float l = Vec2i_len(vec);
+	return Vec2i_divV(vec, l);
+}
+Vec2i Vec2i_getLen(const Vec2i vec, float len)
+{
+	const float l = Vec2i_len(vec) / len;
+	return Vec2i_divV(vec, l);
+}
+Vec2i Vec2i_aprox(Vec2i a, Vec2i b, float t)
+{
+	return Vec2i_init2(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+}
 BOOL Vec2i_inside(Vec2i start, Vec2i end, Vec2i test)
 {
 	return	test.x >= start.x && test.y >= start.y &&
@@ -238,6 +260,14 @@ Vec2f Vec2f_init2(double x, double y)
 	p.y = y;
 	return p;
 }
+BOOL Vec2f_is(const Vec2f self)
+{
+	return self.x != 0 && self.y != 0;
+}
+BOOL Vec2f_cmp(Vec2f a, Vec2f b)
+{
+	return a.x == b.x && a.y == b.y;
+}
 Vec2f Vec2f_add(Vec2f p, Vec2f q)
 {
 	p.x += q.x;
@@ -261,6 +291,15 @@ Vec2f Vec2f_mulV(Vec2f p, double t)
 	p.x *= t;
 	p.y *= t;
 	return p;
+}
+Vec2f Vec2f_divV(const Vec2f vec, float v)
+{
+	return v ? Vec2f_init2(vec.x / v, vec.y / v) : Vec2f_init();
+}
+Vec2f Vec2f_normalize(const Vec2f vec)
+{
+	const float l = Vec2f_len(vec);
+	return Vec2f_divV(vec, l);
 }
 Vec2f Vec2f_min(Vec2f a, Vec2f b)
 {
@@ -550,19 +589,52 @@ Vec2f Quad2f_end(const Quad2f self)
 {
 	return Vec2f_add(self.start, self.size);
 }
-
 double Quad2f_getArea(Quad2f q)
 {
 	Vec2f end = Quad2f_end(q);
 	return (end.x - q.start.x) * (end.y - q.start.y);
 }
-
-double Quad2f_getIntersectArea(Quad2f qA, Quad2f qB)
+Quad2f Quad2f_extend(const Quad2f a, const Quad2f b)
 {
-	Vec2f v_start = Vec2f_max(qA.start, qB.start);
-	Vec2f v_end = Vec2f_min(Quad2f_end(qA), Quad2f_end(qB));
+	Vec2f start;
+	start.x = Std_min(a.start.x, b.start.x);
+	start.y = Std_min(a.start.y, b.start.y);
 
-	return (v_end.x - v_start.x) * (v_end.y - v_start.y);
+	Vec2f ae = Quad2f_end(a);
+	Vec2f be = Quad2f_end(b);
+	Vec2f end;
+	end.x = Std_max(ae.x, be.x);
+	end.y = Std_max(ae.y, be.y);
+
+	return Quad2f_init2(start, Vec2f_sub(end, start));
+}
+
+Quad2f Quad2f_extend2(const Quad2f q, const Vec2f v)
+{
+	Vec2f start = q.start;
+	start.x = Std_min(start.x, v.x);
+	start.y = Std_min(start.y, v.y);
+
+	Vec2f end = Quad2f_end(q);
+	end.x = Std_max(end.x, v.x);
+	end.y = Std_max(end.y, v.y);
+
+	return Quad2f_init2(start, Vec2f_sub(end, start));
+}
+BOOL Quad2f_hasCover(const Quad2f a, const Quad2f b)
+{
+	Quad2f q = Quad2f_extend(a, b);
+	return q.size.x < (a.size.x + b.size.x) && q.size.y < (a.size.y + b.size.y);
+}
+Quad2f Quad2f_getIntersect(const Quad2f qA, const Quad2f qB)
+{
+	if (Quad2f_hasCover(qA, qB))
+	{
+		Vec2f v_start = Vec2f_max(qA.start, qB.start);
+		Vec2f v_end = Vec2f_min(Quad2f_end(qA), Quad2f_end(qB));
+		return Quad2f_init2(v_start, Vec2f_sub(v_end, v_start));
+	}
+	return Quad2f_init();
 }
 
 void Quad2f_print(Quad2f q, const char* name)
@@ -599,10 +671,39 @@ Quad2f StdMap_lonLatToTileBbox(Vec2i res, const int tilePx, double lon, double l
 {
 	Vec2f tile = StdMap_getTile(lon, lat, z);
 
-	double xtile_s = (tile.x * tilePx - res.x / 2) / tilePx;
-	double ytile_s = (tile.y * tilePx - res.y / 2) / tilePx;
-	double xtile_e = (tile.x * tilePx + res.x / 2) / tilePx;
-	double ytile_e = (tile.y * tilePx + res.y / 2) / tilePx;
+	int max_res = Os_pow(2, z);
+
+	double xtile_s = Std_dclamp((tile.x * tilePx - res.x / 2) / tilePx, 0, max_res);
+	double ytile_s = Std_dclamp((tile.y * tilePx - res.y / 2) / tilePx, 0, max_res);
+	double xtile_e = Std_dclamp((tile.x * tilePx + res.x / 2) / tilePx, 0, max_res);
+	double ytile_e = Std_dclamp((tile.y * tilePx + res.y / 2) / tilePx, 0, max_res);
 
 	return Quad2f_init4(xtile_s, ytile_s, (xtile_e - xtile_s), (ytile_e - ytile_s));
+}
+
+double Std_timeAprox2(double startTime, double jumpTime)
+{
+	double dt = Os_time() - startTime;
+	double t = dt / jumpTime;
+	t -= (BIG)t;
+
+	if (t < 0.5)
+		return t * 2;	//up
+	else
+		return (1 - t) * 2;	//down
+}
+
+double Std_timeAprox3(double startTime, double jumpTime)
+{
+	double dt = Os_time() - startTime;
+	double t = dt / jumpTime;
+	t -= (BIG)t;
+
+	if (t < 0.33)
+		return t * 3;		//up
+	else
+		if (t < 0.67)
+			return 1;			//stay
+		else
+			return (1 - t) * 3;	//down
 }

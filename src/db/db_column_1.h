@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -63,6 +63,16 @@ double DbColumn1_getLink(const DbColumn1* self, const UBIG r)
 	double row = DbColumn_getItemConst(&self->base, r)->flt;
 	return DbTable_isRowActive(self->btable, row) ? row : -1;
 }
+
+void DbColumn1_getArrayPoses(const DbColumn1* self, UBIG row, StdBigs* out)
+{
+	StdBigs_clear(out);
+
+	BIG r = DbColumn1_getLink(self, row);
+	if (r >= 0)
+		StdBigs_add(out, r);
+}
+
 UBIG DbColumn1_sizeActive(const DbColumn1* self, UBIG r)
 {
 	if (self->btable)
@@ -243,11 +253,11 @@ BIG DbColumn1_search(const DbColumn1* self, double value)
 	return -1;
 }
 
-double DbColumn1_max(DbColumn1* self)
+double DbColumn1_min(DbColumn1* self)
 {
 	DbColumn1* active = DbColumn_getActive(&self->base);
 	const UBIG NUM_ROWS = DbColumn_numRows(&self->base);
-	double maxx = 0;
+	double minV = 0;
 
 	if (NUM_ROWS > 0)
 	{
@@ -258,13 +268,36 @@ double DbColumn1_max(DbColumn1* self)
 			if (DbColumn1_isValid(active, i))
 			{
 				if (first)
-					maxx = DbColumn1_get(self, i), first = FALSE;
+					minV = DbColumn1_get(self, i), first = FALSE;
 				else
-					maxx = Std_dmax(DbColumn1_get(self, i), maxx);
+					minV = Std_dmin(DbColumn1_get(self, i), minV);
 			}
 		}
 	}
-	return maxx;
+	return minV;
+}
+double DbColumn1_max(DbColumn1* self)
+{
+	DbColumn1* active = DbColumn_getActive(&self->base);
+	const UBIG NUM_ROWS = DbColumn_numRows(&self->base);
+	double maxV = 0;
+
+	if (NUM_ROWS > 0)
+	{
+		BOOL first = TRUE;
+		UBIG i;
+		for (i = 0; i < NUM_ROWS; i++)
+		{
+			if (DbColumn1_isValid(active, i))
+			{
+				if (first)
+					maxV = DbColumn1_get(self, i), first = FALSE;
+				else
+					maxV = Std_dmax(DbColumn1_get(self, i), maxV);
+			}
+		}
+	}
+	return maxV;
 }
 
 BOOL DbColumn1_cmpRow(DbColumn1* a, DbColumn1* b, UBIG ai, UBIG bi)
@@ -280,134 +313,60 @@ BOOL DbColumn1_cmp(DbColumn1* a, DbColumn1* b)
 
 void DbColumn1_toString(const DbColumn1* self, DbColumn* dst)
 {
-	volatile StdProgress* progress = DbRoot_getProgress();
-
 	const UBIG NUM_ROWS = DbColumn_numRows(&self->base);
 	UBIG i;
-	for (i = 0; i < NUM_ROWS && progress->running; i++)
+	for (i = 0; i < NUM_ROWS && StdProgress_is(); i++)
 	{
 		TableItems_get(&dst->data, i)->string = Std_newNumber(TableItems_getConst(&self->base.data, i)->flt);
-		DbRoot_getProgress()->done = i / (float)NUM_ROWS;
+		StdProgress_setEx("SHORTING", i, NUM_ROWS);
 	}
 }
 
-//slow, very slow!
-void DbColumn1_shortFlt(const DbColumn1* self, StdBigs* poses, const BIG start, const BIG end, const BOOL ascending)
+int _DbColumn1_cmpFlt(const void* context, const void* a, const void* b)
 {
-	volatile StdProgress* progress = DbRoot_getProgress();
+	const DbColumn1* self = context;
 
-	BIG i, j;
-	for (i = start; i < end && progress->running; i++)
-	{
-		for (j = start; j < end && progress->running; j++)
-			if (DbColumn1_get(self, poses->ptrs[j]) > DbColumn1_get(self, poses->ptrs[i]))
-				StdBigs_swap(poses, i, j);
-
-		progress->done = ((float)i - start) / (end - start);
-	}
-	if (!ascending && i == end && progress->running)
-		StdBigs_reversEx(poses, start, end);
+	double fa = DbColumn1_get(self, *(BIG*)a);
+	double fb = DbColumn1_get(self, *(BIG*)b);
+	return (fa > fb) - (fa < fb);
 }
 
-//Binary Insertion Sort
 void DbColumn1_qshortFlt(const DbColumn1* self, StdBigs* poses, const BIG start, const BIG end, const BOOL ascending)
 {
-	volatile StdProgress* progress = DbRoot_getProgress();
+	Os_qsort(&poses->ptrs[start], end - start, sizeof(BIG), _DbColumn1_cmpFlt, (void*)self);
 
-	BIG i;
-	for (i = start + 1; i < end && progress->running; i++)
-	{
-		BIG lo = start;
-		BIG hi = i;
-		BIG m = start + (i - start) / 2;
-
-		do
-		{
-			if (DbColumn1_get(self, poses->ptrs[i]) > DbColumn1_get(self, poses->ptrs[m]))
-				lo = m + 1;
-			else if (DbColumn1_get(self, poses->ptrs[i]) < DbColumn1_get(self, poses->ptrs[m]))
-				hi = m;
-			else
-				break;
-			m = lo + ((hi - lo) / 2);
-		} while (lo < hi);
-
-		if (m < i)
-			StdBigs_rotate(poses, m, i);
-
-		progress->done = ((float)i - start) / (end - start);
-	}
-
-	if (!ascending && i == end && progress->running)
+	if (!ascending && StdProgress_is())
 		StdBigs_reversEx(poses, start, end);
 }
 
-void DbColumn1_shortFile(const DbColumn1* self, StdBigs* poses, const BIG start, const BIG end, const BOOL ascending, BOOL shortSizes)
+int _DbColumn1_cmpFilesSizes(const void* context, const void* a, const void* b)
 {
-	volatile StdProgress* progress = DbRoot_getProgress();
+	const DbColumn* self = context;
 
-	//slow, very slow!
-	FileHead headI;
-	FileHead headJ;
-	BIG i, j;
-	for (i = start; i < end && progress->running; i++)
-	{
-		headI = DbColumn_fileGetHead(&self->base, poses->ptrs[i], 0);
-		for (j = start; j < end && progress->running; j++)
-		{
-			headJ = DbColumn_fileGetHead(&self->base, poses->ptrs[j], 0);
+	FileHead fa = DbColumn_fileGetHead(self, *(BIG*)a, 0);
+	FileHead fb = DbColumn_fileGetHead(self, *(BIG*)b, 0);
 
-			if ((shortSizes && headJ.size > headI.size) || (!shortSizes && !Std_cmpCHARascending((char*)headJ.ext, (char*)headI.ext)))
-				StdBigs_swap(poses, i, j);
-		}
-	}
+	return (fa.size > fb.size) - (fa.size < fb.size);
+}
+int _DbColumn1_cmpFilesNoSizes(const void* context, const void* a, const void* b)
+{
+	const DbColumn* self = context;
 
-	if (!ascending && i == end && progress->running)
-		StdBigs_reversEx(poses, start, end);
+	FileHead fa = DbColumn_fileGetHead(self, *(BIG*)a, 0);
+	FileHead fb = DbColumn_fileGetHead(self, *(BIG*)b, 0);
+
+	return Std_cmpCHARascending((char*)fa.ext, (char*)fb.ext);
 }
 
-//Binary Insertion Sort
 void DbColumn1_qshortFile(const DbColumn1* self, StdBigs* poses, const BIG start, const BIG end, const BOOL ascending, BOOL shortSizes)
 {
-	volatile StdProgress* progress = DbRoot_getProgress();
-
-	BIG i;
-	for (i = start + 1; i < end && progress->running; i++)
-	{
-		BIG lo = start;
-		BIG hi = i;
-		BIG m = start + (i - start) / 2;
-
-		do
-		{
-			FileHead headI = DbColumn_fileGetHead(&self->base, poses->ptrs[i], 0);
-			FileHead headM = DbColumn_fileGetHead(&self->base, poses->ptrs[m], 0);
-
-			if ((shortSizes && headI.size > headM.size) || (!shortSizes && !Std_cmpCHARascending((char*)headI.ext, (char*)headM.ext)))
-				lo = m + 1;
-			else if ((shortSizes && headI.size < headM.size) || (!shortSizes && Std_cmpCHARascending((char*)headI.ext, (char*)headM.ext)))
-				hi = m;
-			else
-				break;
-			m = lo + ((hi - lo) / 2);
-		} while (lo < hi);
-
-		if (m < i)
-			StdBigs_rotate(poses, m, i);
-
-		progress->done = ((float)i - start) / (end - start);
-	}
-
-	if (!ascending && i == end && progress->running)
-		StdBigs_reversEx(poses, start, end);
-}
-
-void DbColumn1_short(const DbColumn1* self, StdBigs* poses, const BIG start, const BIG end, const BOOL ascending)
-{
-	if (DbColumnFormat_findColumn(&self->base) == DbFormat_FILE_1)
-		DbColumn1_shortFile(self, poses, start, end, ascending, DbColumn_cmpOption(&self->base, "shortSizes", _UNI32("1")));
+	if (shortSizes)
+		Os_qsort(&poses->ptrs[start], end - start, sizeof(BIG), _DbColumn1_cmpFilesSizes, (void*)self);
 	else
-		DbColumn1_shortFlt(self, poses, start, end, ascending);
+		Os_qsort(&poses->ptrs[start], end - start, sizeof(BIG), _DbColumn1_cmpFilesNoSizes, (void*)self);
+
+	if (!ascending && StdProgress_is())
+		StdBigs_reversEx(poses, start, end);
 }
 
 void DbColumn1_qshort(const DbColumn1* self, StdBigs* poses, const BIG start, const BIG end, const BOOL ascending)

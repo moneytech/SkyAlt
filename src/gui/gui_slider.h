@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -60,9 +60,12 @@ GuiItem* GuiItemSlider_newCopy(GuiItemSlider* src, BOOL copySub)
 	*self = *src;
 	GuiItem_initCopy(&self->base, &src->base, copySub);
 
+	self->minValue = DbValue_initCopy(&src->minValue);
+	self->maxValue = DbValue_initCopy(&src->maxValue);
+	self->jumpValue = DbValue_initCopy(&src->jumpValue);
+
 	self->value = DbValue_initCopy(&src->value);
 	self->description = DbValue_initCopy(&src->description);
-
 	self->left = DbValue_initCopy(&src->left);
 	self->right = DbValue_initCopy(&src->right);
 
@@ -137,7 +140,7 @@ void GuiItemSlider_draw(GuiItemSlider* self, Image4* img, Quad2i coord, Win* win
 
 	double t = GuiItemSlider_getValueT(self);
 
-	if (size.x >= size.y)	//horizontal
+	//if (size.x >= size.y)	//horizontal
 	{
 		const int lineH2 = cell * 0.2f;
 		const int lineH3 = cell * 0.3f;
@@ -152,18 +155,19 @@ void GuiItemSlider_draw(GuiItemSlider* self, Image4* img, Quad2i coord, Win* win
 		int r = OsFont_getTextSize(font, DbValue_result(&self->right), textH, 0, &extra_down).x;
 		Image4_drawText(img, Vec2i_add(Vec2i_init2(size.x - r, size.y / 4 * 3), coord.start), FALSE, font, DbValue_result(&self->right), textH, 0, self->base.front_cd);
 
+		const int FAT = 1;
 		//mid-line
-
-		Image4_drawBoxStartEnd(img, Vec2i_add(Vec2i_init2(0, size.y / 2 - 1), coord.start), Vec2i_add(Vec2i_init2(size.x, size.y / 2 + 1), coord.start), self->base.front_cd);
-		Image4_drawBoxStartEnd(img, Vec2i_add(Vec2i_init2(0, size.y / 2 - lineH2), coord.start), Vec2i_add(Vec2i_init2(2, size.y / 2 + lineH2), coord.start), self->base.front_cd);
-		Image4_drawBoxStartEnd(img, Vec2i_add(Vec2i_init2(size.x - 2, size.y / 2 - lineH2), coord.start), Vec2i_add(Vec2i_init2(size.x, size.y / 2 + lineH2), coord.start), self->base.back_cd);
+		Image4_drawBoxStartEnd(img, Vec2i_add(Vec2i_init2(FAT, size.y / 2 - FAT / 2), coord.start), Vec2i_add(Vec2i_init2(size.x - FAT, size.y / 2 + FAT), coord.start), self->base.front_cd);
+		Image4_drawBoxStartEnd(img, Vec2i_add(Vec2i_init2(FAT, size.y / 2 - lineH2), coord.start), Vec2i_add(Vec2i_init2(FAT * 2, size.y / 2 + lineH2), coord.start), self->base.front_cd);
+		Image4_drawBoxStartEnd(img, Vec2i_add(Vec2i_init2(size.x - 2 * FAT, size.y / 2 - lineH2), coord.start), Vec2i_add(Vec2i_init2(size.x - FAT, size.y / 2 + lineH2), coord.start), self->base.front_cd);
 
 		//slider
 		//Image4_drawBoxQuad(img, slider, self->base.front_cd);
 		Image4_drawCircle(img, Quad2i_getMiddle(slider), cell * 0.2f, self->base.front_cd);
 	}
-	else	//vertical
+	//else	//vertical
 	{
+		//...
 	}
 
 	if (self->base.drawTable)
@@ -199,12 +203,14 @@ void GuiItemSlider_touch(GuiItemSlider* self, Quad2i coord, Win* win)
 		BOOL inside = Quad2i_inside(coord, OsWinIO_getTouchPos());
 		BOOL touch = (startTouch && OsWinIO_getTouchNum() >= numClickIn) || active;
 
+		BOOL call = FALSE;
+
 		if (OsWinIO_getTouch_action() == Win_TOUCH_WHEEL && inside && numClickIn == 1)
 		{
 			t -= 0.05f * OsWinIO_getTouch_wheel();	//+- 5%
 			_GuiItemSlider_setValue(self, Std_fclamp(t, 0, 1));
 
-			GuiItem_callClick(&self->base);
+			call = TRUE;
 			OsWinIO_resetTouch();
 		}
 
@@ -216,6 +222,7 @@ void GuiItemSlider_touch(GuiItemSlider* self, Quad2i coord, Win* win)
 			//set
 			t = (OsWinIO_getTouchPos().x - coord.start.x) / (double)coord.size.x;
 			_GuiItemSlider_setValue(self, t);
+			call = TRUE;
 		}
 		else
 			if ((inside && !touch) || (active && !inside))		//mid color
@@ -226,8 +233,11 @@ void GuiItemSlider_touch(GuiItemSlider* self, Quad2i coord, Win* win)
 		if (inside && active && endTouch)	//end
 		{
 			GuiItemEdit_saveCache();
-			GuiItem_callClick(&self->base);
+			call = TRUE;
 		}
+
+		if (call)
+			GuiItem_callClick(&self->base);
 
 		if (endTouch)
 			OsWinIO_resetActiveRenderItem();

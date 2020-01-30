@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -18,7 +18,7 @@ typedef struct MediaImage_s
 	char* url;
 
 	FileHead head;
-	UBIG offset;
+	BIG offset;
 
 	UCHAR* buff;
 
@@ -56,7 +56,7 @@ BIG _MediaImage_read(void* selff, UCHAR* buff, int buff_size)
 		{
 			UBIG n = Std_bmin(buff_size, (self->head.size - self->offset));
 			Os_memcpy(buff, &self->buff[self->offset], n);
-			self->offset += ret;
+			self->offset += n;
 			ret = n;
 		}
 
@@ -102,8 +102,7 @@ MediaImage* MediaImage_newBuffer(const char* url, const char* ext, UCHAR* buff, 
 {
 	FileHead head;
 	head.size = bytes;
-	Os_memcpy(head.ext, ext, Std_min(8, Std_sizeCHAR(ext)));
-
+	Std_copyCHAR((char*)head.ext, 8, ext);
 	MediaImage* self = _MediaImage_new(rectSize, FileRow_initEmpty(), head);
 	if (self)
 	{
@@ -153,7 +152,7 @@ BOOL MediaImage_cook(MediaImage* self)
 		//double t = Os_time();
 
 		char* name = Std_addCHAR(".", (char*)self->head.ext);
-		OSMedia* media = OSMedia_new(&_MediaImage_read, &_MediaImage_seek, self, name);
+		OSMedia* media = OSMedia_newOpen(&_MediaImage_read, &_MediaImage_seek, self, name);
 		Std_deleteCHAR(name);
 
 		if (media)
@@ -163,9 +162,9 @@ BOOL MediaImage_cook(MediaImage* self)
 
 			OSMedia_loadVideo(media, &self->img);
 			self->info = _MediaImage_getInfo(self, *OSMedia_getOrigSize(media));
-		}
 
-		OSMedia_delete(media);
+			OSMedia_delete(media);
+		}
 
 		self->loaded = TRUE;
 		self->loadedNotice = TRUE;

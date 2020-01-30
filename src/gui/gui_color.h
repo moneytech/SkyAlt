@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -96,17 +96,17 @@ static void _GuiItemColor_updateEdits(GuiItemColor* self)
 	if (r && g && b && h && s && l && hex)
 	{
 		//update edit-boxes
-		GuiItemEdit_setNumber(r, rgba.r);
-		GuiItemEdit_setNumber(g, rgba.g);
-		GuiItemEdit_setNumber(b, rgba.b);
+		GuiItemEdit_setNumber(r, Rgba_r(rgba));
+		GuiItemEdit_setNumber(g, Rgba_g(rgba));
+		GuiItemEdit_setNumber(b, Rgba_b(rgba));
 
 		GuiItemEdit_setNumber(h, hV);
 		GuiItemEdit_setNumber(s, sV);
 		GuiItemEdit_setNumber(l, lV);
 
-		GuiItemSlider_setNumber(r2, rgba.r);
-		GuiItemSlider_setNumber(g2, rgba.g);
-		GuiItemSlider_setNumber(b2, rgba.b);
+		GuiItemSlider_setNumber(r2, Rgba_r(rgba));
+		GuiItemSlider_setNumber(g2, Rgba_g(rgba));
+		GuiItemSlider_setNumber(b2, Rgba_b(rgba));
 
 		GuiItemSlider_setNumber(h2, hV);
 		GuiItemSlider_setNumber(s2, sV);
@@ -138,9 +138,7 @@ void GuiItemColor_clickEditedHsl(GuiItem* self)
 	GuiItemEdit* l = GuiItem_findName(self, "l");
 	if (color && h && s && l)
 	{
-		Rgba cd = Rgba_initHSL(GuiItemEdit_getNumber(h), GuiItemEdit_getNumber(s), GuiItemEdit_getNumber(l));
-
-		_GuiItemColor_setValue(color, cd);
+		_GuiItemColor_setValue(color, Rgba_initHSL(GuiItemEdit_getNumber(h), GuiItemEdit_getNumber(s), GuiItemEdit_getNumber(l)));
 		GuiItem_setRedraw(&color->base, TRUE);
 	}
 }
@@ -227,12 +225,36 @@ void GuiItemColor_draw(GuiItemColor* self, Image4* img, Quad2i coord, Win* win)
 		Image4_drawBoxQuad(img, Quad2i_init4(hueCoord.start.x + i - 1, hueCoord.start.y, 2, hueCoord.size.y), Rgba_initBlack());
 	}
 	else
-		Image4_drawBoxQuad(img, Quad2i_addSpace(coord, 2), cd);
+	{
+		BOOL disable = !GuiItem_isEnable(&self->base);
+
+		coord = Quad2i_addSpace(coord, 2);
+		//if(disable)
+		//	cd = Rgba_multV(cd, 0.5f);
+
+		Image4_drawBoxQuad(img, coord, cd);
+
+		if (disable)
+		{
+			const int cell = OsWinIO_cellSize();
+			Rgba cd = Rgba_initGrey();
+
+			Quad2i q = Quad2i_initMid(Quad2i_getMiddle(coord), Vec2i_init2(cell / 2, cell / 2));
+			//Quad2i q = Quad2i_addSpace(coord, 6);
+			Vec2i qend = Quad2i_end(q);
+
+			Image4_drawLine(img, q.start, qend, 2, cd);
+			Image4_drawLine(img, Vec2i_init2(q.start.x, qend.y), Vec2i_init2(qend.x, q.start.y), 2, cd);
+
+			Image4_drawBorder(img, coord, 1, cd);
+		}
+	}
 }
 
 void GuiItemColor_update(GuiItemColor* self, Quad2i coord, Win* win)
 {
-	GuiItem_setRedraw(&self->base, DbValue_hasChanged(&self->value));
+	BOOL changed = DbValue_hasChanged(&self->value);
+	GuiItem_setRedraw(&self->base, changed);
 }
 
 void GuiItemColor_touch(GuiItemColor* self, Quad2i coord, Win* win)
@@ -260,7 +282,7 @@ void GuiItemColor_touch(GuiItemColor* self, Quad2i coord, Win* win)
 			if (self->pickuper)
 			{
 				int hue = (OsWinIO_getTouchPos().x - coord.start.x) * 360 / coord.size.x;
-				_GuiItemColor_setValue(self, Rgba_initHSL(hue, 0.9f, 0.6f));
+				_GuiItemColor_setValue(self, Rgba_initHSL(hue, 0.8f, 0.6f));
 			}
 		}
 		else
@@ -278,10 +300,10 @@ void GuiItemColor_touch(GuiItemColor* self, Quad2i coord, Win* win)
 				//layout
 				GuiItemLayout* layout = GuiItemLayout_new(Quad2i_init4(0, 0, 1, 1));
 				GuiItemLayout_addColumn(layout, 0, 20);
-				GuiItemLayout_addRow(layout, 0, 12);
+				GuiItemLayout_addRow(layout, 0, 13);
 				GuiItem_addSubName((GuiItem*)layout, "color", (GuiItem*)GuiItemColor_new(Quad2i_init4(0, 0, 1, 1), DbValue_initCopy(&self->value), TRUE));
 
-				GuiItemRoot_addDialogRelLayout(layout, &self->base, self->base.coordMove, TRUE);
+				GuiItemRoot_addDialogRelLayout(layout, &self->base, self->base.coordMove, FALSE);
 				//GuiItem_addSub(&self->base, GuiItemLevel_new(TRUE, FALSE, (GuiItem*)layout));
 			}
 		}
@@ -291,10 +313,23 @@ void GuiItemColor_touch(GuiItemColor* self, Quad2i coord, Win* win)
 
 		//cursor
 		if (inside)
-			Win_updateCursor(win, self->pickuper ? Win_CURSOR_FLEUR : Win_CURSOR_HAND);
+			Win_updateCursor(win, self->pickuper ? Win_CURSOR_COL_RESIZE : Win_CURSOR_HAND);
 	}
 
 	_GuiItem_updateFinalCd(&self->base, back_cd, front_cd, coord, win);
+}
+
+BOOL GuiItemColor_enableFromLightness(GuiItem* item)
+{
+	GuiItemSlider* l2 = GuiItem_findName(item, "l2");
+	return GuiItemSlider_getValueT(l2) > 0;
+}
+void GuiItemColor_clickPrebuildColor(GuiItem* item)
+{
+	GuiItemColor* color = GuiItem_findParentType(item, GuiItem_COLOR);
+	_GuiItemColor_setValue(color, ((GuiItemButton*)item)->back_cd);
+
+	GuiItem_setRedraw(&color->base, TRUE);
 }
 
 GuiItemLayout* GuiItemColor_resize(GuiItemColor* self, GuiItemLayout* layout, Win* win)
@@ -318,34 +353,53 @@ GuiItemLayout* GuiItemColor_resize(GuiItemColor* self, GuiItemLayout* layout, Wi
 
 		GuiItem_addSubName(&self->base, "layout_main", &layout->base);
 
-		GuiItem_addSubName((GuiItem*)layout, "h", GuiItemEdit_newEx(Quad2i_init4(0, 2, 1, 2), DbValue_initEmpty(), DbValue_initLang("HUE"), &GuiItemColor_clickEditedHsl));
-		GuiItem_addSubName((GuiItem*)layout, "s", GuiItemEdit_newEx(Quad2i_init4(0, 4, 1, 2), DbValue_initEmpty(), DbValue_initLang("SATURATION"), &GuiItemColor_clickEditedHsl));
-		GuiItem_addSubName((GuiItem*)layout, "l", GuiItemEdit_newEx(Quad2i_init4(0, 6, 1, 2), DbValue_initEmpty(), DbValue_initLang("LIGHTNESS"), &GuiItemColor_clickEditedHsl));
+		GuiItem_addSubName((GuiItem*)layout, "r", GuiItemEdit_newEx(Quad2i_init4(0, 2, 1, 2), DbValue_initEmpty(), DbValue_initLang("RED"), &GuiItemColor_clickEditedRgb));
+		GuiItem_addSubName((GuiItem*)layout, "g", GuiItemEdit_newEx(Quad2i_init4(0, 4, 1, 2), DbValue_initEmpty(), DbValue_initLang("GREEN"), &GuiItemColor_clickEditedRgb));
+		GuiItem_addSubName((GuiItem*)layout, "b", GuiItemEdit_newEx(Quad2i_init4(0, 6, 1, 2), DbValue_initEmpty(), DbValue_initLang("BLUE"), &GuiItemColor_clickEditedRgb));
 
-		GuiItem_addSubName((GuiItem*)layout, "r", GuiItemEdit_newEx(Quad2i_init4(2, 2, 1, 2), DbValue_initEmpty(), DbValue_initLang("RED"), &GuiItemColor_clickEditedRgb));
-		GuiItem_addSubName((GuiItem*)layout, "g", GuiItemEdit_newEx(Quad2i_init4(2, 4, 1, 2), DbValue_initEmpty(), DbValue_initLang("GREEN"), &GuiItemColor_clickEditedRgb));
-		GuiItem_addSubName((GuiItem*)layout, "b", GuiItemEdit_newEx(Quad2i_init4(2, 6, 1, 2), DbValue_initEmpty(), DbValue_initLang("BLUE"), &GuiItemColor_clickEditedRgb));
+		GuiItem_addSubName((GuiItem*)layout, "h", GuiItemEdit_newEx(Quad2i_init4(2, 2, 1, 2), DbValue_initEmpty(), DbValue_initLang("HUE"), &GuiItemColor_clickEditedHsl));
+		GuiItem_addSubName((GuiItem*)layout, "s", GuiItemEdit_newEx(Quad2i_init4(2, 4, 1, 2), DbValue_initEmpty(), DbValue_initLang("SATURATION"), &GuiItemColor_clickEditedHsl));
+		GuiItem_addSubName((GuiItem*)layout, "l", GuiItemEdit_newEx(Quad2i_init4(2, 6, 1, 2), DbValue_initEmpty(), DbValue_initLang("LIGHTNESS"), &GuiItemColor_clickEditedHsl));
 
-		GuiItem_addSubName((GuiItem*)layout, "h2", GuiItemSlider_newEx(Quad2i_init4(1, 2, 1, 2), DbValue_initNumber(0), DbValue_initNumber(360), DbValue_initNumber(1), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), &GuiItemColor_clickEditedHsl2));
-		GuiItem_addSubName((GuiItem*)layout, "s2", GuiItemSlider_newEx(Quad2i_init4(1, 4, 1, 2), DbValue_initNumber(0), DbValue_initNumber(1), DbValue_initNumber(0.01), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), &GuiItemColor_clickEditedHsl2));
-		GuiItem_addSubName((GuiItem*)layout, "l2", GuiItemSlider_newEx(Quad2i_init4(1, 6, 1, 2), DbValue_initNumber(0), DbValue_initNumber(1), DbValue_initNumber(0.01), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), &GuiItemColor_clickEditedHsl2));
+		GuiItem_addSubName((GuiItem*)layout, "r2", GuiItemSlider_newEx(Quad2i_init4(1, 2, 1, 2), DbValue_initNumber(0), DbValue_initNumber(255), DbValue_initNumber(1), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), &GuiItemColor_clickEditedRgb2));
+		GuiItem_addSubName((GuiItem*)layout, "g2", GuiItemSlider_newEx(Quad2i_init4(1, 4, 1, 2), DbValue_initNumber(0), DbValue_initNumber(255), DbValue_initNumber(1), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), &GuiItemColor_clickEditedRgb2));
+		GuiItem_addSubName((GuiItem*)layout, "b2", GuiItemSlider_newEx(Quad2i_init4(1, 6, 1, 2), DbValue_initNumber(0), DbValue_initNumber(255), DbValue_initNumber(1), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), &GuiItemColor_clickEditedRgb2));
 
-		GuiItem_addSubName((GuiItem*)layout, "r2", GuiItemSlider_newEx(Quad2i_init4(3, 2, 1, 2), DbValue_initNumber(0), DbValue_initNumber(255), DbValue_initNumber(1), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), &GuiItemColor_clickEditedRgb2));
-		GuiItem_addSubName((GuiItem*)layout, "g2", GuiItemSlider_newEx(Quad2i_init4(3, 4, 1, 2), DbValue_initNumber(0), DbValue_initNumber(255), DbValue_initNumber(1), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), &GuiItemColor_clickEditedRgb2));
-		GuiItem_addSubName((GuiItem*)layout, "b2", GuiItemSlider_newEx(Quad2i_init4(3, 6, 1, 2), DbValue_initNumber(0), DbValue_initNumber(255), DbValue_initNumber(1), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), &GuiItemColor_clickEditedRgb2));
+		GuiItem* h2 = GuiItem_addSubName((GuiItem*)layout, "h2", GuiItemSlider_newEx(Quad2i_init4(3, 2, 1, 2), DbValue_initNumber(0), DbValue_initNumber(360), DbValue_initNumber(1), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), &GuiItemColor_clickEditedHsl2));
+		GuiItem* s2 = GuiItem_addSubName((GuiItem*)layout, "s2", GuiItemSlider_newEx(Quad2i_init4(3, 4, 1, 2), DbValue_initNumber(0), DbValue_initNumber(1), DbValue_initNumber(0.01), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), &GuiItemColor_clickEditedHsl2));
+		GuiItem_addSubName((GuiItem*)layout, "l2", GuiItemSlider_newEx(Quad2i_init4(3, 6, 1, 2), DbValue_initNumber(0), DbValue_initNumber(1), DbValue_initNumber(0.01), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initEmpty(), &GuiItemColor_clickEditedHsl2));
+		GuiItem_setEnableCallback(h2, &GuiItemColor_enableFromLightness);
+		GuiItem_setEnableCallback(s2, &GuiItemColor_enableFromLightness);
+
+		//hex
+		GuiItem_addSubName((GuiItem*)layout, "hex", GuiItemEdit_newEx(Quad2i_init4(0, 8, 4, 2), DbValue_initEmpty(), DbValue_initLang("HEX_COLOR"), &GuiItemColor_clickEditedHex));
 
 		//pre-build colors
-		/*const int N_COLORS = 9;
-		int i = 0;
-		int x, y;
-		for(y=0; y < 3; y++)
-		for(x=0; x < 3; x++)
 		{
-			Rgba cd = Rgba_initHSL(360/(N_COLORS-1) * i++, 0.9f, 0.6f);
-			GuiItem_addSub((GuiItem*) layout, GuiItemButton_newCdEx(Quad2i_init4(x, yg+y, 1, 1), cd, &GuiItemColor_clickPrebuildColor));
-		}*/
+			GuiItemLayout* preLay = GuiItemLayout_new(Quad2i_init4(0, 12, 4, 1));
+			GuiItem_addSubName(&layout->base, "preLay", &preLay->base);
 
-		GuiItem_addSubName((GuiItem*)layout, "hex", GuiItemEdit_newEx(Quad2i_init4(0, 8, 4, 2), DbValue_initEmpty(), DbValue_initLang("HEX_COLOR"), &GuiItemColor_clickEditedHex));
+			char nameId[64];
+
+			int pos = 0;
+			GuiItem_addSubName((GuiItem*)preLay, Std_buildNumber(0, 0, nameId), GuiItemButton_newCd(Quad2i_init4(pos++, 0, 1, 1), Rgba_initBlack(), &GuiItemColor_clickPrebuildColor));
+			GuiItem_addSubName((GuiItem*)preLay, Std_buildNumber(0, 0, nameId), GuiItemButton_newCd(Quad2i_init4(pos++, 0, 1, 1), Rgba_initWhite(), &GuiItemColor_clickPrebuildColor));
+			GuiItem_addSubName((GuiItem*)preLay, Std_buildNumber(0, 0, nameId), GuiItemButton_newCd(Quad2i_init4(pos++, 0, 1, 1), Rgba_initGreyLight(), &GuiItemColor_clickPrebuildColor));
+			GuiItem_addSubName((GuiItem*)preLay, Std_buildNumber(0, 0, nameId), GuiItemButton_newCd(Quad2i_init4(pos++, 0, 1, 1), Rgba_initGrey(), &GuiItemColor_clickPrebuildColor));
+			GuiItem_addSubName((GuiItem*)preLay, Std_buildNumber(0, 0, nameId), GuiItemButton_newCd(Quad2i_init4(pos++, 0, 1, 1), Rgba_initGreyDark(), &GuiItemColor_clickPrebuildColor));
+
+			const int N_COLORS = 8;
+			int i = 0;
+			for (i = 0; i < N_COLORS; i++)
+			{
+				Rgba cd = Rgba_initHSL(360 / N_COLORS * i, 0.7f, 0.5f);
+				GuiItem_addSubName((GuiItem*)preLay, Std_buildNumber(pos, 0, nameId), GuiItemButton_newCd(Quad2i_init4(pos, 0, 1, 1), cd, &GuiItemColor_clickPrebuildColor));
+				pos++;
+			}
+
+			for (i = 0; i < pos; i++)
+				GuiItemLayout_addColumn(preLay, i, 2);
+		}
 
 		_GuiItemColor_updateEdits(self);
 	}

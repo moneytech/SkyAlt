@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -73,7 +73,7 @@
 #include <alsa/asoundlib.h>
 #include <gtk/gtk.h>
 #elif __APPLE__
-//...
+ //...
 #endif
 
 #include <libavformat/avformat.h>
@@ -88,7 +88,8 @@
 #include <sql.h>
 #include <sqlext.h>
 #elif __linux__
-	//...
+#include <sql.h>
+#include <sqlext.h>
 #elif __APPLE__
 	//...
 #endif
@@ -108,15 +109,4 @@
 #define SOCKET_ERROR -1
 #define SOCKET int
 #define SOCKADDR_IN struct sockaddr_in
-#endif
-
-#ifdef _WIN32
-	//maybe will not work ...
-#define STD_DROP_FILE_HEADER _UNI32("file:///")
-#define STD_DROP_FILE_HEADER_CHAR "file:///"
-#elif __linux__
-#define STD_DROP_FILE_HEADER _UNI32("file://")
-#define STD_DROP_FILE_HEADER_CHAR "file://"
-#elif __APPLE__
-
 #endif

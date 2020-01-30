@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -47,6 +47,13 @@ void DbColumns_clear(DbColumns* self)
 	UBIG i;
 	for (i = 0; i < DbColumns_num(self); i++)
 		DbColumn_clear(DbColumns_get(self, i));
+}
+
+void DbColumns_freeFilterAndInsight(DbColumns* self)
+{
+	UBIG i;
+	for (i = 0; i < DbColumns_num(self); i++)
+		DbColumn_freeFilterAndInsight(DbColumns_get(self, i));
 }
 
 void DbColumns_delete(DbColumns* self)
@@ -92,8 +99,9 @@ DbColumn* DbColumns_findName(const DbColumns* self, const UNI* name)
 	UBIG i;
 	for (i = 0; i < DbColumns_num(self); i++)
 	{
-		if (DbRoot_cmpName(DbColumns_getRow(self), name))
-			return DbColumns_get(self, i);
+		DbColumn* column = DbColumns_get(self, i);
+		if (DbRoot_cmpName(DbColumn_getRow(column), name))
+			return column;
 	}
 	return 0;
 }
@@ -126,6 +134,26 @@ DbColumn* DbColumns_find(const DbColumns* self, FileRow fileId)
 {
 	BIG i = DbColumns_findPos(self, fileId);
 	return(i >= 0 ? DbColumns_get(self, i) : 0);
+}
+
+DbColumn* DbColumns_findEx(const DbColumns* self, FileRow fileId, FileRow fileId_summary)
+{
+	if (!FileRow_is(fileId))
+		return 0;
+
+	UBIG i;
+	for (i = 0; i < DbColumns_num(self); i++)
+	{
+		DbColumn* c = DbColumns_get(self, i);
+
+		if (FileRow_cmp(c->fileId, fileId))
+			return c;
+
+		if (c->summary_origColumn && FileRow_cmp(c->summary_origColumn->fileId, fileId_summary))
+			return c;
+	}
+
+	return 0;
 }
 
 BIG DbColumns_findNamePos(const DbColumns* self, const UNI* name)
@@ -231,11 +259,27 @@ UBIG DbColumns_bytes(DbColumns* self)
 	return sum;
 }
 
-void DbColumns_reset_save(DbColumns* self)
+void DbColumns_reset_save(DbColumns* self, BOOL avoidRemote)
 {
 	UBIG i;
 	for (i = 0; i < DbColumns_num(self); i++)
-		DbColumn_reset_save(DbColumns_get(self, i));
+	{
+		DbColumn* column = DbColumns_get(self, i);
+		if (!avoidRemote || !column->remote)
+			DbColumn_reset_save(column);
+	}
+}
+
+DbColumn* DbColumns_findColumnFromBase(DbColumns* self, DbColumn* base)
+{
+	UBIG i;
+	for (i = 0; i < DbColumns_num(self); i++)
+	{
+		DbColumn* column = DbColumns_get(self, i);
+		if (DbColumn_findColumnBase(column) == base)
+			return column;
+	}
+	return 0;
 }
 
 void DbColumns_deleteRowData(DbColumns* self, const UBIG r)
@@ -276,27 +320,35 @@ DbColumn* DbColumns_findOrAddUnloadType(DbColumns* self, FileRow fileId, DbColum
 	return column;
 }
 
+BOOL DbColumn_copyRowEx(DbColumn* dst, const DbColumn* src, BIG dstRow, BIG srcRow)
+{
+	if (dst->type != src->type)
+		return FALSE;
+
+	switch (dst->type)
+	{
+		case DbColumn_1:
+		DbColumn1_copyRow((DbColumn1*)dst, dstRow, (DbColumn1*)src, srcRow);
+		break;
+
+		case DbColumn_N:
+		DbColumnN_copyRow((DbColumnN*)dst, dstRow, (DbColumnN*)src, srcRow);
+		break;
+
+		case DbColumn_STRING_32:
+		DbColumnString32_copyRow((DbColumnString32*)dst, dstRow, (DbColumnString32*)src, srcRow);
+		break;
+	}
+	return TRUE;
+}
+
 void DbColumns_copyRow(DbColumns* self, UBIG dstRow, UBIG srcRow)
 {
 	int i;
 	for (i = 1; i < DbColumns_num(self); i++)	//first column is 'id', which is not copied
 	{
 		DbColumn* c = DbColumns_get(self, i);
-
-		switch (c->type)
-		{
-			case DbColumn_1:
-			DbColumn1_copyRow((DbColumn1*)c, dstRow, (DbColumn1*)c, srcRow);
-			break;
-
-			case DbColumn_N:
-			DbColumnN_copyRow((DbColumnN*)c, dstRow, (DbColumnN*)c, srcRow);
-			break;
-
-			case DbColumn_STRING_32:
-			DbColumnString32_copyRow((DbColumnString32*)c, dstRow, (DbColumnString32*)c, srcRow);
-			break;
-		}
+		DbColumn_copyRowEx(c, c, dstRow, srcRow);
 	}
 }
 
@@ -345,6 +397,13 @@ DbColumn* DbColumns_getFirstColumn(DbColumns* self)
 
 void DbColumn_save(DbColumn* self, const double date, UBIG* doneCells, const UBIG numAllCells)
 {
+	if (self->remote && !DbTable_isRemoteSaveItIntoFile(self->parent->parent))	//don't save remote
+		return;
+
+	DbFormatTYPE type = DbColumnFormat_findColumn(self);
+	if (type == DbFormat_SUMMARY || type == DbFormat_LINK_MIRRORED || type == DbFormat_LINK_FILTERED || type == DbFormat_LINK_JOINTED)
+		return;
+
 	const DbColumn1* colRows = DbColumn_getActive(self);
 	const UBIG num_rows = DbColumn_numRows(self);
 
@@ -352,6 +411,11 @@ void DbColumn_save(DbColumn* self, const double date, UBIG* doneCells, const UBI
 	{
 		*doneCells += num_rows;
 		return;
+	}
+
+	if (self->remote)
+	{
+		//save back to Remote source(MySQL, etc.) ...
 	}
 
 	BIG i;
@@ -371,8 +435,6 @@ void DbColumn_save(DbColumn* self, const double date, UBIG* doneCells, const UBI
 
 		FileFile_writeItemHeader(file, date, num_changed);
 
-		volatile StdProgress* progress = DbRoot_getProgress();
-
 		double* convertArray = 0;
 		BIG convertArray_maxBytes = 0;
 
@@ -380,7 +442,7 @@ void DbColumn_save(DbColumn* self, const double date, UBIG* doneCells, const UBI
 		{
 			case DbColumn_1:
 			{
-				for (i = 0; i < num_rows && DbRoot_getProgress()->running; i++)
+				for (i = 0; i < num_rows && StdProgress_is(); i++)
 				{
 					if (DbColumn_isChange(self, i))
 					{
@@ -388,14 +450,14 @@ void DbColumn_save(DbColumn* self, const double date, UBIG* doneCells, const UBI
 						FileFile_writeItem_1(file, DbColumn1_getFileId(colRows, i), v);
 					}
 
-					progress->done = (*doneCells)++ / (float)numAllCells;
+					StdProgress_setEx("SAVING", (*doneCells)++, numAllCells);
 				}
 				break;
 			}
 
 			case DbColumn_N:
 			{
-				for (i = 0; i < num_rows && DbRoot_getProgress()->running; i++)
+				for (i = 0; i < num_rows && StdProgress_is(); i++)
 				{
 					if (DbColumn_isChange(self, i))
 					{
@@ -408,19 +470,19 @@ void DbColumn_save(DbColumn* self, const double date, UBIG* doneCells, const UBI
 						FileFile_writeItem_n(file, DbColumn1_getFileId(colRows, i), arr);
 					}
 
-					progress->done = (*doneCells)++ / (float)numAllCells;
+					StdProgress_setEx("SAVING", (*doneCells)++, numAllCells);
 				}
 				break;
 			}
 
 			case DbColumn_STRING_32:
 			{
-				for (i = 0; i < num_rows && DbRoot_getProgress()->running; i++)
+				for (i = 0; i < num_rows && StdProgress_is(); i++)
 				{
 					if (DbColumn_isChange(self, i))
 						FileFile_writeItemText_32(file, DbColumn1_getFileId(colRows, i), DbColumnString32_get((DbColumnString32*)self, i));
 
-					progress->done = (*doneCells)++ / (float)numAllCells;
+					StdProgress_setEx("SAVING", (*doneCells)++, numAllCells);
 				}
 				break;
 			}
@@ -464,17 +526,23 @@ static BOOL _DbColumn_loadRow(DbColumn* self, StdBIndex* index, FileRow row, BIG
 	return valid;
 }
 
-void DbColumn_load(DbColumn* self, const double currDate, UBIG* filesDone, const UBIG filesSizes)
+void DbColumn_load(DbColumn* self, const double currDate, UBIG* filesDone, const UBIG filesSizes, OsODBC* odbc)
 {
+	DbFormatTYPE type = DbColumnFormat_findColumn(self);
+	if (type == DbFormat_SUMMARY || type == DbFormat_LINK_MIRRORED || type == DbFormat_LINK_FILTERED || type == DbFormat_LINK_JOINTED)
+	{
+		self->loaded = TRUE;
+		return;
+	}
+
 	if (self->loaded)
 		return;
 
-	volatile StdProgress* progress = DbRoot_getProgress();
 	DbTable* table = DbColumn_getTable(self);
-
 	const DbColumn1* colRows = DbColumn_getActive(self);
-	StdBIndex* index = DbColumn1_createIndex(colRows);
+	StdBIndex* index = DbColumn1_createIndex(colRows);		//slow: why I do this for every column? ...
 
+	//load
 	StdArr files = FileProject_openColumns(self->fileId, FALSE);
 
 	double* fileDates = Os_calloc(files.num, sizeof(double));
@@ -484,7 +552,7 @@ void DbColumn_load(DbColumn* self, const double currDate, UBIG* filesDone, const
 	for (i = 0; i < files.num; i++)
 		FileFile_readItemHeader(files.ptrs[i], &fileDates[i], &fileNumItems[i]);
 
-	while (files.num && DbRoot_getProgress()->running)
+	while (files.num && StdProgress_is())
 	{
 		BIG file_i = -1;
 
@@ -510,7 +578,7 @@ void DbColumn_load(DbColumn* self, const double currDate, UBIG* filesDone, const
 		{
 			case DbColumn_1:
 			{
-				for (i = 0; i < fileNumItems[file_i] && DbRoot_getProgress()->running; i++)
+				for (i = 0; i < fileNumItems[file_i] && StdProgress_is(); i++)
 				{
 					double number;
 					FileFile_readItem_1(files.ptrs[file_i], &row, &number);
@@ -523,7 +591,7 @@ void DbColumn_load(DbColumn* self, const double currDate, UBIG* filesDone, const
 						if (DbColumn1_getBTable((DbColumn1*)self))
 							((DbColumn1*)self)->isConverted = FALSE;
 					}
-					progress->done = (*filesDone += 16) / (float)filesSizes;
+					StdProgress_setEx("LOADING", (*filesDone += 16), filesSizes);
 				}
 
 				break;
@@ -531,13 +599,14 @@ void DbColumn_load(DbColumn* self, const double currDate, UBIG* filesDone, const
 
 			case DbColumn_N:
 			{
-				for (i = 0; i < fileNumItems[file_i] && DbRoot_getProgress()->running; i++)
+				for (i = 0; i < fileNumItems[file_i] && StdProgress_is(); i++)
 				{
 					double* numbers;
 					FileFile_readItem_n(files.ptrs[file_i], &row, &numbers);
 					DbTable_setMaxRow(table, row);
 
-					if (_DbColumn_loadRow(self, index, row, &r))
+					BOOL use = _DbColumn_loadRow(self, index, row, &r);
+					if (use)
 					{
 						DbColumnN_setArray((DbColumnN*)self, r, numbers);
 
@@ -545,7 +614,10 @@ void DbColumn_load(DbColumn* self, const double currDate, UBIG* filesDone, const
 							((DbColumnN*)self)->isConverted = FALSE;
 					}
 
-					progress->done = (*filesDone += 16 + DbColumnN_array_bytes(numbers)) / (float)filesSizes;
+					StdProgress_setEx("LOADING", (*filesDone += 16 + DbColumnN_array_bytes(numbers)), filesSizes);
+
+					if (!use)
+						DbColumnN_array_resize(&numbers, 0);	//free
 				}
 
 				break;
@@ -553,16 +625,20 @@ void DbColumn_load(DbColumn* self, const double currDate, UBIG* filesDone, const
 
 			case DbColumn_STRING_32:
 			{
-				for (i = 0; i < fileNumItems[file_i] && DbRoot_getProgress()->running; i++)
+				for (i = 0; i < fileNumItems[file_i] && StdProgress_is(); i++)
 				{
 					UNI* text;
 					FileFile_readItemText_32(files.ptrs[file_i], &row, &text);
 					DbTable_setMaxRow(table, row);
 
-					if (_DbColumn_loadRow(self, index, row, &r))
+					BOOL use = _DbColumn_loadRow(self, index, row, &r);
+					if (use)
 						DbColumnString32_setEqFree((DbColumnString32*)self, r, text);
 
-					progress->done = (*filesDone += 16 + Std_bytesUNI(text)) / (float)filesSizes;	//not accurate
+					StdProgress_setEx("LOADING", (*filesDone += 16 + Std_bytesUNI(text)), filesSizes);	//not accurate
+
+					if (!use)
+						Std_deleteUNI(text);
 				}
 				break;
 			}
@@ -576,14 +652,122 @@ void DbColumn_load(DbColumn* self, const double currDate, UBIG* filesDone, const
 		*filesDone += 16;
 	}
 
-	self->loaded = TRUE;
-
 	Os_free(fileDates, files.num * sizeof(double));
 	Os_free(fileNumItems, files.num * sizeof(UBIG));
 
-	StdBIndex_delete(index);
-
 	StdArr_freeFn(&files, (StdArrFREE)&FileFile_delete);
+
+	if (self->remote)
+	{
+		DbColumn_reset_save(self);
+
+		if (odbc)
+		{
+			OsODBCQuery* q = 0;
+			{
+				UNI tableName[64];
+				UNI columnName[64];
+				DbTable_getName(table, tableName, 64);
+				DbColumn_getName(self, columnName, 64);
+
+				StdArr primaryColumnNames;
+				primaryColumnNames.num = OsODBC_getPrimaryColumnList(odbc, tableName, (UNI***)&primaryColumnNames.ptrs);
+
+				UNI* str = Std_newUNI_char("SELECT ");
+				str = Std_addAfterUNI(str, primaryColumnNames.num ? (UNI*)primaryColumnNames.ptrs[0] : 0);
+				str = Std_addAfterUNI_char(str, ", ");
+				str = Std_addAfterUNI(str, columnName);
+				str = Std_addAfterUNI_char(str, " FROM ");
+				str = Std_addAfterUNI(str, tableName);
+
+				StdArr_freeFn(&primaryColumnNames, (StdArrFREE)&Std_deleteUNI);
+
+				char* query = Std_newCHAR_uni(str);
+				Std_deleteUNI(str);
+				q = OsODBC_createQuery(odbc, query);
+				Std_deleteCHAR(query);
+			}
+
+			if (q)
+			{
+				double id = 0;
+				//BIG idLen = 0;
+				double number = 0;
+				//BIG numberLen = 0;
+				char* string = Std_newCHAR_N(1024);
+				//BIG stringLen = 0;
+
+				OsODBCQuery_addColumnDouble(q, 1, &id);//, &idLen);
+
+				OsODBCType remoteType = DbColumn_getRemoteType(self);
+
+				if (remoteType == OsODBC_NUMBER)
+					OsODBCQuery_addColumnDouble(q, 2, &number);// , & numberLen);
+				else
+					if (remoteType == OsODBC_STRING)
+						OsODBCQuery_addColumnString(q, 2, string, 1024);//, &stringLen);
+
+				OsODBCQuery_execute(q);
+
+				const UBIG count = OsODBCQuery_count(q);
+				UBIG cc = 0;
+
+				//loop
+				if (remoteType == OsODBC_NUMBER)
+				{
+					DbTable* btable = DbColumn_getBTable(self);
+					if (btable)
+					{
+						while (OsODBCQuery_fetch(q) && StdProgress_is())
+						{
+							BIG r = 0;
+							if (_DbColumn_loadRow(self, index, FileRow_init(id), &r))
+								DbColumn1_setFileId((DbColumn1*)self, r, FileRow_init(number));
+
+							if (DbColumn1_getBTable((DbColumn1*)self))
+								((DbColumn1*)self)->isConverted = FALSE;
+
+							StdProgress_setEx("LOADING", cc++, count);
+						}
+					}
+					else
+					{
+						while (OsODBCQuery_fetch(q) && StdProgress_is())
+						{
+							BIG r = 0;
+							if (_DbColumn_loadRow(self, index, FileRow_init(id), &r))
+								DbColumn1_set((DbColumn1*)self, r, number);
+
+							StdProgress_setEx("LOADING", cc++, count);
+						}
+					}
+				}
+				else
+					if (remoteType == OsODBC_STRING)
+					{
+						while (OsODBCQuery_fetch(q) && StdProgress_is())
+						{
+							BIG r = 0;
+							if (_DbColumn_loadRow(self, index, FileRow_init(id), &r))
+								DbColumnString32_setEqFree((DbColumnString32*)self, r, Std_newUNI_char(string));
+
+							StdProgress_setEx("LOADING", cc++, count);
+						}
+					}
+					else
+						if (remoteType == OsODBC_DATE)
+						{
+							//...
+						}
+
+				Std_deleteCHAR(string);
+				OsODBCQuery_delete(q);
+			}
+		}
+	}
+
+	StdBIndex_delete(index);
+	self->loaded = TRUE;
 }
 
 void DbColumn_short(DbColumn* self, StdBigs* poses, const BIG start, const BIG end, const BOOL ascending)

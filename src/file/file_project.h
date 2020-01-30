@@ -4,12 +4,14 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
  * Public License.
  */
+
+#define FileProject_UPDATE_INDEX_TIMEOUT_SEC 30	//1/2 minute
 
 typedef struct FileProject_s
 {
@@ -17,9 +19,16 @@ typedef struct FileProject_s
 	FileKey* key;
 	StdArr users;	//<FileUser*>
 	FileRow uid;
+
+	double updateIndex_time;
 } FileProject;
 
 FileProject* g_FileProject = 0;
+
+BOOL FileProject_is(void)
+{
+	return g_FileProject != 0;
+}
 
 UBIG FileProject_numUsers(void)
 {
@@ -86,7 +95,8 @@ void FileProject_deleteEx(FileProject* self)
 }
 void FileProject_delete(void)
 {
-	FileProject_deleteEx(g_FileProject);
+	if (g_FileProject)
+		FileProject_deleteEx(g_FileProject);
 	g_FileProject = 0;
 }
 
@@ -97,7 +107,6 @@ FileRow FileProject_createUID(void)
 	fr.user = Os_getUID();
 	return fr;
 }
-
 
 BOOL _FileProject_createDeviceFolder(const char* projectPath)
 {
@@ -123,7 +132,7 @@ char* FileProject_cleanPath(const char* path)
 
 	char* find = 0;
 	char* t = ret;
-	while (t && (t=Std_findSubCHAR(t, ".sky")))
+	while (t && (t = (char*)Std_findSubCHAR(t, ".sky")))
 	{
 		find = t;
 		t += Std_sizeCHAR(".sky");
@@ -135,7 +144,14 @@ char* FileProject_cleanPath(const char* path)
 	return ret;
 }
 
-BOOL FileProject_newOpen(const char* path, const UNI* password, volatile StdProgress* progress)
+static void _FileProject_addMapTiles(void)
+{
+	char* path = FileUser_getMapPath(FileProject_getUserMe());
+	Map_loadUserTiles(path);
+	Std_deleteCHAR(path);
+}
+
+BOOL FileProject_newOpen(const char* path, const UNI* password)
 {
 	char* projectPath = FileProject_cleanPath(path);
 
@@ -147,20 +163,26 @@ BOOL FileProject_newOpen(const char* path, const UNI* password, volatile StdProg
 		Os_free(version, size);
 		Std_deleteCHAR(vStr);
 
+		if (v == -1)
+			printf("Warning: Project root/version file is missing\n");	//SLOG ...
+		else
 		if (size != 1 || v != '1')
 		{
+			printf("Error: Project version is invalid\n");	//SLOG ...
 			Std_deleteCHAR(projectPath);
 			return 0;
 		}
 	}
 
+	FileProject_delete();
 	g_FileProject = Os_malloc(sizeof(FileProject));
 	g_FileProject->users = StdArr_init();
 	g_FileProject->key = 0;
 	g_FileProject->projectPath = projectPath;
 
 	g_FileProject->uid = FileProject_createUID();
-	g_FileProject->key = FileKey_newLoad(projectPath, password, progress);
+	g_FileProject->key = FileKey_newLoad(projectPath, password);
+	g_FileProject->updateIndex_time = 0;
 
 	BOOL ok = TRUE;
 	_FileProject_updateUserList();
@@ -169,26 +191,31 @@ BOOL FileProject_newOpen(const char* path, const UNI* password, volatile StdProg
 
 	ok &= g_FileProject->key && FileProject_getUserMe();
 
+	if (ok)
+		_FileProject_addMapTiles();
+
 	if (!ok)
 		FileProject_delete();
 
 	return ok;
 }
 
-BOOL FileProject_newCreate(const char* path, const UNI* password, BIG cycles, volatile StdProgress* progress)
+BOOL FileProject_newCreate(const char* path, const UNI* password, BIG cycles)
 {
 	char* projectPath = FileProject_cleanPath(path);
 
+	FileProject_delete();
 	g_FileProject = Os_malloc(sizeof(FileProject));
 	g_FileProject->users = StdArr_init();
 	g_FileProject->key = 0;
 	g_FileProject->projectPath = projectPath;
 	g_FileProject->uid = FileProject_createUID();
+	g_FileProject->updateIndex_time = 0;
 
 	BOOL ok = FALSE;
 	if (OsFileDir_makeDir(projectPath))
 	{
-		g_FileProject->key = FileKey_newCreate(projectPath, password, cycles, progress);
+		g_FileProject->key = FileKey_newCreate(projectPath, password, cycles);
 		ok = (g_FileProject->key != 0);
 	}
 
@@ -201,6 +228,9 @@ BOOL FileProject_newCreate(const char* path, const UNI* password, BIG cycles, vo
 
 	if (ok)
 		ok = _FileProject_createDeviceFolder(projectPath);
+
+	if (ok)
+		_FileProject_addMapTiles();
 
 	if (!ok)
 		FileProject_delete();
@@ -232,7 +262,16 @@ const char* FileProject_getPath(void)
 
 FileKey* FileProject_getKey(void)
 {
-	return g_FileProject->key;
+	return g_FileProject ? g_FileProject->key : 0;
+}
+
+void FileProject_encryptDirect(const UBIG block, unsigned char* plain_text, unsigned char* cipher_text, int size)
+{
+	FileKey_aesEncryptDirect(FileProject_getKey(), block, plain_text, cipher_text, size);
+}
+void FileProject_decryptDirect(const UBIG block, unsigned char* cipher_text, unsigned char* plain_text, int size)
+{
+	FileKey_aesDecryptDirect(FileProject_getKey(), block, cipher_text, plain_text, size);
 }
 
 UBIG FileProject_getProjectSize(void)
@@ -294,7 +333,34 @@ BOOL FileProject_updateIndex(void)
 	return changed;
 }
 
-BOOL FileProject_changePassword(UBIG cycles, const UNI* password, volatile StdProgress* progress)
+void FileProject_resetIndex(void)
+{
+	int i;
+	for (i = 0; i < g_FileProject->users.num; i++)
+	{
+		if (!FileUser_isId(g_FileProject->users.ptrs[i], g_FileProject->uid))	//not me
+			FileUser_resetIndex(g_FileProject->users.ptrs[i]);
+	}
+}
+
+BOOL FileProject_tryUpdateIndex(void)
+{
+	BOOL changed = FALSE;
+
+	const double t = Os_time();
+	if (t - g_FileProject->updateIndex_time > FileProject_UPDATE_INDEX_TIMEOUT_SEC)
+	{
+		changed = FileProject_updateIndex();
+		g_FileProject->updateIndex_time = t;
+	}
+
+	if (changed)
+		FileProject_resetIndex();
+
+	return changed;
+}
+
+BOOL FileProject_changePassword(UBIG cycles, const UNI* password)
 {
 	BOOL ok = FALSE;
 
@@ -306,7 +372,7 @@ BOOL FileProject_changePassword(UBIG cycles, const UNI* password, volatile StdPr
 	char* keyPath2 = FileKey_getPathKey(g_FileProject->projectPath, FALSE);
 
 	FileProject* oldWorkspace = g_FileProject;
-	if (FileProject_newCreate(backupPath, password, cycles, progress))
+	if (FileProject_newCreate(backupPath, password, cycles))
 	{
 		ok = TRUE;
 		int i;
@@ -315,7 +381,7 @@ BOOL FileProject_changePassword(UBIG cycles, const UNI* password, volatile StdPr
 			FileUser* newUser = FileUser_new(FileUser_getId(g_FileProject->users.ptrs[i]));
 			FileUser_createFolder(newUser);
 
-			ok &= FileUser_changePassword(oldWorkspace, g_FileProject->users.ptrs[i], newUser, progress);
+			ok &= FileUser_changePassword(oldWorkspace, g_FileProject->users.ptrs[i], newUser);
 
 			FileUser_delete(newUser);
 		}
@@ -343,7 +409,6 @@ BOOL FileProject_changePassword(UBIG cycles, const UNI* password, volatile StdPr
 
 	return ok;
 }
-
 
 BOOL FileProject_isExistCHAR(const char* path)
 {
@@ -381,7 +446,7 @@ BOOL FileProject_hasPassword(const UNI* path)
 		Std_deleteCHAR(pathChar);
 	}
 
-	if(FileProject_isExistCHAR(projectPath))
+	if (FileProject_isExistCHAR(projectPath))
 	{
 		char* keyPath = FileKey_getPathKey(projectPath, TRUE);
 
@@ -409,4 +474,11 @@ BOOL FileProject_hasPassword(const UNI* path)
 	}
 
 	return has;
+}
+
+void FileProject_removeMyColumn(FileRow file)
+{
+	char* path = FileUser_getPathColumn(FileProject_getUserMe(), file);
+	OsFileDir_removeFile(path);
+	Std_deleteCHAR(path);
 }

@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -33,9 +33,12 @@ void GuiItemComboStaticItem_delete(GuiItemComboStaticItem* self)
 	DbValue_free(&self->text);
 	Os_free(self, sizeof(GuiItemComboStaticItem));
 }
-BOOL GuiItemComboStaticItem_hasChanged(GuiItemComboStaticItem* self)
+void GuiItemComboStaticItem_update(GuiItemComboStaticItem* self, GuiItem* orig)
 {
-	return DbValue_hasChanged(&self->text);
+	GuiItem_setRedraw(orig, DbValue_hasChanged(&self->text));
+
+	if (self->icon)
+		GuiItem_setRedraw(orig, GuiImage_update(self->icon, Vec2i_init2(OsWinIO_cellSize() / 2, OsWinIO_cellSize() / 2)));
 }
 
 typedef struct GuiItemComboStatic_s
@@ -48,6 +51,8 @@ typedef struct GuiItemComboStatic_s
 	int text_level;
 
 	UINT oldValue;
+
+	Rgba backCd;
 }GuiItemComboStatic;
 
 GuiItemComboStaticItem* GuiItemComboStatic_getItem(GuiItemComboStatic* self, int i)
@@ -90,6 +95,10 @@ GuiItem* GuiItemComboStatic_new(Quad2i grid, DbValue value, const UNI* options, 
 	self->items = StdArr_init();
 	GuiItemComboStatic_addItemSepar(self, options);
 
+	self->backCd = g_theme.white;
+
+	self->base.icon_draw_back = FALSE;
+
 	return (GuiItem*)self;
 }
 
@@ -128,9 +137,24 @@ void GuiItemComboStatic_delete(GuiItemComboStatic* self)
 	Os_free(self, sizeof(GuiItemComboStatic));
 }
 
+void GuiItemComboStatic_setBackgroundColor(GuiItemComboStatic* self, Rgba cd)
+{
+	self->backCd = cd;
+}
+
 UBIG GuiItemComboStatic_getValue(const GuiItemComboStatic* self)
 {
 	return self->items.num ? Std_clamp(DbValue_getNumber(&self->value), 0, self->items.num - 1) : 0;
+}
+
+void GuiItemComboStatic_setValue(GuiItemComboStatic* self, double pos)
+{
+	DbValue_setNumber(&self->value, pos);
+}
+
+const UNI* GuiItemComboStatic_getValueName(GuiItemComboStatic* self, int i)
+{
+	return DbValue_result(&GuiItemComboStatic_getItem(self, i)->text);
 }
 
 void GuiItemComboStatic_clickSelect(GuiItem* self)
@@ -142,7 +166,7 @@ void GuiItemComboStatic_clickSelect(GuiItem* self)
 	{
 		combo->oldValue = DbValue_getNumber(&combo->value);
 
-		DbValue_setNumber(&combo->value, pos);
+		GuiItemComboStatic_setValue(combo, pos);
 		GuiItem_callClick(&combo->base);
 	}
 }
@@ -201,22 +225,33 @@ void GuiItemComboStatic_draw(GuiItemComboStatic* self, Image4* img, Quad2i coord
 		{
 			Image4_drawText(img, Vec2i_add(Vec2i_init2(0, cell / 2), coord.start), FALSE, font, description, textH, 0, front);
 
-			int s = Std_min(coord.size.x * 0.4f, coord.size.x);
+			int s = Std_min(OsFont_getTextSizeX(font, description, textH), coord.size.x * 0.4f);
 			coord.start.x += s;
 			coord.size.x -= s;
 		}
 	}
 
-
 	//combo
 	{
 		coord.start.y = coord.start.y + coord.size.y / 2 - cell / 2;
 		coord.size.y = cell;
+		Quad2i iCoord = coord;
 		coord = Quad2i_addSpace(coord, 3);
 
 		//background and border around combo
 		Image4_drawBoxQuad(img, coord, back);
 		Image4_drawBorder(img, coord, 1, front);
+
+		const GuiItemComboStaticItem* item = GuiItemComboStatic_getItem(self, GuiItemComboStatic_getValue(self));
+
+		//icon
+		if (item->icon)
+		{
+			GuiImage_draw(item->icon, img, GuiItem_getIconCoord(&iCoord), front);
+			coord.start.x = iCoord.start.x;
+			coord.size.x = iCoord.size.x;
+			coord = Quad2i_addSpaceX(coord, 3);
+		}
 
 		//arrow
 		int s = coord.size.y;
@@ -227,8 +262,9 @@ void GuiItemComboStatic_draw(GuiItemComboStatic* self, Image4* img, Quad2i coord
 		Image4_drawArrow(img, Vec2i_init2(mid.x, mid.y + s), Vec2i_init2(mid.x, mid.y - s), 4 * s, front);
 
 		//value
-		const UNI* text = self->items.num ? DbValue_result(&GuiItemComboStatic_getItem(self, GuiItemComboStatic_getValue(self))->text) : 0;
+		const UNI* text = self->items.num ? DbValue_result(&item->text) : 0;
 		img->rect.size.x -= coord.size.y;	//don't draw over
+		Image4_repairRect(img);
 		Image4_drawText(img, Vec2i_add(Vec2i_init2(textH / 2, coord.size.y / 2), coord.start), FALSE, font, text, textH, 0, front);
 	}
 
@@ -245,14 +281,14 @@ void GuiItemComboStatic_update(GuiItemComboStatic* self, Quad2i coord, Win* win)
 {
 	UBIG i;
 	for (i = 0; i < self->items.num; i++)
-		GuiItem_setRedraw(&self->base, GuiItemComboStaticItem_hasChanged(GuiItemComboStatic_getItem(self, i)));
+		GuiItemComboStaticItem_update(GuiItemComboStatic_getItem(self, i), &self->base);
 
 	GuiItem_setRedraw(&self->base, (DbValue_hasChanged(&self->value) || DbValue_hasChanged(&self->description)));
 }
 
 void GuiItemComboStatic_touch(GuiItemComboStatic* self, Quad2i coord, Win* win)
 {
-	Rgba back_cd = g_theme.white;
+	Rgba back_cd = self->backCd;
 	Rgba front_cd = g_theme.black;
 
 	if (self->base.touch && GuiItem_isEnable(&self->base) && OsWinIO_canActiveRenderItem(self))

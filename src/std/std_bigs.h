@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -16,6 +16,7 @@ StdBigs StdBigs_init(void)
 	StdBigs self;
 	self.ptrs = 0;
 	self.num = 0;
+	self.alloc = 0;
 	return self;
 }
 
@@ -33,17 +34,28 @@ StdBigs StdBigs_initCopy(const StdBigs* src)
 
 void StdBigs_free(StdBigs* self)
 {
-	Os_free(self->ptrs, self->num * sizeof(BIG));
+	Os_free(self->ptrs, self->alloc * sizeof(BIG));
 	Os_memset(self, sizeof(StdBigs));
+}
+
+void StdBigs_setAlloc(StdBigs* self, const UBIG n)
+{
+	self->num = self->alloc = n;
+}
+
+void StdBigs_clear(StdBigs* self)
+{
+	self->num = 0;
 }
 
 void StdBigs_resize(StdBigs* self, UBIG num)
 {
-	self->ptrs = (BIG*)Os_realloc(self->ptrs, num * sizeof(BIG));
-
-	if (num > self->num)
-		Os_memset(&self->ptrs[self->num], (num - self->num) * sizeof(BIG));
-
+	if (num > self->alloc)
+	{
+		self->ptrs = (BIG*)Os_realloc(self->ptrs, num * sizeof(BIG));
+		Os_memset(&self->ptrs[self->alloc], (num - self->alloc) * sizeof(BIG));
+		self->alloc = num;
+	}
 	self->num = num;
 }
 BIG StdBigs_add(StdBigs* self, BIG value)
@@ -55,7 +67,7 @@ BIG StdBigs_add(StdBigs* self, BIG value)
 void StdBigs_remove(StdBigs* self, UBIG i)
 {
 	Os_memmove(&self->ptrs[i], &self->ptrs[i + 1], (self->num - i - 1) * sizeof(BIG));
-	StdBigs_resize(self, self->num - 1);
+	self->num--;
 }
 
 void StdBigs_insert(StdBigs* self, UBIG i, BIG value)
@@ -109,9 +121,13 @@ void StdBigs_swap(StdBigs* self, UBIG iA, BIG iB)
 	self->ptrs[iB] = backup;
 }
 
-BIG StdBigs_get(StdBigs* self, UBIG i)
+BIG StdBigs_get(StdBigs* self, BIG i)
 {
-	return (i < self->num) ? self->ptrs[i] : 0;
+	return (i >= 0 && i < self->num) ? self->ptrs[i] : 0;
+}
+BIG StdBigs_getNeg(StdBigs* self, BIG i)
+{
+	return (i >= 0 && i < self->num) ? self->ptrs[i] : -1;
 }
 
 BIG StdBigs_last(StdBigs* self)
@@ -152,4 +168,30 @@ void StdBigs_rotate(StdBigs* self, BIG start, BIG end)
 	self->ptrs[start] = tmp;
 }
 
+int _StdBigs_cmp(const void* context, const void* a, const void* b)
+{
+	return (*(BIG*)a > * (BIG*)b) - (*(BIG*)a < *(BIG*)b);
+}
+void StdBigs_qshortEx(StdBigs* self, const BIG start, const BIG end, const BOOL ascending)
+{
+	Os_qsort(&self->ptrs[start], end - start, sizeof(BIG), _StdBigs_cmp, 0);
+	if (!ascending)
+		StdBigs_reversEx(self, start, end);
+}
+void StdBigs_qshort(StdBigs* self, const BOOL ascending)
+{
+	StdBigs_qshortEx(self, 0, self->num, ascending);
+}
 
+void StdBigs_copy(StdBigs* dst, const StdBigs* src)
+{
+	StdBigs_resize(dst, src->num);
+	Os_memcpy(dst->ptrs, src->ptrs, src->num * sizeof(BIG));
+}
+
+void StdBigs_setAll(StdBigs* self, BIG value)
+{
+	UBIG i;
+	for (i = 0; i < self->num; i++)
+		self->ptrs[i] = value;
+}

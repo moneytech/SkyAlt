@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -47,19 +47,20 @@ BOOL FileFile_readItem_1(FileFile* self, FileRow* out_row, double* out_value);
 BOOL FileFile_readItem_n(FileFile* self, FileRow* out_row, double** out_values);
 BOOL FileFile_readItemText_32(FileFile* self, FileRow* out_row, UNI** out_str);
 
-BOOL FileFile_importData(FileFile* self, UCHAR* data, const UBIG data_size, const UNI* ext, volatile StdProgress* progress);
-BOOL FileFile_import(FileFile* self, OsFile* file, const UNI* ext, volatile StdProgress* progress);
-UBIG FileFile_export(FileFile* self, OsFile* file, volatile StdProgress* progress);
+BOOL FileFile_importData(FileFile* self, UCHAR* data, const UBIG data_size, const UNI* ext);
+BOOL FileFile_import(FileFile* self, OsFile* file, const UNI* ext);
+UBIG FileFile_export(FileFile* self, OsFile* file);
 
 FileFile* FileUser_createColumn(const FileUser* self);
 FileFile* FileUser_createFile(const FileUser* self);
 BOOL FileUser_updateIndex(FileUser* self);
 
 typedef struct FileProject_s FileProject;
+BOOL FileProject_is(void);
 BOOL FileProject_isExist(const UNI* path);
 BOOL FileProject_hasPassword(const UNI* path);
-BOOL FileProject_newOpen(const char* path, const UNI* password, volatile StdProgress* progress);
-BOOL FileProject_newCreate(const char* path, const UNI* password, BIG cycles, volatile StdProgress* progress);
+BOOL FileProject_newOpen(const char* path, const UNI* password);
+BOOL FileProject_newCreate(const char* path, const UNI* password, BIG cycles);
 void FileProject_delete(void);
 FileRow FileProject_getUID(void);
 UNI* FileProject_getUID_string(void);
@@ -69,10 +70,15 @@ FileUser* FileProject_getUserMe(void);
 StdArr FileProject_openColumns(FileRow FileRow, BOOL write);
 FileFile* FileProject_openFile(FileRow FileRow, BOOL write);
 UBIG FileProject_bytesColumns(FileRow FileRow);
-BOOL FileProject_changePassword(UBIG cycles, const UNI* password, volatile StdProgress* progress);
+BOOL FileProject_changePassword(UBIG cycles, const UNI* password);
 const char* FileProject_getPath(void);
 UBIG FileProject_getProjectSize(void);
-BOOL FileProject_updateIndex(void);
+BOOL FileProject_tryUpdateIndex(void);
+//void FileProject_resetIndex(void);
+void FileProject_removeMyColumn(FileRow file);
+
+void FileProject_encryptDirect(const UBIG block, unsigned char* plain_text, unsigned char* cipher_text, int size);
+void FileProject_decryptDirect(const UBIG block, unsigned char* cipher_text, unsigned char* plain_text, int size);
 
 typedef struct FileHead_s	//16B align
 {

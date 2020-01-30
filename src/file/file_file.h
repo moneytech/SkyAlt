@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -147,7 +147,7 @@ static FileFile* _FileFile_new(const FileUser* user, FileRow fileId, BOOL write,
 
 	self->buffer = FileFileBuffer_initEmpty();
 
-	if (OsFile_init(&self->file, path, write ? OsFile_A : OsFile_R))
+	if (OsFile_init(&self->file, path, write ? OsFile_A : OsFile_R))   //OsFile_A(seek doesn't work) -> OsFile_RW
 	{
 		self->buffer = FileFileBuffer_init(&self->file, write);
 	}
@@ -318,7 +318,7 @@ BOOL FileFile_exportHead(FileFile* self, FileHead* out_head)
 	return FileFile_read16Pos(self, 0, (UCHAR*)out_head);
 }
 
-BOOL FileFile_importData(FileFile* self, UCHAR* data, const UBIG data_size, const UNI* ext, volatile StdProgress* progress)
+BOOL FileFile_importData(FileFile* self, UCHAR* data, const UBIG data_size, const UNI* ext)
 {
 	UBIG i = 0;
 
@@ -333,7 +333,7 @@ BOOL FileFile_importData(FileFile* self, UCHAR* data, const UBIG data_size, cons
 			if (FileFile_write16(self, plain) != sizeof(FileHead) + i + 16)
 				break;
 
-			progress->done = ((double)i) / data_size;
+			StdProgress_setEx("IMPORTING", i, data_size);
 			i += 16;
 		}
 
@@ -343,7 +343,7 @@ BOOL FileFile_importData(FileFile* self, UCHAR* data, const UBIG data_size, cons
 	return FALSE;
 }
 
-BOOL FileFile_import(FileFile* self, OsFile* file, const UNI* ext, volatile StdProgress* progress)
+BOOL FileFile_import(FileFile* self, OsFile* file, const UNI* ext)
 {
 	UBIG i = 0;
 
@@ -352,7 +352,7 @@ BOOL FileFile_import(FileFile* self, OsFile* file, const UNI* ext, volatile StdP
 
 	if (_FileFile_importHead(self, FileHead_init(size, ext)))
 	{
-		while (i < size)
+		while (i < size && StdProgress_is())
 		{
 			UCHAR plain[16];
 			Os_memset(plain, 16);
@@ -361,7 +361,7 @@ BOOL FileFile_import(FileFile* self, OsFile* file, const UNI* ext, volatile StdP
 			if (FileFile_write16(self, plain) != sizeof(FileHead) + i + 16)
 				break;
 
-			progress->done = ((double)i) / size;
+			StdProgress_setEx("IMPORTING", i, size);
 			i += 16;
 		}
 
@@ -371,18 +371,18 @@ BOOL FileFile_import(FileFile* self, OsFile* file, const UNI* ext, volatile StdP
 	return FALSE;
 }
 
-UBIG FileFile_export(FileFile* self, OsFile* file, volatile StdProgress* progress)
+UBIG FileFile_export(FileFile* self, OsFile* file)
 {
 	FileHead head;
 	FileFile_exportHead(self, &head);
 
 	UCHAR plain[16];
 	BIG i = 0;	//first 16 is ".extension"
-	while (i < head.size && FileFile_read16Pos(self, i + 16, plain))
+	while (i < head.size && FileFile_read16Pos(self, i + 16, plain) && StdProgress_is())
 	{
 		OsFile_write(file, plain, FileFile_getCopyN(i, head.size));
 
-		progress->done = ((double)i) / head.size;
+		StdProgress_setEx("EXPORTING", i, head.size);
 		i += 16;
 	}
 

@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -26,6 +26,28 @@ typedef struct DbColumn_s
 
 	UBIG numChanges;
 	DbColumn* copyColumnAsk;
+
+	DbColumn* summary_origColumn;
+	BOOL summary_links;	//nahradit tyto nastavením(a mnoho ostatních) pøímém ètení z DbRoot pøes row .......
+	BOOL summary_group;
+
+	BOOL remote;
+	DbTable* remoteForeign;
+	//BOOL remotePrimaryKey;
+	//OsODBCType remoteType;
+
+	DbInsight* insight;
+	DbInsight* insightTable;
+
+	BIG links_mirror_changes;
+	DbColumn* links_mirrored;	//original table
+
+	DbColumn* links_filtered;
+	DbFilter* links_filtered_filter;
+
+	DbJointed* links_jointed;
+
+	BOOL err;
 } DbColumn;
 
 DbColumn DbColumn_init(DbColumnTYPE type, DbFormatTYPE format, DbColumns* parent, double defValue)
@@ -42,7 +64,51 @@ DbColumn DbColumn_init(DbColumnTYPE type, DbFormatTYPE format, DbColumns* parent
 	self.numChanges = 0;
 	self.copyColumnAsk = 0;
 
+	self.summary_origColumn = 0;
+	self.summary_links = FALSE;
+	self.summary_group = FALSE;
+
+	self.remote = FALSE;
+	self.remoteForeign = 0;
+
+	self.insight = 0;
+	self.insightTable = 0;
+
+	self.links_mirror_changes = -1;
+	self.links_mirrored = 0;
+
+	self.links_filtered = 0;
+	self.links_filtered_filter = 0;
+
+	self.links_jointed = 0;
+
+	self.err = FALSE;
+
 	return self;
+}
+
+BOOL DbColumn_isErr(const DbColumn* self)
+{
+	return self->err;
+}
+
+DbColumn* DbColumn_findColumnBase(const DbColumn* self)
+{
+	return self->summary_origColumn ? DbColumn_findColumnBase(self->summary_origColumn) : (DbColumn*)self;
+}
+
+DbColumn* DbColumn_getSummaryOrigColumn(const DbColumn* self)
+{
+	return self->summary_origColumn;
+}
+
+BOOL DbColumn_isSummaryLinks(const DbColumn* self)
+{
+	return self->summary_links;
+}
+BOOL DbColumn_isSummaryGroup(const DbColumn* self)
+{
+	return self->summary_group;
 }
 
 BIG DbColumn_getRow(const DbColumn* self)
@@ -60,9 +126,126 @@ const UNI* DbColumn_getName(const DbColumn* self, UNI* out, const UBIG outMaxSiz
 	return DbRoot_getName(DbColumn_getRow(self), out, outMaxSize);
 }
 
+const UNI* DbColumn_getPath(const DbColumn* self, UNI* out, const UBIG outMaxSize)
+{
+	UNI* orig = out;
+
+	DbRoot_getName(DbTable_getRow(DbColumn_getTable(self)), out, outMaxSize);
+	UBIG N = Std_sizeUNI(out);
+	if (N < outMaxSize - 5)
+	{
+		out += N;
+		out = Std_copyUNI_char(out, outMaxSize - N - 1, " : ");
+
+		DbRoot_getName(DbColumn_getRow(self), out, outMaxSize - N - 3);
+	}
+
+	return orig;
+}
+
 void DbColumn_setName(DbColumn* self, const UNI* name)
 {
 	DbRoot_setName(DbColumn_getRow(self), name);
+}
+
+void DbColumn_setRemote(DbColumn* self, BOOL remote)
+{
+	self->remote = remote;
+}
+BOOL DbColumn_isRemote(const DbColumn* self)
+{
+	return self->remote;
+}
+
+OsODBCType DbColumn_getRemoteType(const DbColumn* self)
+{
+	if (self->type == DbColumn_STRING_32)
+		return OsODBC_STRING;
+
+	if (self->format == DbFormat_DATE)
+		return OsODBC_DATE;
+
+	return OsODBC_NUMBER;
+}
+
+void DbColumn_setInsight(DbColumn* self, DbInsight* insight)
+{
+	if (self->insight)
+	{
+		if (insight && DbInsight_cmp(self->insight, insight))
+		{
+			DbInsight_delete(insight);
+		}
+		else
+		{
+			DbInsight_delete(self->insight);
+			self->insight = insight;
+		}
+	}
+	else
+		self->insight = insight;
+}
+
+void DbColumn_setInsightTable(DbColumn* self, DbInsight* insightTable)
+{
+	if (self->insightTable)
+	{
+		if (insightTable && DbInsight_cmp(self->insightTable, insightTable))
+		{
+			DbInsight_delete(insightTable);
+		}
+		else
+		{
+			DbInsight_delete(self->insightTable);
+			self->insightTable = insightTable;
+		}
+	}
+	else
+		self->insightTable = insightTable;
+}
+
+void DbColumn_setLinkFiltered(DbColumn* self, DbFilter* filter)
+{
+	if (self->links_filtered_filter)
+	{
+		if (filter && DbFilter_cmp(self->links_filtered_filter, filter))
+		{
+			DbFilter_delete(filter);
+		}
+		else
+		{
+			DbFilter_delete(self->links_filtered_filter);
+			self->links_filtered_filter = filter;
+		}
+	}
+	else
+		self->links_filtered_filter = filter;
+}
+
+void DbColumn_setLinkJointed(DbColumn* self, DbJointed* links_jointed)
+{
+	if (self->links_jointed)
+	{
+		if (links_jointed && DbJointed_cmp(self->links_jointed, links_jointed))
+		{
+			DbJointed_delete(links_jointed);
+		}
+		else
+		{
+			DbJointed_delete(self->links_jointed);
+			self->links_jointed = links_jointed;
+		}
+	}
+	else
+		self->links_jointed = links_jointed;
+}
+
+void DbColumn_freeFilterAndInsight(DbColumn* self)
+{
+	DbColumn_setInsight(self, 0);
+	DbColumn_setInsightTable(self, 0);
+	DbColumn_setLinkFiltered(self, 0);
+	DbColumn_setLinkJointed(self, 0);
 }
 
 void DbColumn_free(DbColumn* self)
@@ -118,6 +301,11 @@ void DbColumn_setChange(DbColumn* self, UBIG i)
 	TableItems_setBitTo1(&self->changes, i);
 	self->numChanges++;
 }
+void DbColumn_setChangeAll(DbColumn* self)
+{
+	TableItems_resetAllTo1(&self->changes);
+	self->numChanges++;
+}
 
 BOOL DbColumn_isChange(DbColumn* self, UBIG i)
 {
@@ -126,7 +314,7 @@ BOOL DbColumn_isChange(DbColumn* self, UBIG i)
 
 void DbColumn_reset_save(DbColumn* self)
 {
-	TableItems_resetAllTo0(&self->changes, 0);
+	TableItems_resetAllTo0(&self->changes);
 	self->numChanges = 0;
 }
 
@@ -163,7 +351,7 @@ BOOL DbColumn_isChangedExe(const DbColumn* self)
 
 UBIG DbColumn_numChanges(const DbColumn* self)
 {
-	return self->numChanges;
+	return (self->insight || self->insightTable || self->links_mirrored || self->links_filtered || self->links_jointed) ? 0 : self->numChanges;
 }
 
 double DbColumn_getOptionNumber(const DbColumn* self, const char* name)

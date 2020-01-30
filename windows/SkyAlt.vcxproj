@@ -157,6 +157,8 @@
     <ClCompile Include="..\..\..\Desktop\ChangeOverBLOCK\src\os.c" />
     <ClCompile Include="..\..\..\Desktop\ChangeOverBLOCK\src\std.c" />
     <ClCompile Include="..\..\..\Desktop\ChangeOverBLOCK\src\ui.c" />
+    <ClCompile Include="..\src\license.c" />
+    <ClCompile Include="..\src\map.c" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

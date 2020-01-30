@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -64,64 +64,14 @@ void Image1_drawNoise(Image1* self, Vec2i offset, const int zoom, const int octa
 	}
 }
 
-UCHAR Image1_getRectAvg(const Image1* img, Quad2f rect)
-{
-	float sum = 0;
-	Vec2f one = Vec2f_init2(1, 1);
-
-	Vec2i start = Vec2i_init2((int)rect.start.x, (int)rect.start.y);
-	Vec2i end = Vec2i_init2((int)Std_roundUp(Quad2f_end(rect).x), (int)Std_roundUp(Quad2f_end(rect).y));
-
-	Quad2i r = Quad2i_getIntersect(Image1_getSizeQuad(img), Quad2i_initEnd(start, end));
-	start = r.start;
-	end = Quad2i_end(r);
-	const float rect_area = rect.size.x * rect.size.y;
-
-	{
-		Vec2i pos = start;
-		for (; pos.y < end.y; pos.y++)
-		{
-			pos.x = start.x;
-			{
-				UCHAR* data = Image1_getV(img, pos);
-				for (; pos.x < end.x; pos.x++)
-				{
-					float a = Quad2f_getIntersectArea(Quad2f_init2(Vec2i_to2f(pos), one), rect) / rect_area;
-					sum += ((int)*data) * a;
-					data++;
-				}
-			}
-		}
-	}
-
-	return (UCHAR)sum;
-}
-
 void Image1_scale(Image1* dst, const Image1* src)
 {
-	Vec2f scale = Vec2f_init2(((float)src->size.x) / dst->size.x,
-		((float)src->size.y) / dst->size.y);
-
-	Vec2f scaleSize = Vec2f_init2(scale.x < 1 ? 1 : scale.x, scale.y < 1 ? 1 : scale.y);
-
-	Vec2i pos = Vec2i_init();
-	for (; pos.y < dst->size.y; pos.y++)
-	{
-		pos.x = 0;
-		{
-			UCHAR* data = Image1_getV(dst, pos);
-			for (; pos.x < dst->size.x; pos.x++)
-			{
-				*data = Image1_getRectAvg(src, Quad2f_init2(Vec2f_mul(Vec2i_to2f(pos), scale), scaleSize));
-				data++;
-			}
-		}
-	}
+	OSMedia_scale1(dst, src);
 }
 
 void Image4_drawBoxStartEnd(Image4* self, Vec2i start, Vec2i end, Rgba cd)
 {
-	Image4_repairRect(self);
+	//Image4_repairRect(self);
 	start = Quad2i_clamp(self->rect, start);
 	end = Quad2i_clamp(self->rect, end);
 
@@ -144,19 +94,32 @@ void Image4_drawBoxQuad(Image4* self, Quad2i coord, Rgba cd)
 	Image4_drawBoxStartEnd(self, coord.start, Quad2i_end(coord), cd);
 }
 
+void Image4_drawChessQuad(Image4* self, Quad2i coord, Vec2i cell, Rgba cd)
+{
+	BIG x, y;
+	for (y = 0; y < coord.size.y / cell.y; y++)
+		for (x = 0; x < coord.size.x / cell.x; x++)
+			if (x % 2 == y % 2)
+				Image4_drawBoxQuad(self, Quad2i_init2(Vec2i_add(coord.start, Vec2i_init2(x * cell.x, y * cell.y)), cell), cd);
+}
+
 void Image4_drawBoxStartEndAlpha(Image4* self, Vec2i start, Vec2i end, Rgba cd)
 {
 	float alpha = cd.a / 255.0f;
 
-	Image4_repairRect(self);
+	//Image4_repairRect(self);
 	start = Quad2i_clamp(self->rect, start);
 	end = Quad2i_clamp(self->rect, end);
 
 	for (; (start.y < end.y && start.y < self->size.y); start.y++)
 	{
 		int s = start.x;
+		Rgba* dst = Image4_getV(self, start);
 		for (; (start.x < end.x && start.x < self->size.x); start.x++)
-			*Image4_getV(self, start) = Rgba_aprox(*Image4_getV(self, start), cd, alpha);
+		{
+			*dst = Rgba_aprox(*dst, cd, alpha);
+			dst++;
+		}
 		start.x = s;
 	}
 }
@@ -249,138 +212,23 @@ void Image4_gausBlur(Image4* self)
 	Image4_free(&src);
 }
 
-Rgba Image4_getRectAvg(const Image4* img, Quad2f rect)
-{
-	Vec3f sum = Vec3f_init();
-	Vec2f one = Vec2f_init2(1, 1);
-
-	Vec2i start = Vec2i_init2((int)rect.start.x, (int)rect.start.y);
-	Vec2i end = Vec2i_init2((int)Std_roundUp(Quad2f_end(rect).x), (int)Std_roundUp(Quad2f_end(rect).y));
-
-	Quad2i r = Quad2i_getIntersect(Image4_getSizeQuad(img), Quad2i_initEnd(start, end));
-	start = r.start;
-	end = Quad2i_end(r);
-	const float rect_area = rect.size.x * rect.size.y;
-
-	{
-		Vec2i pos = start;
-		for (; pos.y < end.y; pos.y++)
-		{
-			pos.x = start.x;
-			{
-				Rgba* data = Image4_getV(img, pos);
-				for (; pos.x < end.x; pos.x++)
-				{
-					float a = Quad2f_getIntersectArea(Quad2f_init2(Vec2i_to2f(pos), one), rect) / rect_area;
-					sum = Vec3f_add(sum, Vec3f_mulV(Rgba_get3f(*data), a));
-					data++;
-				}
-			}
-		}
-	}
-
-	Rgba cd;
-	cd.r = (UCHAR)sum.x;
-	cd.b = (UCHAR)sum.y;
-	cd.b = (UCHAR)sum.z;
-	cd.a = 255;
-	return cd;
-}
-
 void Image4_scale(Image4* dst, const Image4* src)
 {
-	Vec2f scale = Vec2f_init2(((float)src->size.x) / dst->size.x,
-		((float)src->size.y) / dst->size.y);
-
-	Vec2f scaleSize = Vec2f_init2(scale.x < 1 ? 1 : scale.x, scale.y < 1 ? 1 : scale.y);
-
-	Vec2i pos = Vec2i_init();
-	for (; pos.y < dst->size.y; pos.y++)
-	{
-		pos.x = 0;
-		{
-			Rgba* data = Image4_getV(dst, pos);
-			for (; pos.x < dst->size.x; pos.x++)
-			{
-				*data = Image4_getRectAvg(src, Quad2f_init2(Vec2f_mul(Vec2i_to2f(pos), scale), scaleSize));
-				data++;
-			}
-		}
-	}
+	OSMedia_scale4(dst, src);
 }
 
-void Image4_blurScale(Image4* self)
-{
-	const int RAD = 4;
-
-	Image4 low = Image4_initSize(Vec2i_mulV(self->size, 1.0f / RAD));
-
-	Image4_scale(&low, self);	//down
-	Image4_scale(self, &low);	//up
-
-	Image4_free(&low);
-}
-
-void Image4_blurFast(Image4* dst, const Image4* src, int res)
-{
-	const float jump = Std_max(src->size.x, src->size.y) / res;
-
-	int sx = Std_roundUp(src->size.x / jump);
-	int sy = Std_roundUp(src->size.y / jump);
-	BIG points_bytes = sx * sy * sizeof(Rgba);
-	Rgba* points = (Rgba*)Os_malloc(points_bytes);
-
-	//compute points(from src)
-	int x, y;
-	for (y = 0; y < sy; y++)
-		for (x = 0; x < sx; x++)
-		{
-			points[y * sx + x] = Image4_getRectAvg(src, Quad2f_init4(x * jump, y * jump, jump, jump));
-		}
-
-	//blur
-	Quad2i quad = Image4_getSizeQuad(dst);
-	for (y = 0; y < sy - 1; y++)
-	{
-		for (x = 0; x < sx - 1; x++)
-		{
-			//corners(s=start, e=end, t=top, b=bottom)
-			Rgba st = points[(y + 0) * sx + (x + 0)];
-			Rgba et = points[(y + 0) * sx + (x + 1)];
-			Rgba sb = points[(y + 1) * sx + (x + 0)];
-			Rgba eb = points[(y + 1) * sx + (x + 1)];
-
-			float xx, yy;
-			for (yy = 0; yy < jump; yy++)
-			{
-				for (xx = 0; xx < jump; xx++)
-				{
-					Vec2i p = Vec2i_init2(x * jump + xx, y * jump + yy);
-					if (Quad2i_inside(quad, p))
-					{
-						Rgba* data = Image4_getV(dst, p);
-						*data = Rgba_aproxQuad(st, et, sb, eb, xx / jump, yy / jump);
-					}
-				}
-			}
-		}
-	}
-
-	Os_free(points, points_bytes);
-}
-
-void Image4_mulV(Image4* self, float t)
+void Image4_mulV(Image4* self, unsigned int alpha)
 {
 	Rgba* s = Image4_get(self, 0, 0);
 	const Rgba* e = Image4_getLast(self);
 	while (s < e)
 	{
-		Rgba_mulV(s, t);
+		Rgba_mulAlpha(s, alpha);
 		s++;
 	}
 }
 
-void Image4_mulVSub(Image4* self, Vec2i start, Vec2i end, float t)
+void Image4_mulVSub(Image4* self, Vec2i start, Vec2i end, unsigned int alpha)
 {
 	start.x = Std_max(start.x, 0);
 	start.y = Std_max(start.y, 0);
@@ -389,58 +237,68 @@ void Image4_mulVSub(Image4* self, Vec2i start, Vec2i end, float t)
 	{
 		int s = start.x;
 		for (; (start.x < end.x && start.x < self->size.x); start.x++)
-			Rgba_mulV(Image4_getV(self, start), t);
+			Rgba_mulAlpha(Image4_getV(self, start), alpha);
 		start.x = s;
 	}
 }
-void Image4_mulVSubQ(Image4* self, Quad2i coord, float t)
+void Image4_mulVSubQ(Image4* self, Quad2i coord, unsigned int alpha)
 {
-	Image4_mulVSub(self, coord.start, Quad2i_end(coord), t);
+	Image4_mulVSub(self, coord.start, Quad2i_end(coord), alpha);
 }
 
 void Image4_copyImage1(Image4* self, Vec2i start, Rgba cd, const Image1* src)
 {
-	Image4_repairRect(self);
+	Quad2i qSrc = Quad2i_getIntersect(Quad2i_init2(start, src->size), self->rect);
+	if (qSrc.size.x == 0 || qSrc.size.y == 0)
+		return;
+
+	//qSrc.start = Vec2i_sub(src->size, qSrc.size);
+	qSrc.start = Vec2i_sub(self->rect.start, start);
+	if (self->rect.start.x < start.x)	qSrc.start.x = 0;
+	if (self->rect.start.y < start.y)	qSrc.start.y = 0;
+	Vec2i qEnd = Quad2i_end(qSrc);
 
 	Vec2i p;
-	for (p.y = 0; p.y < src->size.y; p.y++)
+	for (p.y = qSrc.start.y; p.y < qEnd.y; p.y++)
 	{
-		for (p.x = 0; p.x < src->size.x; p.x++)
+		p.x = qSrc.start.x;
+		UCHAR* s = Image1_getV(src, p);
+		Rgba* d = Image4_getV(self, Vec2i_add(start, p));
+
+		for (p.x = 0; p.x < qSrc.size.x; p.x++)
 		{
-			Vec2i pp = Vec2i_add(start, p);
-			if (Quad2i_inside(self->rect, pp))
-			{
-				float a = *Image1_getV(src, p) / 255.0f;
-				Rgba* d = Image4_getV(self, pp);
-				*d = Rgba_aprox(*d, cd, a);
-			}
+			*d = Rgba_aproxInt(*d, cd, *s);
+			d++;
+			s++;
 		}
 	}
 }
 
 void Image4_copyImage4(Image4* self, Vec2i start, Image4* src)
 {
-	Image4_repairRect(self);
+	Quad2i qSrc = Quad2i_getIntersect(Quad2i_init2(start, src->size), self->rect);
+	if (qSrc.size.x == 0 || qSrc.size.y == 0)
+		return;
+
+	//qSrc.start = Vec2i_sub(src->size, qSrc.size);
+	qSrc.start = Vec2i_sub(self->rect.start, start);
+	if (self->rect.start.x < start.x)	qSrc.start.x = 0;
+	if (self->rect.start.y < start.y)	qSrc.start.y = 0;
+	Vec2i qEnd = Quad2i_end(qSrc);
 
 	Vec2i p;
-	for (p.y = 0; p.y < src->size.y; p.y++)
+	for (p.y = qSrc.start.y; p.y < qEnd.y; p.y++)
 	{
-		for (p.x = 0; p.x < src->size.x; p.x++)
-		{
-			Vec2i pp = Vec2i_add(start, p);
-			if (Quad2i_inside(self->rect, pp))
-			{
-				Rgba* s = Image4_getV(src, p);
-				Rgba* d = Image4_getV(self, pp);
-				*d = Rgba_aprox(*d, *s, (s->a / 255.0f));
-			}
-		}
+		p.x = qSrc.start.x;
+		Rgba* s = Image4_getV(src, p);
+		Rgba* d = Image4_getV(self, Vec2i_add(start, p));
+		Os_memcpy(d, s, qSrc.size.x * sizeof(Rgba));
 	}
 }
 
 //optimalization:
 	//1) Compute only 1/4 copy other(mirrors)
-	//2) compy start/end line and rest fill with full color
+	//2) compute start/end points of line and rest fill with full color
 void Image4_drawCircleRect(Image4* self, Vec2i mid, int rad, Rgba cd, Quad2i q)
 {
 	const Vec2i qend = Quad2i_end(q);
@@ -479,15 +337,13 @@ void Image4_drawCircleRect(Image4* self, Vec2i mid, int rad, Rgba cd, Quad2i q)
 }
 void Image4_drawCircle(Image4* self, Vec2i mid, int rad, Rgba cd)
 {
-	Image4_repairRect(self);
-
+	//Image4_repairRect(self);
 	Quad2i q = Quad2i_init4(mid.x - rad, mid.y - rad, rad * 2, rad * 2);
 	q = Quad2i_addSpace(q, -1);
 	q = Quad2i_getIntersect(self->rect, q);
 
 	Image4_drawCircleRect(self, mid, rad, cd, q);
 }
-
 void Image4_drawCircleLineRect(Image4* self, Vec2i mid, int rad, float fat, Rgba cd, Quad2i q)
 {
 	q = Quad2i_getIntersect(q, Image4_getSizeQuad(self));
@@ -529,7 +385,7 @@ void Image4_drawCircleLineRect(Image4* self, Vec2i mid, int rad, float fat, Rgba
 }
 void Image4_drawCircleLine(Image4* self, Vec2i mid, int rad, int fat, Rgba cd)
 {
-	Image4_repairRect(self);
+	//Image4_repairRect(self);
 
 	Quad2i q = Quad2i_init4(mid.x - rad, mid.y - rad, rad * 2, rad * 2);
 	q = Quad2i_getIntersect(self->rect, q);
@@ -538,96 +394,70 @@ void Image4_drawCircleLine(Image4* self, Vec2i mid, int rad, int fat, Rgba cd)
 	Image4_drawCircleLineRect(self, mid, rad, fat, cd, q);
 }
 
-/*void Image4_drawCircleShadowRect(Image4* self, Vec2i mid, int radIn, int radOut, float alpha, Quad2i q)
+static double _Image4_getCircleAngle(Vec2i vec, float rad)
 {
-	q = Quad2i_getIntersect(q, Image4_getSizeQuad(self));
+	//rotate so the start is up and rotation is clockwise
+	vec = Vec2i_init2(-vec.y, vec.x);
 
+	float angle = Os_acos(vec.x / Vec2i_len(vec));
+	if (vec.y < 0)
+		angle = 2 * M_PI - angle;
+
+	return angle;
+}
+Vec2i Image4_getCircleMid(Vec2i mid, double angleStart, double angleEnd, float t)
+{
+	double angle = angleStart + (angleEnd - angleStart) / 2;
+
+	Vec2f vec = Vec2f_init2(Os_cos(angle), Os_sin(angle));
+	vec = Vec2f_init2(vec.y, -vec.x);
+
+	vec = Vec2f_mulV(vec, t);
+
+	return Vec2i_init2(mid.x + vec.x, mid.y + vec.y);
+}
+
+void Image4_drawCircleEx(Image4* self, Vec2i mid, int radIn, int radOut, Rgba cd, Quad2i q, double angleStart, double angleEnd)
+{
 	const Vec2i qend = Quad2i_end(q);
-	const float radDiff = radOut - radIn;
 
-	//int last_y = 0;
-	int ri = 0;
+	const int anti = 4;
+	const float maxHits = anti * anti;
+	const float step = 1.0f / (anti + 1);
+
 	Vec2i pos = q.start;
-	for(; pos.y < qend.y; pos.y++)
+	for (; pos.y < qend.y; pos.y++)
 	{
 		pos.x = q.start.x;
-		for(; pos.x < qend.x; pos.x++)
+		for (; pos.x < qend.x; pos.x++)
 		{
 			Vec2i sub = Vec2i_sub(pos, mid);
-			float r = Vec2i_len(sub);
 
-			if(r < radIn)
-				*Image4_getV(self, pos) = Rgba_aprox(*Image4_getV(self, pos), Rgba_initBlack(), alpha);
-			else
-			if(r >= radOut)
-				continue;
-			else
+			//radIn ...
+
+			double angle = _Image4_getCircleAngle(sub, radOut);
+			if (angle >= angleStart && angle <= angleEnd)
 			{
-				float t = (r - radIn) / radDiff;	//ramp
-				t += g_winIO->randArray[(ri++) % OsWinIO_MAX_RAND] * t*0.15f;
-				if(t > 1)	t = 1;
-				*Image4_getV(self, pos) = Rgba_aprox(*Image4_getV(self, pos), Rgba_initBlack(), (1.0f-t)*alpha);
+				float r = Vec2i_len(sub);
+				if (r < radOut - 1.5f)
+					*Image4_getV(self, pos) = cd;
+				else
+					if (r > radOut + 1.5f)
+						continue;
+					else
+					{
+						int hits = 0;
+						int i, ii;
+						for (i = 1; i <= anti; i++)
+							for (ii = 1; ii <= anti; ii++)
+								hits += (Vec2f_len(Vec2f_sub(Vec2f_init2(pos.x + i * step, pos.y + ii * step), Vec2i_to2f(mid))) < radOut);
 
-				//if(pos.y > last_y)
-				//	last_y = pos.y;
+						*Image4_getV(self, pos) = Rgba_aprox(*Image4_getV(self, pos), cd, hits / maxHits);
+					}
 			}
 		}
 	}
-}*/
-
-/*void Image4_drawCircleShadow(Image4* self, Vec2i mid, int radIn, int radOut, float alpha)
-{
-	Quad2i q = Quad2i_init4(mid.x-radOut, mid.y-radOut, radOut*2, radOut*2);
-	q = Quad2i_getIntersect(self->rect, q);
-	q = Quad2i_addSpace(q, -1);
-
-	Image4_drawCircleShadowRect(self, mid, radIn, radOut, alpha, q);
-}*/
-
-/*
-void Image4_drawRampShadow(Image4* self, Quad2i coord, float alpha, BOOL leftRight, BOOL oposite)
-{
-	coord = Quad2i_getIntersect(coord, Image4_getSizeQuad(self));
-
-	const Vec2i s = coord.start;
-	const Vec2i e = Quad2i_end(coord);
-	const Vec2f sz = Vec2i_to2f(Vec2i_sub(e, s));
-
-	int ri = 0;
-	Vec2i pos;
-	for(pos.y=s.y; pos.y < e.y; pos.y++)
-	{
-		pos.x = s.x;
-		for(pos.x=s.x; pos.x < e.x; pos.x++)
-		{
-			float t = leftRight ? ((pos.x-s.x) / sz.x) : ((pos.y-s.y) / sz.y);
-			t += g_winIO->randArray[(ri++) % OsWinIO_MAX_RAND] * t*0.15f;
-			if(t > 1)	t = 1;
-			*Image4_getV(self, pos) = Rgba_aprox(*Image4_getV(self, pos), Rgba_initBlack(), (oposite?(1-t):t)*alpha);
-		}
-	}
-}*/
-
-/*void Image4_drawRBoxShadow(Image4* self, Quad2i coord, int rad, float alpha, BOOL rounded)
-{
-	coord = Quad2i_addSpace(coord, rad);
-	Vec2i s = coord.start;
-	Vec2i e = Quad2i_end(coord);
-	//rad*=2;
-
-	Image4_drawCircleShadowRect(self, s, 0, rad, alpha, Quad2i_init4(s.x-rad, s.y-rad, rad, rad));
-	Image4_drawCircleShadowRect(self, e, 0, rad, alpha, Quad2i_init4(e.x, e.y, rad, rad));
-	Image4_drawCircleShadowRect(self, Vec2i_init2(e.x, s.y), 0, rad, alpha, Quad2i_init4(e.x, s.y-rad, rad, rad));
-	Image4_drawCircleShadowRect(self, Vec2i_init2(s.x, e.y), 0, rad, alpha, Quad2i_init4(s.x-rad, e.y, rad, rad));
-
-	if(rounded)
-		Image4_drawBoxQuadAlpha(self, coord, Rgba_init4(0, 0, 0, 255*alpha));	//middle
-
-	Image4_drawRampShadow(self, Quad2i_init4(s.x-rad, s.y, rad, e.y-s.y), alpha, TRUE, FALSE);	//left
-	Image4_drawRampShadow(self, Quad2i_init4(e.x, s.y, rad, e.y-s.y), alpha, TRUE, TRUE);		//right
-	Image4_drawRampShadow(self, Quad2i_init4(s.x, s.y-rad, e.x-s.x, rad), alpha, FALSE, FALSE);	//top
-	Image4_drawRampShadow(self, Quad2i_init4(s.x, e.y, e.x-s.x, rad), alpha, FALSE, TRUE);		//bottom
-}*/
+}
 
 void Image4_drawRBox(Image4* self, Quad2i coord, int rad, Rgba cd)
 {
@@ -668,10 +498,19 @@ void Image4_drawRBorder(Image4* self, Quad2i coord, int rad, int fat, Rgba cd)
 	Image4_drawCircleLineRect(self, Vec2i_init2(s.x, e.y), rad, fat, cd, Quad2i_init4(s.x - rad, e.y, rad, rad));
 }
 
+//where on "sub" we are
 static float Image4_getT(Vec2f pos, Vec2f start, Vec2f v)
 {
 	return ((pos.x - start.x) * v.x + (pos.y - start.y) * v.y) / Vec2f_dot(v, v);
 }
+
+/*static float Image4_getT2(Vec2f pos, Vec2f start, Vec2f end)
+{
+	//not "t", but distance ...
+
+	Vec2f sub = Vec2f_sub(end, start);
+	return (sub.y * pos.x - sub.x * pos.y + end.x * start.y - end.y * start.x) / Os_sqrt(sub.x * sub.x + sub.y * sub.y);
+}*/
 
 static float Image4_getDistance(Vec2f pos, Vec2f start, Vec2f end, float* t, BOOL round)
 {
@@ -709,35 +548,95 @@ static void _Image4_vectorAlign(Vec2i* start, Vec2i* end)
 
 static void _Image4_drawLineEx(Image4* self, Vec2i start, Vec2i end, int width, Rgba cd, BOOL arrow)
 {
+	/*_Image4_vectorAlign(&start, &end);
+
+	Vec2i sub = Vec2i_sub(end, start);
+	Vec2f subR = Vec2f_init2(sub.y, -sub.x);
+
+	if (arrow)
+	{
+		float hWidth = 0.5f;
+
+		float xy[6];
+		xy[0] = end.x + subR.x * hWidth;
+		xy[1] = end.y + subR.y * hWidth;
+
+		xy[2] = start.x;
+		xy[3] = start.y;
+
+		xy[4] = end.x - subR.x * hWidth;
+		xy[5] = end.y - subR.y * hWidth;
+
+		Image4_drawPolyFill(self, xy, 3, cd, 1);
+
+		//napsat vzl᚝ funkci arrow() ...
+	}
+	else
+	{
+		float hWidth = width * 0.5f;
+
+		if (sub.x == 0)
+			Image4_drawBoxQuad(self, Quad2i_init4(start.x - hWidth, start.y, width, sub.y), cd);	//vertical
+		else
+			if (sub.y == 0)
+				Image4_drawBoxQuad(self, Quad2i_init4(start.x, start.y - hWidth, sub.x, width), cd);	//horizontal
+			else
+			{
+				subR = Vec2f_normalize(subR);
+
+				float xy[8];
+				xy[0] = start.x + subR.x * hWidth;
+				xy[1] = start.y + subR.y * hWidth;
+
+				xy[2] = start.x - subR.x * hWidth;
+				xy[3] = start.y - subR.y * hWidth;
+
+				xy[4] = end.x - subR.x * hWidth;
+				xy[5] = end.y - subR.y * hWidth;
+
+				xy[6] = end.x + subR.x * hWidth;
+				xy[7] = end.y + subR.y * hWidth;
+
+				Image4_drawPolyFill(self, xy, 4, cd, 1);
+			}
+	}
+	return;*/
+
 	_Image4_vectorAlign(&start, &end);
 
-	float half_fat = width * 0.5f;
+	float hWidth = width * 0.5f;
 
 	Quad2i q = Quad2i_initSE(start, end);
-	q = Quad2i_addSpace(q, -width);
-	Vec2i qend = Quad2i_end(q);
 
-	Vec2i pos = q.start;
-	for (; pos.y < qend.y; pos.y++)
-	{
-		pos.x = q.start.x;
-		for (; pos.x < qend.x; pos.x++)
+	if (!arrow && q.size.x == 0)
+		Image4_drawBoxQuad(self, Quad2i_init4(q.start.x - hWidth, q.start.y, width, q.size.y), cd);	//vertical
+	else
+		if (!arrow && q.size.y == 0)
+			Image4_drawBoxQuad(self, Quad2i_init4(q.start.x, q.start.y - hWidth, q.size.x, width), cd);	//horizontal
+		else
 		{
-			float t;
-			const float dist = Image4_getDistance(Vec2i_to2f(pos), Vec2i_to2f(start), Vec2i_to2f(end), &t, !arrow);
+			q = Quad2i_addSpace(q, -width);
 
-			const float edge = half_fat * (arrow ? t : 1);// +0.5f;
+			Vec2i pos = Quad2i_clamp(self->rect, q.start);
+			Vec2i qend = Quad2i_clamp(self->rect, Quad2i_end(q));
 
-			if (dist <= edge)
+			for (; pos.y < qend.y; pos.y++)
 			{
-				float r = edge - dist;
-				float a = Std_fmin(r, 1);
-
-				if (a > 0 && Quad2i_inside(self->rect, pos))
-					Image4_setPixel(self, pos, cd, a);
+				pos.x = q.start.x;
+				for (; pos.x < qend.x; pos.x++)
+				{
+					float t;
+					const float dist = Image4_getDistance(Vec2i_to2f(pos), Vec2i_to2f(start), Vec2i_to2f(end), &t, !arrow);
+					const float edge = hWidth * (arrow ? t : 1);// +0.5f;
+					if (dist <= edge)
+					{
+						float a = Std_fmin(edge - dist, 1);
+						if (a > 0)
+							Image4_setPixel(self, pos, cd, a);
+					}
+				}
 			}
 		}
-	}
 }
 
 void Image4_drawLine(Image4* self, Vec2i s, Vec2i e, int width, Rgba cd)
@@ -806,6 +705,209 @@ void Image4_drawBezierArrowBack(Image4* self, Vec2f params[4], Rgba cd, int widt
 			break;	//only once
 		}
 	}
+}
+
+void Image4_drawPolyLines(Image4* self, float* xy, const UBIG N, int width, Rgba cd)
+{
+	if (N < 2)
+		return;
+
+	BIG i;
+	for (i = 0; i < N - 1; i++)
+	{
+		Image4_drawLine(self, Vec2i_init2(xy[0], xy[1]), Vec2i_init2(xy[2], xy[3]), width, cd);
+		xy += 2;
+	}
+
+	//last to first one
+	Image4_drawLine(self, Vec2i_init2(xy[N - 2], xy[N - 1]), Vec2i_init2(xy[0], xy[1]), width, cd);
+}
+
+int Image4_drawPolyFill_antialias_start(Image4* self, int startX, int startY, Vec2f lineS, Vec2f lineE, Rgba cd, float alpha)
+{
+	//return startX;
+	if (startX - 3 > self->rect.start.x)
+	{
+		Vec2f sub = Vec2f_sub(lineE, lineS);
+		int x = startX + 1;
+		int n = 1;
+		//while(x > self->rect.start.x && x > lineE.x && n > 0)
+		for (x = startX - 3; x <= startX + 1; x++)
+		{
+			n = 0;
+			float xx, yy;
+			//for (yy = -0.25f; yy < 0.6f; yy += 0.5f)
+			//	for (xx = -0.25f; xx < 0.6f; xx += 0.5f)
+			for (yy = -0.33f; yy < 0.4f; yy += 0.33f)
+				for (xx = -0.33f; xx < 0.4f; xx += 0.33f)
+					n += (sub.y * (x + xx) - sub.x * (startY + yy) + lineE.x * lineS.y - lineE.y * lineS.x) < 0;
+
+			Rgba* pos = Image4_getV(self, Vec2i_init2(x, startY));
+			*pos = Rgba_aprox(*pos, cd, alpha * n / 9);
+
+			//	x--;
+		}
+		startX += 2;
+	}
+	return startX;
+}
+
+int Image4_drawPolyFill_antialias_end(Image4* self, int endX, int endY, Vec2f lineS, Vec2f lineE, Rgba cd, float alpha)
+{
+	//return endX;
+	if (endX + 3 < self->rect.start.x + self->rect.size.x)
+	{
+		Vec2f sub = Vec2f_sub(lineE, lineS);
+		int x = endX - 1;
+		int n = 1;
+		//while (x < self->rect.start.x + self->rect.size.x && (x < lineS.x) && n > 0)
+		for (x = endX - 1; x < endX + 3; x++)
+		{
+			n = 0;
+			float xx, yy;
+			//for (yy = -0.25f; yy < 0.6f; yy += 0.5f)
+			//	for (xx = -0.25f; xx < 0.6f; xx += 0.5f)
+			for (yy = -0.33f; yy < 0.4f; yy += 0.33f)
+				for (xx = -0.33f; xx < 0.4f; xx += 0.33f)
+					n += (sub.y * (x + xx) - sub.x * (endY + yy) + lineE.x * lineS.y - lineE.y * lineS.x) < 0;
+
+			Rgba* pos = Image4_getV(self, Vec2i_init2(x, endY));
+			*pos = Rgba_aprox(*pos, cd, alpha * n / 9);
+
+			//	x++;
+		}
+		endX -= 1;
+	}
+	return endX;
+}
+
+typedef struct Image4PolyItem_s
+{
+	int nodex;
+	Vec2f start;
+	Vec2f end;
+}Image4PolyItem;
+typedef struct Image4Poly_s
+{
+	Image4PolyItem* items;
+	int num;
+	int alloc;
+}Image4Poly;
+
+Image4Poly Image4Poly_init(void)
+{
+	Image4Poly self;
+	self.items = 0;
+	self.num = 0;
+	self.alloc = 0;
+	return self;
+}
+void Image4Poly_free(Image4Poly* self)
+{
+	Os_free(self->items, self->alloc * sizeof(Image4PolyItem));
+}
+void Image4Poly_empty(Image4Poly* self)
+{
+	self->num = 0;
+}
+void Image4Poly_add(Image4Poly* self, int nodex, Vec2f start, Vec2f end)
+{
+	int old = self->num;
+
+	self->num++;
+	if (self->num >= self->alloc)
+	{
+		self->alloc = self->num + 30;
+		self->items = Os_realloc(self->items, self->alloc * sizeof(Image4PolyItem));
+	}
+
+	self->items[old].nodex = nodex;
+	self->items[old].start = start;
+	self->items[old].end = end;
+}
+void Image4Poly_switch(Image4Poly* self, int i, int j)
+{
+	Image4PolyItem swap = self->items[i];
+	self->items[i] = self->items[i + 1];
+	self->items[i + 1] = swap;
+}
+void Image4Poly_short(Image4Poly* self)
+{
+	BIG i = 0;
+	while (i < self->num - 1)
+	{
+		if (self->items[i].nodex > self->items[i + 1].nodex)
+		{
+			Image4Poly_switch(self, i, i + 1);
+			if (i)
+				i--;
+		}
+		else
+			i++;
+	}
+}
+
+void Image4_drawPolyFill(Image4* self, float* xy, const UBIG N, Rgba cd, const float alpha)
+{
+	Image4Poly poly = Image4Poly_init();
+
+	const Vec2i start = self->rect.start;
+	const Vec2i end = Quad2i_end(self->rect);
+
+	//iterate all rows
+	int pixelY;
+	for (pixelY = start.y; pixelY < end.y; pixelY++)
+	{
+		//create list
+		Image4Poly_empty(&poly);
+
+		BIG j = N - 1;
+		BIG i;
+		for (i = 0; i < N; i++)
+		{
+			Vec2f ipoly = Vec2f_init2(xy[i * 2 + 0], xy[i * 2 + 1]);
+			Vec2f jpoly = Vec2f_init2(xy[j * 2 + 0], xy[j * 2 + 1]);
+
+			if ((ipoly.y < pixelY && jpoly.y >= pixelY) || (jpoly.y < pixelY && ipoly.y >= pixelY))
+				Image4Poly_add(&poly, (ipoly.x + (pixelY - ipoly.y) / (jpoly.y - ipoly.y) * (jpoly.x - ipoly.x)), ipoly, jpoly);
+
+			j = i;
+		}
+
+		//sort list
+		Image4Poly_short(&poly);
+
+		//draw
+		for (i = 0; i < poly.num; i += 2)
+		{
+			int ns = poly.items[i].nodex;
+			int ne = poly.items[i + 1].nodex;
+
+			if (ns >= end.x)
+				break;
+
+			if (ne > start.x)
+			{
+				//antialias
+				ns = Image4_drawPolyFill_antialias_start(self, ns, pixelY, poly.items[i].start, poly.items[i].end, cd, alpha);
+				ne = Image4_drawPolyFill_antialias_end(self, ne, pixelY, poly.items[i + 1].start, poly.items[i + 1].end, cd, alpha);
+
+				if (ns < start.x)	ns = start.x;
+				if (ne > end.x)		ne = end.x;
+
+				//fill
+				Rgba* pos = Image4_getV(self, Vec2i_init2(ns, pixelY));
+				Rgba* posE = pos + (ne - ns);
+				while (pos < posE)
+				{
+					*pos = Rgba_aprox(*pos, cd, alpha);
+					pos++;
+				}
+			}
+		}
+	}
+
+	Image4Poly_free(&poly);
 }
 
 Quad2i Image4_getUnderline(Vec2i pos, BOOL centerText, Vec2i textSize)

@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -69,13 +69,14 @@ BOOL GuiItemCheck_isActive(GuiItemCheck* self)
 void GuiItemCheck_draw(GuiItemCheck* self, Image4* img, Quad2i coord, Win* win)
 {
 	const int cell = OsWinIO_cellSize();
-	Quad2i box = Quad2i_addSpace(coord, cell / 4);
+	//Quad2i box = Quad2i_addSpace(coord, cell / 4);
 
-	if (self->base.drawTable)
-	{
-		const int s = cell / 2;	//Std_max(cell/2, coord.size.y / 4);
-		box = Quad2i_initMid(Quad2i_getMiddle(coord), Vec2i_init2(s, s));
-	}
+	const int s = cell / 2;
+	//if (self->base.drawTable)
+	Quad2i box = Quad2i_initMid(Quad2i_getMiddle(coord), Vec2i_init2(s, s));
+
+	if (!self->base.drawTable)
+		box.start.x = coord.start.x + cell / 4;
 
 	box.size.x = box.size.y;
 
@@ -117,7 +118,7 @@ void GuiItemCheck_draw(GuiItemCheck* self, Image4* img, Quad2i coord, Win* win)
 	pos.y = coord.start.y + coord.size.y / 2;
 	int textH = _GuiItem_textSize(1, coord.size.y);
 	OsFont* font = OsWinIO_getFontDefault();
-	Image4_drawText(img, pos, FALSE, font, DbValue_result(&self->description), textH, 0, self->base.front_cd);	//není přesně align Y ...
+	Image4_drawText(img, pos, FALSE, font, DbValue_result(&self->description), textH, 0, self->base.front_cd);
 }
 
 void GuiItemCheck_update(GuiItemCheck* self, Quad2i coord, Win* win)

@@ -4,58 +4,72 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
  * Public License.
  */
 
-void UiDialogLicense_clickChooseLanguage(GuiItem* item)
+void UiDialogLicense_clickAutoUpdate(GuiItem* item)
 {
-	Lang_setPos(Std_max(0, GuiItemComboStatic_getValue(GuiItem_findName(item, "language"))));
+	UiIniSettings_setUpdate(GuiItemCheck_isActive(GuiItem_findName(item, "update")));
 }
 
-void UiDialogLicense_clickYes(GuiItem* item)
+void UiDialogLicense_clickCheck(GuiItem* item)
 {
-	UiIniSettings_setLicenseAccept();
-	UiScreen_setStartup();
-}
-void UiDialogLicense_clickNo(GuiItem* item)
-{
-	BOOL onlyText = GuiItem_findAttribute(item, "onlyText");
+	UiAutoUpdate_run();
 
-	if (onlyText)
-		GuiItem_closeParentLevel(item);
+	BIG ver = UiAutoUpdate_getVersionUNI();
+	GuiItem_setEnable(GuiItem_findName(item, "button"), UiAutoUpdate_hasUpdate());
+	GuiItemText* latest = GuiItem_findName(item, "latestVer");
+	if (ver < 0)
+		GuiItemText_setText(latest, Lang_find("CHECKING"));
 	else
-	{
-		printf("License declined\n");
-		UiIniSettings_setLicenseVersion(-1);
-	}
+		GuiItemText_setNumber(latest, ver);
 }
 
-GuiItemLayout* UiDialogLicense_new(BOOL onlyText)
+void UiDialogLicense_clickUpdate(GuiItem* item)
+{
+	if (UiAutoUpdate_hasUpdate())
+	{
+		if (UiAutoUpdate_updateFile())
+			Logs_addInfo("INF_UPDATES_NOTE");
+		else
+			Logs_addError("ERR_UPDATE_FAIL");
+	}
+
+	GuiItem_closeParentLevel(item);	//hide
+}
+
+GuiItemLayout* UiDialogLicense_new(void)
 {
 	//layout
 	GuiItemLayout* layout = GuiItemLayout_new(Quad2i_init4(0, 0, 1, 1));
-	GuiItemLayout_addColumn(layout, 0, onlyText ? 1 : 100);
-	GuiItemLayout_addColumn(layout, 1, 7);
-	GuiItemLayout_addColumn(layout, 3, 7);
-	GuiItemLayout_addColumn(layout, 5, 7);
-	GuiItemLayout_addColumn(layout, 6, onlyText ? 1 : 100);
-	GuiItemLayout_addRow(layout, 0, 100);
-	GuiItem_setAttribute((GuiItem*)layout, "onlyText", onlyText);
+	GuiItemLayout_addColumn(layout, 0, 99);
 
-	GuiItem_addSubName((GuiItem*)layout, "license", GuiItemTextMulti_new(Quad2i_init4(1, 0, 5, 5), DbValue_initLang("LICENSE_TEXT")));
-
-	if (!onlyText)
+	//info
+	if (!License_exist())
+		GuiItem_addSubName((GuiItem*)layout, "expiration", GuiItemText_new(Quad2i_init4(0, 0, 1, 2), TRUE, DbValue_initLang("NON_COMMERCIAL_USE_ONLY"), DbValue_initEmpty()));
+	else
 	{
-		//Laguage
-		GuiItem_addSubName((GuiItem*)layout, "language", GuiItemComboStatic_newEx(Quad2i_init4(1, 6, 1, 1), DbValue_initNumber(Lang_getPos()), Lang_find("LANGUAGE_LIST"), DbValue_initLang("LANGUAGE"), &UiDialogLicense_clickChooseLanguage));
+		OsDate date = License_getExpiration();
+		char month[32];
+		Std_copyCHAR_uni(month, 32, Lang_find_month(date.m_month));
+		char time[64];
+		OsDate_getStringDateTime(&date, UiIniSettings_getDateFormat(), OsDate_NONE, month, time);
 
-		GuiItem_addSubName((GuiItem*)layout, "accept", GuiItemButton_newClassicEx(Quad2i_init4(3, 6, 1, 1), DbValue_initLang("ACCEPT"), &UiDialogLicense_clickYes));
-		GuiItem_addSubName((GuiItem*)layout, "decline", GuiItemButton_newClassicEx(Quad2i_init4(5, 6, 1, 1), DbValue_initLang("DECLINE"), &UiDialogLicense_clickNo));
+		GuiItem_addSubName((GuiItem*)layout, "company", GuiItemText_new(Quad2i_init4(0, 0, 1, 2), TRUE, DbValue_initStaticCopy(License_getCompany()), DbValue_initLang("LICENSE_COMPANY")));
+		GuiItem_addSubName((GuiItem*)layout, "count", GuiItemText_new(Quad2i_init4(0, 3, 1, 2), TRUE, DbValue_initNumber(License_getCount()), DbValue_initLang("LICENSE_COUNT")));
+		GuiItem_addSubName((GuiItem*)layout, "expiration", GuiItemText_new(Quad2i_init4(0, 6, 1, 2), TRUE, DbValue_initStaticCopyCHAR(time), DbValue_initLang("LICENSE_EXPIRATION")));
+
+		if (!License_isTimeValid())
+		{
+			//error
+			GuiItemText* err = (GuiItemText*)GuiItem_addSubName((GuiItem*)layout, "expiration", GuiItemText_new(Quad2i_init4(0, 9, 1, 1), TRUE, DbValue_initLang("COMMERCIAL_EXPIRED"), DbValue_initEmpty()));
+			GuiItemText_setColorBorder(err, Rgba_initRed());
+		}
 	}
 
-	return layout;
+	return GuiItemRoot_createDialogLayout(Vec2i_init2(11, 10), DbValue_initLang("LICENSE"), (GuiItem*)layout, 0);
 }

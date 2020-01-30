@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -84,6 +84,9 @@ void StdArr_resize(StdArr* self, UBIG num)
 		Os_memset(&self->ptrs[self->num], (num - self->num) * sizeof(void*));
 
 	self->num = num;
+
+	//if (self->num == 0)
+	//	self->ptrs = 0;
 }
 void* StdArr_add(StdArr* self, void* ptr)
 {
@@ -121,6 +124,14 @@ BOOL StdArr_removeFind(StdArr* self, const void* ptr)
 	BOOL ok = (i >= 0);
 	if (ok)
 		StdArr_remove(self, i);
+	return ok;
+}
+BOOL StdArr_replace(StdArr* self, const void* old, void* nw)
+{
+	BIG i = StdArr_find(self, old);
+	BOOL ok = (i >= 0);
+	if (ok)
+		self->ptrs[i] = nw;
 	return ok;
 }
 

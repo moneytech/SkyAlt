@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -13,6 +13,10 @@
 
 static GuiItem* UiRootGroup_build(GuiItemLayout* layout, UBIG row, DbValue scrollH)
 {
+	BIG thisRow = row;
+	//if (DbRoot_isTypeViewReference(row))
+	//	row = DbRoot_getOrigReference(row);
+
 	GuiItemLayout_addColumn(layout, 0, 99);
 	GuiItemLayout_addRow(layout, 1, 99);
 
@@ -27,13 +31,12 @@ static GuiItem* UiRootGroup_build(GuiItemLayout* layout, UBIG row, DbValue scrol
 		GuiItem_addSubName((GuiItem*)layout, "menu", (GuiItem*)layoutMenu);
 
 		//name
-		GuiItem* name = GuiItem_addSubName((GuiItem*)layoutMenu, "name", GuiItemEdit_newEx(Quad2i_init4(0, 0, 1, 1), DbValue_initOption(row, "name", 0), DbValue_initLang("NAME"), 0));
-		GuiItem_setIcon(name, GuiImage_new1(UiIcons_init_name()));
+		GuiItem_addSubName((GuiItem*)layoutMenu, "header", UiRoot_createMenuNameHeader(Quad2i_init4(0, 0, 1, 1), thisRow));
 	}
 
 	//Group
-	DbRows filter = DbRows_initFilter(row);
-	DbRows_forceEmptyFilter(&filter);
+	DbRows filter = DbRows_initFilter(thisRow);
+	//DbRows_forceEmptyFilter(&filter);
 	GuiItem_addSubName((GuiItem*)layout, "group", GuiItemGroup_new(Quad2i_init4(0, 1, 1, 1), row, filter, scrollH));
 
 	return (GuiItem*)layout;

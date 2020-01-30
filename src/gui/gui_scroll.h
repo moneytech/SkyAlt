@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -22,11 +22,15 @@ typedef struct GuiScroll_s
 	BOOL clickFront;
 	int clickRel;
 
+	Rgba cd;
+
 	BOOL redraw;
 
 	BOOL sendScrollDown;
 
 	DbValue value;
+
+	double timeWheel;
 } GuiScroll;
 
 static UBIG GuiScroll_getWheel(const GuiScroll* self)
@@ -53,8 +57,10 @@ void GuiScroll_setWheel(GuiScroll* self, BIG wheelPixel)
 	{
 		BOOL reset = !GuiItemRoot_hasChanges();
 		DbValue_setNumber(&self->value, self->wheel);
-		if(reset)
+		if (reset)
 			GuiItemRoot_resetNumChanges();
+
+		self->timeWheel = Os_time();
 	}
 }
 
@@ -92,6 +98,9 @@ GuiScroll GuiScroll_init(DbValue value)
 	self.item_height = 1;
 
 	self.sendScrollDown = TRUE;
+	self.timeWheel = 0;
+
+	self.cd = g_theme.main;
 	return self;
 }
 
@@ -134,7 +143,7 @@ BOOL GuiScroll_getRedrawAndReset(GuiScroll* self)
 {
 	BOOL r = self->redraw;
 	//if(r)
-		self->redraw = FALSE;
+	self->redraw = FALSE;
 	return r;
 }
 
@@ -178,7 +187,7 @@ static void _GuiScroll_updateH(const GuiScroll* self, Vec2i start, Win* win, Qua
 
 static Rgba _GuiScroll_getSlideCd(const GuiScroll* self)
 {
-	Rgba cd_slide = g_theme.main;
+	Rgba cd_slide = self->cd;
 	if (self->data_height <= self->screen_height)
 		cd_slide = Rgba_aprox(g_theme.background, g_theme.main, 0.5f);	//disable
 
@@ -196,7 +205,7 @@ void GuiScroll_drawV(GuiScroll* self, Vec2i start, Image4* img, Win* win)
 	//make scroll visible if there is a lot of records(items)
 	if (slider.size.y == 0)
 	{
-		const int c = OsWinIO_cellSize()/4;
+		const int c = OsWinIO_cellSize() / 4;
 		slider.start.y -= c / 2;
 		slider.size.y += c;
 	}
@@ -223,6 +232,12 @@ void GuiScroll_drawH(GuiScroll* self, Vec2i start, Image4* img, Win* win)
 	Image4_drawBoxQuad(img, slider, _GuiScroll_getSlideCd(self));
 }
 
+static BIG _GuiScroll_getTempScroll(GuiScroll* self, const int srcl)
+{
+	BIG diff = (self->item_height == 1) ? OsWinIO_cellSize() : self->item_height;
+	return diff * srcl;
+}
+
 void GuiScroll_touchV(GuiScroll* self, void* parent, Quad2i parentCoord, Vec2i start, Win* win)
 {
 	BIG orig_wheel = self->wheel;
@@ -237,7 +252,7 @@ void GuiScroll_touchV(GuiScroll* self, void* parent, Quad2i parentCoord, Vec2i s
 		//if (OsWinIO_getKeyEXTRA() & Win_EXTRAKEY_SHIFT)
 		//	scrll *= GuiScroll_getMaxRows(self) / 100;
 
-		GuiScroll_setWheel(self, self->wheel + scrll * self->item_height);
+		GuiScroll_setWheel(self, self->wheel + _GuiScroll_getTempScroll(self, scrll));
 		if (orig_wheel != self->wheel) //let parent scroll
 			OsWinIO_resetTouch();
 
@@ -314,7 +329,7 @@ void GuiScroll_touchH(GuiScroll* self, void* parent, Quad2i parentCoord, Vec2i s
 	{
 		BIG scrll = OsWinIO_getTouch_wheel();
 
-		GuiScroll_setWheel(self, self->wheel + scrll * self->item_height);
+		GuiScroll_setWheel(self, self->wheel + _GuiScroll_getTempScroll(self, scrll));
 		if (orig_wheel != self->wheel) //let parent scroll
 			OsWinIO_resetTouch();
 
@@ -380,4 +395,48 @@ void GuiScroll_touchH(GuiScroll* self, void* parent, Quad2i parentCoord, Vec2i s
 		OsWinIO_resetActiveRenderItem();
 
 	self->redraw |= (orig_wheel != self->wheel);
+}
+
+BOOL GuiScroll_tryDragScroll(GuiScroll* self, const int fast_dt, const int sign)
+{
+	BIG wheelOld = self->wheel;
+
+	const double dt = (1.0 / 2) / fast_dt;
+
+	if (Os_time() - self->timeWheel > dt)
+		GuiScroll_setWheel(self, self->wheel + _GuiScroll_getTempScroll(self, sign));
+
+	return self->wheel != wheelOld;
+}
+
+BOOL GuiScroll_dragScrollV(GuiScroll* self, Quad2i coord)
+{
+	const int cell = OsWinIO_cellSize();
+	Vec2i pos = OsWinIO_getTouchPos();
+
+	//vertical top
+	if (Quad2i_inside(Quad2i_init4(coord.start.x, coord.start.y, coord.size.x, cell), pos))
+		return GuiScroll_tryDragScroll(self, (pos.y < coord.start.y + cell / 2) ? 3 : 1, -1);
+
+	//vertical bottom
+	if (Quad2i_inside(Quad2i_init4(coord.start.x, coord.start.y + coord.size.y - cell, coord.size.x, cell), pos))
+		return GuiScroll_tryDragScroll(self, (pos.y > coord.start.y + coord.size.y - cell / 2) ? 3 : 1, +1);
+
+	return FALSE;
+}
+
+BOOL GuiScroll_dragScrollH(GuiScroll* self, Quad2i coord)
+{
+	const int cell = OsWinIO_cellSize();
+	Vec2i pos = OsWinIO_getTouchPos();
+
+	//vertical top
+	if (Quad2i_inside(Quad2i_init4(coord.start.x, coord.start.y, cell, coord.size.y), pos))
+		return GuiScroll_tryDragScroll(self, (pos.x < coord.start.x + cell / 2) ? 3 : 1, -1);
+
+	//vertical bottom
+	if (Quad2i_inside(Quad2i_init4(coord.start.x + coord.size.x - cell, coord.start.y, cell, coord.size.y), pos))
+		return GuiScroll_tryDragScroll(self, (pos.x > coord.start.x + coord.size.x - cell / 2) ? 3 : 1, +1);
+
+	return FALSE;
 }

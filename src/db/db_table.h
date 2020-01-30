@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -26,11 +26,14 @@ typedef struct DbTable_s
 	DbColumn1* rows;
 	StdBigs rowsMoves;
 
-	StdArr exeFilters;	//<DbFilter*>
-
 	UBIG lastRow;
 
 	DbTable* copyTableAsk;
+
+	BIG remoteRow;
+
+	BOOL summary;
+	//OsDate remote_next_refresh;
 } DbTable;
 
 DbColumn* DbTable_getIdsColumn(const DbTable* self)
@@ -40,6 +43,11 @@ DbColumn* DbTable_getIdsColumn(const DbTable* self)
 BOOL DbTable_isIdsColumn(const DbTable* self, const DbColumn* column)
 {
 	return DbTable_getIdsColumn(self) == column;
+}
+
+BOOL DbTable_isSummary(const DbTable* self)
+{
+	return self->summary;
 }
 
 DbTable* DbTable_new(FileRow fileId, DbTables* parent)
@@ -58,11 +66,14 @@ DbTable* DbTable_new(FileRow fileId, DbTables* parent)
 	self->rows = 0;	//must be here!
 	self->rows = DbColumns_addColumn1(self->columns, 0);
 
-	self->exeFilters = StdArr_init();
-
 	self->lastRow = 1;
 
 	self->copyTableAsk = 0;
+
+	self->remoteRow = -1;
+
+	self->summary = FALSE;
+
 	return self;
 }
 
@@ -71,29 +82,17 @@ void DbTable_clear(DbTable* self)
 	DbColumns_clear(self->columns);
 	self->num_rows = 0;
 	self->num_rows_real = 0;
+	self->lastRow = 1;
 
 	StdBigs_free(&self->removed_rows);
 	StdBigs_free(&self->rowsMoves);
 }
 
-void DbTable_removeFilters(DbTable* self)
-{
-	StdArr_freeFn(&self->exeFilters, (StdArrFREE)&DbFilter_delete);
-}
-
 void DbTable_delete(DbTable* self)
 {
-	DbTable_removeFilters(self);
 	DbTable_clear(self);
 	DbColumns_delete(self->columns);
 	Os_free(self, sizeof(DbTable));
-}
-
-DbFilter* DbTable_addFilter(DbTable* self, FileRow fileId)
-{
-	DbFilter* filter = DbFilter_new(self, fileId);
-	StdArr_add(&self->exeFilters, filter);
-	return filter;
 }
 
 FileRow DbTable_getFileId(const DbTable* self)
@@ -126,6 +125,11 @@ UBIG DbTable_numRowsReal(const DbTable* self)
 	return self->num_rows_real;
 }
 
+UBIG DbTable_numCells(const DbTable* self, BOOL realRows)
+{
+	return (realRows ? DbTable_numRowsReal(self) : DbTable_numRows(self)) * DbColumns_num(DbTable_getColumns(self));
+}
+
 const UNI* DbTable_getName(const DbTable* self, UNI* out, const UBIG outMaxSize)
 {
 	return DbRoot_getName(DbTable_getRow(self), out, outMaxSize);
@@ -133,6 +137,16 @@ const UNI* DbTable_getName(const DbTable* self, UNI* out, const UBIG outMaxSize)
 void DbTable_setName(DbTable* self, const UNI* name)
 {
 	DbRoot_setName(DbTable_getRow(self), name);
+}
+
+void DbTable_setRemote(DbTable* self, BIG remoteRow)
+{
+	self->remoteRow = remoteRow;
+}
+
+BOOL DbTable_isRemoteSaveItIntoFile(const DbTable* self)
+{
+	return self->remoteRow >= 0 ? DbRoot_isRemoteSaveItIntoFile(self->remoteRow) : FALSE;
 }
 
 BIG DbTable_jumpRowsFrom0(DbTable* self, UBIG index) //try to jump over deleted lines
@@ -254,7 +268,15 @@ void DbTable_addRows(DbTable* self, UBIG n)
 
 void DbTable_checkForCopyAsk(DbTable* self)
 {
-	DbTable_loadLast(self);
+	UBIG c;
+
+	//load if needed
+	BOOL load = (self->copyTableAsk != 0);
+	for (c = 0; c < DbColumns_num(self->columns); c++)
+		if (DbColumns_get(self->columns, c)->copyColumnAsk)
+			load = TRUE;
+	if (load)
+		DbTable_loadLast(self);
 
 	//table
 	if (self->copyTableAsk)
@@ -270,7 +292,6 @@ void DbTable_checkForCopyAsk(DbTable* self)
 	}
 
 	//column
-	UBIG c;
 	for (c = 0; c < DbColumns_num(self->columns); c++)
 	{
 		DbColumn* column = DbColumns_get(self->columns, c);
@@ -322,7 +343,7 @@ DbColumn* DbTable_createColumnFormat(DbTable* self, DbFormatTYPE format, const U
 	{
 		UNI* val = Std_newUNI_char(DbColumnFormat_findColumnName(format));
 		DbColumn_setOptionString(column, "format", val);
-		DbColumn_setOptionNumber(column, "width", 5);
+		DbColumn_setOptionNumber(column, "width", 8);
 		Std_deleteUNI(val);
 
 		DbColumn_setDefaultOptions(DbColumn_getRow(column), format);
@@ -430,6 +451,9 @@ BOOL DbTable_isChangedExe(const DbTable* self)
 
 UBIG DbTable_numChanges(const DbTable* self)
 {
+	if (self->summary)
+		return 0;
+
 	UBIG n = 0;
 	int i;
 	for (i = 0; i < DbColumns_num(self->columns); i++)
@@ -461,7 +485,7 @@ void DbTable_save(DbTable* self, UBIG* doneCells, const UBIG numAllCells)
 {
 	const double date = Os_timeUTC();
 	int i;
-	for (i = 0; i < DbColumns_num(self->columns) && DbRoot_getProgress()->running; i++)
+	for (i = 0; i < DbColumns_num(self->columns) && StdProgress_is(); i++)
 	{
 		DbColumn* column = DbColumns_get(self->columns, i);
 		if (column != &self->rows->base)
@@ -470,7 +494,7 @@ void DbTable_save(DbTable* self, UBIG* doneCells, const UBIG numAllCells)
 			*doneCells += DbTable_numRows(self);
 	}
 
-	DbColumns_reset_save(self->columns);
+	DbColumns_reset_save(self->columns, FALSE);
 }
 
 void DbTable_unloadHard(DbTable* self)
@@ -492,25 +516,30 @@ void DbTable_unload(DbTable* self)
 
 void DbTable_load(DbTable* self, double currDate)
 {
+	BIG i;
+
 	if (DbTable_isLoaded(self))
 		return;
 
 	if (currDate <= 0)
 		currDate = Std_maxDouble();
 
-	int i;
+	OsODBC* odbc = self->remoteRow >= 0 ? DbRoot_connectRemote(self->remoteRow, FALSE) : 0;
 
 	UBIG filesDone = 0;
 	UBIG filesSizes = 0;	//not including BTables ...
-	for (i = 0; i < DbColumns_num(self->columns) && DbRoot_getProgress()->running; i++)
+	for (i = 0; i < DbColumns_num(self->columns) && StdProgress_is(); i++)
 		if (DbColumns_get(self->columns, i) != &self->rows->base)
 			filesSizes += FileProject_bytesColumns(DbColumns_get(self->columns, i)->fileId);
 
-	for (i = 0; i < DbColumns_num(self->columns) && DbRoot_getProgress()->running; i++)
+	for (i = 0; i < DbColumns_num(self->columns) && StdProgress_is(); i++)
 		if (DbColumns_get(self->columns, i) != &self->rows->base)
-			DbColumn_load(DbColumns_get(self->columns, i), currDate, &filesDone, filesSizes);
+			DbColumn_load(DbColumns_get(self->columns, i), currDate, &filesDone, filesSizes, odbc);
 
-	for (i = 0; i < DbColumns_num(self->columns) && DbRoot_getProgress()->running; i++)
+	if (odbc)
+		OsODBC_delete(odbc);
+
+	for (i = 0; i < DbColumns_num(self->columns) && StdProgress_is(); i++)
 	{
 		DbColumn* col = DbColumns_get(self->columns, i);
 
@@ -520,8 +549,8 @@ void DbTable_load(DbTable* self, double currDate)
 			if (btable)
 			{
 				//load btable
-				if (!DbTable_isLoaded(btable))
-					DbTable_load(btable, currDate);
+				//if (!DbTable_isLoaded(btable))
+				DbTable_load(btable, currDate);
 
 				//convert links to btable to poses
 				DbColumn1_convertToPos((DbColumn1*)col);
@@ -534,21 +563,41 @@ void DbTable_load(DbTable* self, double currDate)
 				if (btable)
 				{
 					//load btable
-					if (!DbTable_isLoaded(btable))
-						DbTable_load(btable, currDate);
+					//if (!DbTable_isLoaded(btable))
+					DbTable_load(btable, currDate);
 
 					//convert links to btable to poses
 					DbColumnN_convertToPos((DbColumnN*)col);
 				}
 			}
+
+		if (col->insight)
+		{
+			BIG ii = 0;
+			DbColumn* ic;
+			while ((ic = DbInsight_getItemColumn(col->insight, ii++)))
+			{
+				DbTable* btable = DbColumn_getBTable(ic);
+				if (btable)
+					DbTable_load(btable, currDate);
+			}
+		}
+
+		//to samé co platí pro Insight, platí i pro Links(mirror/generated) ...
 	}
 
-	DbColumns_reset_save(self->columns);
+	DbColumns_reset_save(self->columns, TRUE);
 }
 
 void DbTable_loadLast(DbTable* self)
 {
 	DbTable_load(self, 0);
+}
+
+void DbTable_refreshRemote(DbTable* self)
+{
+	DbTable_unloadHard(self);
+	DbTable_loadLast(self);
 }
 
 UBIG DbTable_bytes(DbTable* self)
@@ -558,22 +607,22 @@ UBIG DbTable_bytes(DbTable* self)
 	return sum;
 }
 
-StdBigs DbTable_getArrayPoses(const DbTable* self)
+void DbTable_getArrayPoses(const DbTable* self, StdBigs* out)
 {
+	StdBigs_clear(out);
+
 	const UBIG NUM_ROWS = DbTable_numRows(self);
-	StdBigs arr = StdBigs_init();
-	StdBigs_resize(&arr, NUM_ROWS);
+	StdBigs_resize(out, NUM_ROWS);
 
 	UBIG n = 0;
 	BIG i;
 	for (i = 0; i < NUM_ROWS; i++)
 	{
 		if (DbTable_isRowActive(self, i))
-			arr.ptrs[n++] = i;
+			out->ptrs[n++] = i;
 	}
 
-	StdBigs_resize(&arr, n);
-	return arr;
+	StdBigs_resize(out, n);
 }
 
 typedef struct DbTables_s
@@ -586,6 +635,13 @@ DbTables* DbTables_new(void)
 	DbTables* self = Os_malloc(sizeof(DbTables));
 	self->tables = StdArr_init();
 	return self;
+}
+
+void DbTables_freeFilterAndInsight(DbTables* self)
+{
+	UBIG i;
+	for (i = 0; i < DbTables_num(self); i++)
+		DbColumns_freeFilterAndInsight(DbTable_getColumns(DbTables_get(self, i)));
 }
 
 void DbTables_delete(DbTables* self)
@@ -682,6 +738,18 @@ DbTable* DbTables_findName(const DbTables* self, const UNI* name)
 	return 0;
 }
 
+DbTable* DbTables_findNameRemote(const DbTables* self, const UNI* name, BIG remoteRow)
+{
+	UBIG i;
+	for (i = 0; i < DbTables_num(self); i++)
+	{
+		DbTable* table = DbTables_get(self, i);
+		if (table->remoteRow == remoteRow && DbRoot_cmpName(DbTable_getRow(table), name))
+			return table;
+	}
+	return 0;
+}
+
 DbColumn* DbTables_findColumn(const DbTables* self, const FileRow fileId)
 {
 	if (!FileRow_is(fileId))
@@ -765,10 +833,7 @@ UBIG DbTables_numCells(const DbTables* self, BOOL realRows)
 	UBIG n = 0;
 	UBIG i;
 	for (i = 0; i < DbTables_num(self); i++)
-	{
-		DbTable* table = DbTables_get(self, i);
-		n += (realRows ? DbTable_numRowsReal(table) : DbTable_numRows(table)) * DbColumns_num(DbTable_getColumns(table));
-	}
+		n += DbTable_numCells(DbTables_get(self, i), realRows);
 
 	return n;
 }
@@ -789,15 +854,23 @@ void DbTables_save(DbTables* self)
 
 	UBIG i;
 	for (i = 0; i < DbTables_num(self); i++)
-		DbTable_save(DbTables_get(self, i), &doneCells, numAllCells);
+	{
+		DbTable* t = DbTables_get(self, i);
+		if (!t->summary)
+			DbTable_save(t, &doneCells, numAllCells);
+	}
 }
 
 BOOL DbTables_isChangedSave(const DbTables* self)
 {
 	int i;
 	for (i = 0; i < DbTables_num(self); i++)
-		if (DbTable_isChangedSave(DbTables_get(self, i)))
-			return TRUE;
+	{
+		DbTable* t = DbTables_get(self, i);
+		if (!t->summary)
+			if (DbTable_isChangedSave(t))
+				return TRUE;
+	}
 	return FALSE;
 }
 
@@ -818,5 +891,16 @@ void DbTables_unloadUnlisted(const DbTables* self, StdArr* keepTables)
 		DbTable* table = DbTables_get(self, i);
 		if (StdArr_find(keepTables, table) < 0)
 			DbTable_unload(table);
+	}
+}
+
+void DbTables_refreshRemote(DbTables* self, BIG remoteRow)
+{
+	int i;
+	for (i = 0; i < DbTables_num(self); i++)
+	{
+		DbTable* table = DbTables_get(self, i);
+		if (table->remoteRow == remoteRow)
+			DbTable_refreshRemote(table);
 	}
 }

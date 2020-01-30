@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -33,6 +33,8 @@ typedef struct Win_s
 
 	BOOL(*tickFn)(void*, Quad2i* redrawRect);
 	void* tickSelf;
+
+	UBIG tickCounter;
 } Win;
 
 BOOL Win_isResize(Win* self)
@@ -80,7 +82,7 @@ Image4 Win_getImage(Win* self)
 	Image4 img;
 	img.data = (Rgba*)gdk_pixbuf_get_pixels(self->pixbuf);
 	img.size = self->canvas_size;
-	img.rect = Win_getScreenRect(self);
+	Image4_setRect(&img, Win_getScreenRect(self));
 	return img;
 }
 
@@ -115,7 +117,6 @@ void Win_updateCursor(Win* self, Win_CURSOR cursor)
 			break;
 		case Win_CURSOR_FLEUR: self->actual_cursor = self->cursor_fleur;
 			break;
-
 		case Win_CURSOR_COL_RESIZE: self->actual_cursor = self->cursor_col_resize;
 			break;
 		case Win_CURSOR_ROW_RESIZE: self->actual_cursor = self->cursor_row_resize;
@@ -171,7 +172,11 @@ static void _Win_setKeyExtra(GdkModifierType state, UNI key)
 	}
 
 	if (state & GDK_SHIFT_MASK)
+	{
 		key_extra |= Win_EXTRAKEY_SHIFT;
+
+		if (key == GDK_KEY_space) key_extra |= Win_EXTRAKEY_SELECT_ROW;
+	}
 
 	if (state & GDK_CONTROL_MASK)
 	{
@@ -185,6 +190,7 @@ static void _Win_setKeyExtra(GdkModifierType state, UNI key)
 		if (key == GDK_KEY_v || key == GDK_KEY_V) key_extra |= Win_EXTRAKEY_PASTE;
 		if (key == GDK_KEY_d || key == GDK_KEY_D) key_extra |= Win_EXTRAKEY_DUPLICATE;
 
+		if (key == GDK_KEY_f || key == GDK_KEY_F) key_extra |= Win_EXTRAKEY_SEARCH;
 		if (key == GDK_KEY_t || key == GDK_KEY_T) key_extra |= Win_EXTRAKEY_THEME;
 
 		if (key == GDK_KEY_n || key == GDK_KEY_N) key_extra |= Win_EXTRAKEY_NEW;
@@ -199,6 +205,10 @@ static void _Win_setKeyExtra(GdkModifierType state, UNI key)
 		if (key == GDK_KEY_semicolon) key_extra |= Win_EXTRAKEY_COMMENT; //;
 
 		if (key == GDK_KEY_F12) key_extra |= Win_EXTRAKEY_PRINTSCREEN;
+
+		if (key == GDK_KEY_space) key_extra |= Win_EXTRAKEY_SELECT_COLUMN;
+
+		if (key == GDK_KEY_r || key == GDK_KEY_R) key_extra |= Win_EXTRAKEY_ADD_RECORD;
 	}
 	else
 	{
@@ -231,12 +241,14 @@ static BOOL _Win_tick(void* selff);
 
 static BOOL _Win_key_press(GtkWidget* widget, GdkEventKey* event, Win* self)
 {
-	if (event->length)
-		OsWinIO_setKey(gdk_keyval_to_unicode(event->keyval));
+	//if (event->length)
+	OsWinIO_setKey(gdk_keyval_to_unicode(event->keyval));
 	_Win_setKeyExtra(event->state, event->keyval);
 
-	if (event->length)
-		_Win_tick(self);	//run right now!
+	//if (event->length)
+	//	_Win_tick(self);	//run right now!
+
+	//printf("key: %d, %d\n", event->length, gdk_keyval_to_unicode(event->keyval));
 	return TRUE;
 }
 
@@ -250,6 +262,9 @@ static BOOL _Win_mouse_motion(GtkWidget* widget, GdkEventMotion* event, Win* sel
 	gdk_event_get_scroll_deltas((GdkEvent*)event, &delta_x, &delta_y);
 	if (delta_y != 0)
 		OsWinIO_setTouchWheel(&pos, delta_y);
+
+	// gtk_widget_queue_draw(self->canvas);
+	// gtk_widget_queue_draw (widget);
 
 	return TRUE;
 }
@@ -268,7 +283,7 @@ static BOOL _Win_mouse_scroll(GtkWidget* widget, GdkEventScroll* event, Win* sel
 
 	_Win_setKeyExtra(event->state, 0);
 
-	_Win_tick(self);	//run right now!
+	//_Win_tick(self);	//run right now!
 	return TRUE;
 }
 
@@ -283,7 +298,8 @@ static BOOL _Win_mouse_press(GtkWidget* widget, GdkEventButton* event, Win* self
 
 	_Win_setKeyExtra(event->state, 0);
 
-	_Win_tick(self);	//run right now!
+	//printf("button_down: %d\n", event->button);
+	//_Win_tick(self);	//run right now!
 	return TRUE;
 }
 
@@ -298,7 +314,8 @@ static BOOL _Win_mouse_release(GtkWidget* widget, GdkEventButton* event, Win* se
 
 	_Win_setKeyExtra(event->state, 0);
 
-	_Win_tick(self);	//run right now!
+	// printf("buttonup: %d\n", event->button);
+ //	_Win_tick(self);	//run right now!
 	return TRUE;
 }
 
@@ -308,36 +325,42 @@ static gboolean _Win_redraw(GtkWidget* widget, cairo_t* cr, Win* self)
 	gdk_cairo_set_source_pixbuf(cr, self->pixbuf, 0, 0); //rect.x, rect.y
 	cairo_paint(cr);
 
+	//printf("draw:\n");
+
 	return FALSE;
 }
-
-UBIG g_win_tick = 0;
 
 static BOOL _Win_tick(void* selff)
 {
 	Win* self = selff;
 	//GdkWindow* window = gtk_widget_get_window(self->window);
 
+		//every second call has to be quick, so main thread has extra time for calling draw() callback
+	if ((self->tickCounter++) % 2 == 0)
+		return G_SOURCE_CONTINUE;
+
 	_Win_resize(self, Vec2i_init2(gtk_widget_get_allocated_width(self->canvas), gtk_widget_get_allocated_height(self->canvas)));	//accurate
 
 	if (OsWinIO_getKeyExtra() & Win_EXTRAKEY_PRINTSCREEN)
 		Win_savePrintscreen(self);
 
-	if ((g_win_tick++) % 2 == 0)
+	if (self->tickFn && self->tickSelf)
 	{
-		if (self->tickFn && self->tickSelf)
+		Quad2i redrawRect = Quad2i_init();
+		if (!self->tickFn(self->tickSelf, &redrawRect))	//call project "logic"
+			gtk_main_quit();
+
+		//redrawRect = Win_getScreenRect(self);
+
+		if (!Quad2i_isZero(redrawRect))
 		{
-			Quad2i redrawRect = Quad2i_init();
-			if (!self->tickFn(self->tickSelf, &redrawRect))	//call project "logic"
-				gtk_main_quit();
+			Quad2i rect = Quad2i_getIntersect(redrawRect, Win_getScreenRect(self));
+			//Quad2i_print(redrawRect, "redrawRect");
 
-			if (!Quad2i_isZero(redrawRect))
-			{
-				Quad2i rect = Quad2i_getIntersect(redrawRect, Win_getScreenRect(self));
-				//Quad2i_print(redrawRect, "redrawRect");
+			gtk_widget_queue_draw_area(self->canvas, rect.start.x, rect.start.y, rect.size.x, rect.size.y);
 
-				gtk_widget_queue_draw_area(self->canvas, rect.start.x, rect.start.y, rect.size.x, rect.size.y);
-			}
+			//mo\9En\E1 toto nefunguje kdy\9E se vol\E1 p\F8\EDmo z key() nebo mousePress() ...
+			//printf("redraw_ask: %d, %d, %d, %d\n", rect.start.x, rect.start.y, rect.size.x, rect.size.y);
 		}
 	}
 
@@ -367,6 +390,7 @@ Win* Win_new(Quad2i* abs_coord, BOOL(*tickFn)(void*, Quad2i* redrawRect), void* 
 
 	Win* self = malloc(sizeof(Win));
 
+	self->tickCounter = 0;
 	self->tickFn = tickFn;
 	self->tickSelf = tickSelf;
 	self->m_fullscreen = FALSE;
@@ -386,11 +410,11 @@ Win* Win_new(Quad2i* abs_coord, BOOL(*tickFn)(void*, Quad2i* redrawRect), void* 
 	self->cursor_ibeam = gdk_cursor_new_from_name(gdk_display_get_default(), "text");
 	self->cursor_wait = gdk_cursor_new_from_name(gdk_display_get_default(), "wait");
 	self->cursor_hand = gdk_cursor_new_from_name(gdk_display_get_default(), "pointer");
-	self->cursor_fleur = gdk_cursor_new_from_name(gdk_display_get_default(), "crosshair");	//eg.: extend cells
+	self->cursor_fleur = gdk_cursor_new_from_name(gdk_display_get_default(), "nwse-resize");	//eg.: extend cells
 
 	self->cursor_col_resize = gdk_cursor_new_from_name(gdk_display_get_default(), "col-resize");
 	self->cursor_row_resize = gdk_cursor_new_from_name(gdk_display_get_default(), "row-resize");
-	self->cursor_move = gdk_cursor_new_from_name(gdk_display_get_default(), "move");
+	self->cursor_move = gdk_cursor_new_from_name(gdk_display_get_default(), "grabbing");
 
 	Win_resetCursor(self);
 
@@ -422,7 +446,8 @@ Win* Win_new(Quad2i* abs_coord, BOOL(*tickFn)(void*, Quad2i* redrawRect), void* 
 	g_signal_connect(self->window, "drag_data_received", G_CALLBACK(target_drop_data_received), self);
 
 	gtk_widget_set_events(self->canvas,
-		//GDK_EXPOSURE_MASK |
+		//GDK_POINTER_MOTION_MASK |
+	   // GDK_EXPOSURE_MASK |
 		GDK_BUTTON_PRESS_MASK |
 		GDK_BUTTON_RELEASE_MASK |
 		GDK_KEY_PRESS_MASK |
@@ -449,7 +474,7 @@ void Win_delete(Win* self)
 
 void Win_start(Win* self)
 {
-	g_timeout_add(5, _Win_tick, self); //1000fps
+	g_timeout_add(5, _Win_tick, self); //200fps
 	gtk_main();
 }
 

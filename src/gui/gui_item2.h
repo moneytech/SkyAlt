@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -55,14 +55,14 @@ GuiItem* GuiItem_newCopy(GuiItem* src, BOOL copySub)
 		case GuiItem_LIST: return GuiItemList_newCopy((GuiItemList*)src, copySub);
 			//case GuiItem_TODO: return GuiItemTodo_newCopy((GuiItemTodo*)src, copySub);
 			//case GuiItem_KANBAN: return GuiItemKanban_newCopy((GuiItemKanban*) src, copySub);
-			//case GuiItem_CHART: return GuiItemChart_newCopy((GuiItemChart*) src, copySub);
+		case GuiItem_CHART: return GuiItemChart_newCopy((GuiItemChart*)src, copySub);
 		case GuiItem_CALENDAR_SMALL: return GuiItemCalendarSmall_newCopy((GuiItemCalendarSmall*)src, copySub);
 		case GuiItem_CALENDAR_BIG: return GuiItemCalendarBig_newCopy((GuiItemCalendarBig*)src, copySub);
 			//case GuiItem_TIMELINE: return GuiItemTimeline_newCopy((GuiItemTimeline*)src, copySub);
 		case GuiItem_PARTICLES: return 0;
 		case GuiItem_FILE: return GuiItemFile_newCopy((GuiItemFile*)src, copySub);
 		case GuiItem_SWITCH: return GuiItemSwitch_newCopy((GuiItemSwitch*)src, copySub);
-			//case GuiItem_MAP: return GuiItemMap_newCopy((GuiItemMap*) src, copySub);
+		case GuiItem_MAP: return GuiItemMap_newCopy((GuiItemMap*)src, copySub);
 		case GuiItem_COLOR: return GuiItemColor_newCopy((GuiItemColor*)src, copySub);
 
 		case GuiItem_LEVEL: return GuiItemLevel_newCopy((GuiItemLevel*)src, copySub);
@@ -131,14 +131,17 @@ BIG GuiItem_getRow(GuiItem* self)
 
 		case GuiItem_KANBAN:
 		break;
+
 		case GuiItem_CHART:
-		//return GuiItemChart_getRow((GuiItemChart*)self);
+		return GuiItemChart_getRow((GuiItemChart*)self);
 		break;
 
 		case GuiItem_CALENDAR_SMALL:
 		break;
+
 		case GuiItem_CALENDAR_BIG:
 		break;
+
 		case GuiItem_TIMELINE:
 		break;
 
@@ -162,8 +165,10 @@ BIG GuiItem_getRow(GuiItem* self)
 
 		case GuiItem_SWITCH:
 		break;
+
 		case GuiItem_MAP:
-		break;
+		return GuiItemMap_getBaseRow((GuiItemMap*)self);
+
 		case GuiItem_COLOR:
 		return DbValue_getRow(&((GuiItemColor*)self)->value);
 
@@ -192,7 +197,7 @@ void GuiItem_setRow(GuiItem* self, BIG row, UBIG index)
 	if (!self->changeRow)
 		return;
 
-	DbValue_setRow(&self->enableValue, row, index);
+	BOOL isIcon = (self->iconCallback && GuiItem_getRow(self) != row);
 
 	switch (self->type)
 	{
@@ -239,6 +244,7 @@ void GuiItem_setRow(GuiItem* self, BIG row, UBIG index)
 		case GuiItem_COMBO_STATIC:
 		DbValue_setRow(&((GuiItemComboStatic*)self)->value, row, index);
 		break;
+
 		case GuiItem_COMBO_DYNAMIC:
 		DbRows_setBaseRow(&((GuiItemComboDynamic*)self)->value, row);
 		break;
@@ -254,20 +260,24 @@ void GuiItem_setRow(GuiItem* self, BIG row, UBIG index)
 		case GuiItem_TABLE:
 		GuiItemTable_setBaseRow((GuiItemTable*)self, row);
 		break;
+
 		case GuiItem_GROUP:
 		GuiItemGroup_setBaseRow((GuiItemGroup*)self, row);
 		break;
 
 		case GuiItem_KANBAN:
 		break;
+
 		case GuiItem_CHART:
-		//GuiItemChart_setRow((GuiItemChart*)self, row);
+		GuiItemChart_setRow((GuiItemChart*)self, row);
 		break;
 
 		case GuiItem_CALENDAR_SMALL:
 		break;
+
 		case GuiItem_CALENDAR_BIG:
 		break;
+
 		case GuiItem_TIMELINE:
 		break;
 
@@ -296,9 +306,12 @@ void GuiItem_setRow(GuiItem* self, BIG row, UBIG index)
 		case GuiItem_SWITCH:
 		break;
 		case GuiItem_MAP:
+		GuiItemMap_setBaseRow((GuiItemMap*)self, row);
 		break;
+
 		case GuiItem_COLOR:
 		DbValue_setRow(&((GuiItemColor*)self)->value, row, index);
+		break;
 
 		case GuiItem_LEVEL:
 		break;
@@ -306,6 +319,9 @@ void GuiItem_setRow(GuiItem* self, BIG row, UBIG index)
 		default:
 		break;
 	}
+
+	if (isIcon)
+		self->iconCallback(self);
 
 	if (self->type != GuiItem_TABLE && self->type != GuiItem_LIST && self->type != GuiItem_LEVEL)
 	{
@@ -376,7 +392,7 @@ void GuiItem_resize(GuiItem* self, GuiItemLayout* layout, Win* win)
 		break;
 	}
 
-	if(self->resize)
+	if (self->resize)
 		GuiItem_update(self, win);	//items visibility
 
 	BIG i;
@@ -388,83 +404,79 @@ void GuiItem_resize(GuiItem* self, GuiItemLayout* layout, Win* win)
 
 void GuiItem_delete(GuiItem* self)
 {
-	if (!self->notDelete)
+	switch (self->type)
 	{
-		switch (self->type)
-		{
-			case GuiItem_BOX: GuiItemBox_delete((GuiItemBox*)self);
-				break;
-			case GuiItem_TEXT: GuiItemText_delete((GuiItemText*)self);
-				break;
-			case GuiItem_TEXT_MULTI:GuiItemTextMulti_delete((GuiItemTextMulti*)self);
-				break;
-			case GuiItem_BUTTON: GuiItemButton_delete((GuiItemButton*)self);
-				break;
-			case GuiItem_EDIT: GuiItemEdit_delete((GuiItemEdit*)self);
-				break;
-			case GuiItem_CHECK: GuiItemCheck_delete((GuiItemCheck*)self);
-				break;
-			case GuiItem_SLIDER: GuiItemSlider_delete((GuiItemSlider*)self);
-				break;
-			case GuiItem_RATING: GuiItemRating_delete((GuiItemRating*)self);
-				break;
-			case GuiItem_COMBO_STATIC: GuiItemComboStatic_delete((GuiItemComboStatic*)self);
-				break;
-			case GuiItem_COMBO_DYNAMIC: GuiItemComboDynamic_delete((GuiItemComboDynamic*)self);
-				break;
-			case GuiItem_MENU: GuiItemMenu_delete((GuiItemMenu*)self);
-				break;
-			case GuiItem_TAGS: GuiItemTags_delete((GuiItemTags*)self);
-				break;
-
-			case GuiItem_TABLE:
-			GuiItemTable_delete((GuiItemTable*)self);
+		case GuiItem_BOX: GuiItemBox_delete((GuiItemBox*)self);
 			break;
-			case GuiItem_GROUP:
-			GuiItemGroup_delete((GuiItemGroup*)self);
+		case GuiItem_TEXT: GuiItemText_delete((GuiItemText*)self);
+			break;
+		case GuiItem_TEXT_MULTI:GuiItemTextMulti_delete((GuiItemTextMulti*)self);
+			break;
+		case GuiItem_BUTTON: GuiItemButton_delete((GuiItemButton*)self);
+			break;
+		case GuiItem_EDIT: GuiItemEdit_delete((GuiItemEdit*)self);
+			break;
+		case GuiItem_CHECK: GuiItemCheck_delete((GuiItemCheck*)self);
+			break;
+		case GuiItem_SLIDER: GuiItemSlider_delete((GuiItemSlider*)self);
+			break;
+		case GuiItem_RATING: GuiItemRating_delete((GuiItemRating*)self);
+			break;
+		case GuiItem_COMBO_STATIC: GuiItemComboStatic_delete((GuiItemComboStatic*)self);
+			break;
+		case GuiItem_COMBO_DYNAMIC: GuiItemComboDynamic_delete((GuiItemComboDynamic*)self);
+			break;
+		case GuiItem_MENU: GuiItemMenu_delete((GuiItemMenu*)self);
+			break;
+		case GuiItem_TAGS: GuiItemTags_delete((GuiItemTags*)self);
 			break;
 
-			case GuiItem_KANBAN:
-			//GuiItemKanban_delete((GuiItemKanban*) self);
-			break;
-			case GuiItem_CHART:
-			//GuiItemChart_delete((GuiItemChart*) self);
-			break;
-			case GuiItem_CALENDAR_SMALL: GuiItemCalendarSmall_delete((GuiItemCalendarSmall*)self);
-				break;
-			case GuiItem_CALENDAR_BIG: GuiItemCalendarBig_delete((GuiItemCalendarBig*)self);
-				break;
-				//case GuiItem_TIMELINE: GuiItemTimeline_delete((GuiItemTimeline*)self);
-				//	break;
+		case GuiItem_TABLE:
+		GuiItemTable_delete((GuiItemTable*)self);
+		break;
+		case GuiItem_GROUP:
+		GuiItemGroup_delete((GuiItemGroup*)self);
+		break;
 
-			case GuiItem_LAYOUT: GuiItemLayout_delete((GuiItemLayout*)self);
-				break;
-				//case GuiItem_DESIGN: GuiItemDesign_delete((GuiItemDesign*)self);
-				//	break;
-			case GuiItem_LIST: GuiItemList_delete((GuiItemList*)self);
-				break;
-				//case GuiItem_TODO: GuiItemTodo_delete((GuiItemTodo*)self);
-				//	break;
-			case GuiItem_PARTICLES: GuiItemParticles_delete((GuiItemParticles*)self);
-				break;
-			case GuiItem_FILE: GuiItemFile_delete((GuiItemFile*)self);
-				break;
-
-			case GuiItem_SWITCH: GuiItemSwitch_delete((GuiItemSwitch*)self);
-				break;
-			case GuiItem_MAP:
-			//GuiItemMap_delete((GuiItemMap*) self);
+		case GuiItem_KANBAN:
+		//GuiItemKanban_delete((GuiItemKanban*) self);
+		break;
+		case GuiItem_CHART:
+		GuiItemChart_delete((GuiItemChart*)self);
+		break;
+		case GuiItem_CALENDAR_SMALL: GuiItemCalendarSmall_delete((GuiItemCalendarSmall*)self);
 			break;
-			case GuiItem_COLOR: GuiItemColor_delete((GuiItemColor*)self);
-				break;
-			case GuiItem_LEVEL: GuiItemLevel_delete((GuiItemLevel*)self);
-				break;
-			default:
+		case GuiItem_CALENDAR_BIG: GuiItemCalendarBig_delete((GuiItemCalendarBig*)self);
 			break;
-		}
+			//case GuiItem_TIMELINE: GuiItemTimeline_delete((GuiItemTimeline*)self);
+			//	break;
 
-		OsWinIO_tryRemoveCursorGuiItem(self);
+		case GuiItem_LAYOUT: GuiItemLayout_delete((GuiItemLayout*)self);
+			break;
+			//case GuiItem_DESIGN: GuiItemDesign_delete((GuiItemDesign*)self);
+			//	break;
+		case GuiItem_LIST: GuiItemList_delete((GuiItemList*)self);
+			break;
+			//case GuiItem_TODO: GuiItemTodo_delete((GuiItemTodo*)self);
+			//	break;
+		case GuiItem_PARTICLES: GuiItemParticles_delete((GuiItemParticles*)self);
+			break;
+		case GuiItem_FILE: GuiItemFile_delete((GuiItemFile*)self);
+			break;
+
+		case GuiItem_SWITCH: GuiItemSwitch_delete((GuiItemSwitch*)self);
+			break;
+		case GuiItem_MAP:	GuiItemMap_delete((GuiItemMap*)self);
+			break;
+		case GuiItem_COLOR: GuiItemColor_delete((GuiItemColor*)self);
+			break;
+		case GuiItem_LEVEL: GuiItemLevel_delete((GuiItemLevel*)self);
+			break;
+		default:
+		break;
 	}
+
+	OsWinIO_tryRemoveCursorGuiItem(self);
 }
 
 void GuiItem_update(GuiItem* self, Win* win)
@@ -478,15 +490,15 @@ void GuiItem_update(GuiItem* self, Win* win)
 	Quad2i coord = self->coordMove;
 
 	if (self->icon)
-		GuiImage_update(self->icon, GuiItem_getIconCoord(&coord));
+		GuiImage_update(self->icon, GuiItem_getIconCoord(&coord).size);
 
 	_GuiItem_updateEnable(self);
 
 	switch (self->type)
 	{
 		case GuiItem_BOX:
-			GuiItemBox_update((GuiItemBox*)self, coord, win);
-			break;
+		GuiItemBox_update((GuiItemBox*)self, coord, win);
+		break;
 		case GuiItem_TEXT: GuiItemText_update((GuiItemText*)self, coord, win);
 			break;
 		case GuiItem_TEXT_MULTI:GuiItemTextMulti_update((GuiItemTextMulti*)self, coord, win);
@@ -521,7 +533,7 @@ void GuiItem_update(GuiItem* self, Win* win)
 		//GuiItemKanban_update((GuiItemKanban*) self, coord, win);
 		break;
 		case GuiItem_CHART:
-		//GuiItemChart_update((GuiItemChart*) self, coord, win);
+		GuiItemChart_update((GuiItemChart*)self, coord, win);
 		break;
 		case GuiItem_CALENDAR_SMALL: GuiItemCalendarSmall_update((GuiItemCalendarSmall*)self, coord, win);
 			break;
@@ -545,9 +557,8 @@ void GuiItem_update(GuiItem* self, Win* win)
 
 		case GuiItem_SWITCH: GuiItemSwitch_update((GuiItemSwitch*)self, coord, win);
 			break;
-		case GuiItem_MAP:
-		//GuiItemMap_update((GuiItemMap*) self, coord, win);
-		break;
+		case GuiItem_MAP:	GuiItemMap_update((GuiItemMap*)self, coord, win);
+			break;
 		case GuiItem_COLOR: GuiItemColor_update((GuiItemColor*)self, coord, win);
 			break;
 		case GuiItem_LEVEL: GuiItemLevel_update((GuiItemLevel*)self, coord, win);
@@ -590,12 +601,41 @@ void GuiItem_updateCoord(GuiItem* self, Vec2i layoutMove, Quad2i parentRect, Win
 		GuiItem_updateCoord(self->subs.ptrs[i], layoutMove, self->coordMoveCut, win);
 }
 
+BOOL g_drag_active = FALSE;
+BOOL g_drag_dontRemove;
+BIG g_drag_movingRow = -1;
+char* g_drag_nameSrc = 0;
+DbRows g_drag_rows;
+
+BOOL g_changeSizeActive = FALSE;
+
+BIG GuiItem_getDropRow(GuiItem* self)
+{
+	BIG dstRow = GuiItem_findAttribute(self, "dropRow");
+	if (dstRow < 0)
+		dstRow = GuiItem_getRow(self);
+	return dstRow;
+}
+
+GuiItem* GuiItem_findOrigDrag(GuiItem* self)
+{
+	int i;
+	for (i = 0; i < self->subs.num; i++)
+	{
+		GuiItem* t = GuiItem_findOrigDrag(self->subs.ptrs[i]);
+		if (t)
+			return t;
+	}
+
+	return (self->dropMove.column == g_drag_rows.column && self->dropMove.row == g_drag_rows.row && GuiItem_getDropRow(self) == g_drag_movingRow) ? self : 0;
+}
+
 void GuiItem_touchPrior(GuiItem* self, Win* win)
 {
 	if (!self->show || self->remove)
 		return;
 
-	if (Quad2i_isZero(self->coordMoveCut))
+	if (Quad2i_isZero(self->coordMoveCut) && !self->changeSizeActive)
 		return;
 
 	Quad2i coord = self->coordMoveCut;
@@ -604,19 +644,46 @@ void GuiItem_touchPrior(GuiItem* self, Win* win)
 	for (i = 0; i < self->subs.num; i++)
 		GuiItem_touchPrior(self->subs.ptrs[i], win);
 
-	if (self->touch && GuiItem_isEnable(self) && OsWinIO_canActiveRenderItem(self))
+	const BOOL active = (g_drag_active || g_changeSizeActive);
+
+	//auto-scroll: if touch position is on edge
+	if (active)
+	{
+		GuiItemList* list = (self->type == GuiItem_LIST && Quad2i_inside(coord, OsWinIO_getTouchPos())) ? (GuiItemList*)self : 0;
+		if (list)
+		{
+			if (GuiScroll_dragScrollV(&list->scroll, list->base.coordMove))
+			{
+				GuiItem_update(&list->base, win);
+				GuiItem_setRedraw(&list->base, TRUE);
+			}
+		}
+
+		GuiItemLayout* layout = (self->type == GuiItem_LAYOUT && Quad2i_inside(coord, OsWinIO_getTouchPos())) ? (GuiItemLayout*)self : 0;
+		if (layout)
+		{
+			if ((layout->showScrollV && GuiScroll_dragScrollV(&layout->scrollV, layout->base.coordMove)) ||
+				(layout->showScrollH && GuiScroll_dragScrollH(&layout->scrollH, layout->base.coordMove)))
+				GuiItem_setRedraw(&layout->base, TRUE);
+		}
+	}
+
+	if (self->touch && GuiItem_isEnable(self) && (OsWinIO_canActiveRenderItem(self) || active))
 	{
 		BOOL startTouch = (OsWinIO_getTouch_action() == Win_TOUCH_DOWN_S) || (OsWinIO_getTouch_action() == Win_TOUCH_FORCE_DOWN_S);
 		BOOL endTouch = (OsWinIO_getTouch_action() == Win_TOUCH_DOWN_E) || (OsWinIO_getTouch_action() == Win_TOUCH_FORCE_DOWN_E);
 
 		if (DbValue_getRow(&self->changeSizeValue) >= 0)
 		{
-			BOOL active = OsWinIO_isActiveRenderItem(self) && self->changeSizeActive;
+			BOOL active = self->changeSizeActive;
 			BOOL touch = startTouch || active;
 			BOOL inside = Quad2i_inside(GuiItem_getChangeSizeRect(self), OsWinIO_getTouchPos());
 
 			if (startTouch && inside)
+			{
 				self->changeSizeActive = TRUE;
+				g_changeSizeActive = TRUE;
+			}
 
 			if (inside && touch) //full touch
 				OsWinIO_setActiveRenderItem(self);
@@ -628,7 +695,7 @@ void GuiItem_touchPrior(GuiItem* self, Win* win)
 			{
 				GuiItemEdit_saveCache();
 
-				DbValue_setNumber(&self->changeSizeValue, GuiItem_getChangeSizeWidth(self, OsWinIO_getTouchPos()));
+				DbValue_setNumber(&self->changeSizeValue, GuiItem_getChangeSizePos(self, OsWinIO_getTouchPos()));
 			}
 
 			//cursor
@@ -641,76 +708,106 @@ void GuiItem_touchPrior(GuiItem* self, Win* win)
 				OsWinIO_resetActiveRenderItem();
 				self->changeSizeActive = FALSE;
 			}
+			if (g_changeSizeActive && endTouch)
+				g_changeSizeActive = FALSE;
 		}
 
-		if (DbRows_is(&self->dropMove) || self->dragDropMove)
+		if (DbRows_is(&self->dropMove) && (g_drag_active || self->dropMoveNameSrc))
 		{
 			Quad2i iconCoord = coord;
 			if (self->icon)
 				iconCoord = GuiItem_getIconCoord(&coord);
 
-			BOOL active = OsWinIO_isActiveRenderItem(self) && self->dropActive;
-			BOOL touch = startTouch || active;
+			BOOL touch = startTouch || g_drag_active;
 			BOOL inside = Quad2i_inside(iconCoord, OsWinIO_getTouchPos());
 
-			if (startTouch && inside)
-				self->dropActive = TRUE;
+			if (startTouch && inside && Std_sizeCHAR(self->dropMoveNameSrc))
+			{
+				g_drag_active = TRUE;
+				g_drag_dontRemove = self->dropDontRemove;
+				g_drag_movingRow = GuiItem_getDropRow(self);
+				g_drag_nameSrc = Std_newCHAR(self->dropMoveNameSrc);
+				g_drag_rows = DbRows_initCopy(&self->dropMove);
+			}
 
 			if (inside && touch) //full touch
-				OsWinIO_setActiveRenderItem(self);
-
-			if (active)
 			{
-				BOOL findIn;
-				GuiItem* find = GuiItem_findDropName(GuiItem_getBaseParent(self), self->dropMoveNameSrc, OsWinIO_getTouchPos(), self, &findIn);
+				OsWinIO_setActiveRenderItem(self);	//only deactivate mouseOver for Button, EditBox etc., otherwise not use
 
+				if (OsWinIO_getTouchNum() >= 2)	//double-click
+				{
+					if (self->iconDoubleTouch)
+						self->iconDoubleTouch(self);
+					OsWinIO_resetNumTouch();
+				}
+			}
+
+			if (g_drag_active)
+			{
+				BIG dstRow = -1;
+
+				GuiItem* parent = GuiItem_getBaseParent(self);
+				BOOL findIn;
+				GuiItem* find = GuiItem_findDropName(parent, g_drag_nameSrc, OsWinIO_getTouchPos(), 0, &findIn);
 				if (find)
-					GuiItemRoot_setDrawRectOver(GuiItem_getDropRect(find, OsWinIO_getTouchPos(), findIn));
+				{
+					dstRow = GuiItem_getDropRow(find);
+
+					//ignore self
+					if (find->dropMove.column == g_drag_rows.column && find->dropMove.row == g_drag_rows.row && dstRow == g_drag_movingRow)
+						find = 0;
+				}
+
+				//set draw
+				{
+					if (find)	//dst
+						GuiItemRoot_setDrawRectOver(GuiItem_getDropRect(find, OsWinIO_getTouchPos(), findIn));
+
+					//src
+					GuiItem* src = GuiItem_findOrigDrag(parent);
+					if (src)
+						GuiItemRoot_setDrawRectOver2(src->coordMoveCut);
+				}
 
 				if (endTouch && find) //end
 				{
 					GuiItemEdit_saveCache();
 
-					BIG movingRow = GuiItem_findAttribute(self, "dropRow");
-					if (movingRow < 0)
-						movingRow = GuiItem_getRow(self);
+					if (!g_drag_dontRemove)
+						DbRows_removeRow(&g_drag_rows, g_drag_movingRow);
 
-					BIG dstRow = GuiItem_findAttribute(find, "dropRow");
-					if (dstRow < 0)
-						dstRow = GuiItem_getRow(find);
+					if (self->dropCallback)
+						self->dropCallback(dstRow, g_drag_movingRow, findIn);
 
-					//if (!DbRows_isSubChild(&find->dropMove, movingRow, dstRow))	//problem with moving column(DbColumnN) order
+					if (findIn)
 					{
-						if (!self->dropDontRemove)
-							DbRows_removeRow(&self->dropMove, movingRow);
-
-						if (findIn)
-						{
-							DbRows_addLinkRow(&find->dropMoveIn, movingRow);
-						}
+						DbRows_addLinkRow(&find->dropMoveIn, g_drag_movingRow);
+					}
+					else
+					{
+						if (GuiItem_isDropBefore(find, OsWinIO_getTouchPos()))
+							DbRows_insertIDbefore(&find->dropMove, g_drag_movingRow, dstRow);
 						else
-						{
-							if (GuiItem_isDropBefore(find, OsWinIO_getTouchPos()))
-								DbRows_insertIDbefore(&find->dropMove, movingRow, dstRow);
-							else
-								DbRows_insertIDafter(&find->dropMove, movingRow, dstRow);
-						}
-
-						if (self->dragDropMove)
-							self->dragDropMove(find, self);
+							DbRows_insertIDafter(&find->dropMove, g_drag_movingRow, dstRow);
 					}
 				}
 			}
 
 			//cursor
-			if (inside || active)
+			if (inside || g_drag_active)
 			{
 				Win_updateCursor(win, Win_CURSOR_MOVE);
 			}
-			if (active && endTouch)
+			if (g_drag_active && endTouch)
 			{
+				g_drag_active = FALSE;
+				g_drag_dontRemove = FALSE;
+				g_drag_movingRow = -1;
+				Std_deleteCHAR(g_drag_nameSrc);
+				g_drag_nameSrc = 0;
+				DbRows_free(&g_drag_rows);
+
 				OsWinIO_resetActiveRenderItem();
-				self->dropActive = FALSE;
 			}
 		}
 	}
@@ -724,7 +821,7 @@ void GuiItem_touch(GuiItem* self, Win* win)
 	if (Quad2i_isZero(self->coordMoveCut))
 		return;
 
-	Quad2i coord = self->coordMove;
+	Quad2i coord = self->coordMove;	//not 'coordMoveCut' because click on Rating/Slider/etc is off
 
 	if (self->type == GuiItem_TABLE) //call before because edit can reset Copy/Paste/Shift
 	{
@@ -732,20 +829,22 @@ void GuiItem_touch(GuiItem* self, Win* win)
 		GuiItemTable_touch((GuiItemTable*)self, coord, win);
 	}
 
-	//avoid clicking through button to underline dialog/list with scroll! 
-	if(self->touch && self->type != GuiItem_LEVEL)
+	//avoid clicking through button to underline dialog/list with scroll!
+	/*if (self->touch && self->type != GuiItem_LEVEL)
 	{
 		if (self->parent)
 			self->touch = self->parent->touch;
 
 		if (self->touch)
 			self->touch = Quad2i_inside(coord, OsWinIO_getTouchPos());
-	}
-
+	}*/
 
 	int i;
 	for (i = 0; i < self->subs.num; i++)
 		GuiItem_touch(self->subs.ptrs[i], win);
+
+	if (self->type == GuiItem_MAP)
+		GuiItemMap_key((GuiItemMap*)self, coord, win);
 
 	if (self->type == GuiItem_EDIT)
 		GuiItemEdit_key((GuiItemEdit*)self, coord, win);
@@ -755,7 +854,6 @@ void GuiItem_touch(GuiItem* self, Win* win)
 
 	if (self->icon)
 		GuiItem_getIconCoord(&coord);
-
 
 	switch (self->type)
 	{
@@ -791,7 +889,7 @@ void GuiItem_touch(GuiItem* self, Win* win)
 
 		case GuiItem_KANBAN: break;
 		case GuiItem_CHART:
-		//GuiItemChart_touch((GuiItemChart*) self, coord, win);
+		GuiItemChart_touch((GuiItemChart*)self, coord, win);
 		break;
 		case GuiItem_CALENDAR_SMALL: break;
 		case GuiItem_CALENDAR_BIG: break;
@@ -812,9 +910,8 @@ void GuiItem_touch(GuiItem* self, Win* win)
 
 		case GuiItem_SWITCH: GuiItemSwitch_touch((GuiItemSwitch*)self, coord, win);
 			break;
-		case GuiItem_MAP:
-		//GuiItemMap_touch((GuiItemMap*) self, coord, win);
-		break;
+		case GuiItem_MAP:	GuiItemMap_touch((GuiItemMap*)self, coord, win);
+			break;
 		case GuiItem_COLOR: GuiItemColor_touch((GuiItemColor*)self, coord, win);
 			break;
 		case GuiItem_LEVEL: GuiItemLevel_touch((GuiItemLevel*)self, coord, win);
@@ -822,6 +919,9 @@ void GuiItem_touch(GuiItem* self, Win* win)
 		default:
 		break;
 	}
+
+	if (self->loopTouch)
+		self->loopTouch(self);
 }
 
 void GuiItem_addRedraw(GuiItem* self, Win* win)
@@ -840,6 +940,22 @@ void GuiItem_addRedraw(GuiItem* self, Win* win)
 	}
 }
 
+Quad2i GuiItem_getCoordSpace(GuiItem* self, Quad2i coord)
+{
+	switch (self->type)
+	{
+		case GuiItem_LAYOUT: return GuiItemLayout_getCoordSpace((GuiItemLayout*)self, coord);
+			break;
+
+		case GuiItem_BUTTON: return GuiItemButton_getCoordSpace((GuiItemButton*)self, coord);
+			break;
+		case GuiItem_MENU:	return GuiItemMenu_getCoordSpace((GuiItemMenu*)self, coord);
+
+		default:
+		return coord;
+	}
+}
+
 void GuiItem_draw(GuiItem* self, Win* win, Image4* img)
 {
 	if (Quad2i_isZero(img->rect))
@@ -851,24 +967,33 @@ void GuiItem_draw(GuiItem* self, Win* win, Image4* img)
 	Quad2i coord = self->coordMove;
 
 	Quad2i img_rect_backup = Quad2i_getIntersect(img->rect, coord);
-	img->rect = img_rect_backup;
+	Image4_setRect(img, img_rect_backup);
 
 	const BOOL realDraw = !Quad2i_isZero(img->rect);
 	if (realDraw)
 	{
 		if (self->icon)
 		{
-			if (!self->icon_transparent_back)
+			Rgba iconCd = self->front_cd;
+
+			if (self->icon_alternativeColor)
+				iconCd = g_theme.main;
+
+			Quad2i coordBack = GuiItem_getCoordSpace(self, GuiItem_getIconCoordBack(coord));
+			if (self->icon_draw_back)
 			{
-				Quad2i q = GuiItem_getIconCoordBack(coord);
-				if (self->type == GuiItem_MENU && ((GuiItemMenu*)self)->base.drawTable)
-					q = Quad2i_addSpace(q, 1);
-				Image4_drawBoxQuad(img, q, self->back_cd);
+				Image4_drawBoxQuad(img, coordBack, self->back_cd);
+
+				if (Rgba_cmp(iconCd, self->back_cd))
+					iconCd = Rgba_aprox(self->front_cd, self->back_cd, 0.5f);
 			}
 
-			GuiImage_draw(self->icon, img, GuiItem_getIconCoord(&coord), self->front_cd);
+			GuiImage_draw(self->icon, img, GuiItem_getIconCoord(&coord), iconCd);
 
-			img->rect = Quad2i_getIntersect(img->rect, coord);
+			if (self->type == GuiItem_BUTTON)
+				GuiItemButton_drawPress(img, self->front_cd, coordBack, ((GuiItemButton*)self)->stayPressedLeft, FALSE);
+
+			Image4_setRect(img, Quad2i_getIntersect(img->rect, coord));
 		}
 
 		switch (self->type)
@@ -909,7 +1034,7 @@ void GuiItem_draw(GuiItem* self, Win* win, Image4* img)
 
 			case GuiItem_KANBAN: break;
 			case GuiItem_CHART:
-			//GuiItemChart_draw((GuiItemChart*) self, img, coord, win);
+			GuiItemChart_draw((GuiItemChart*)self, img, coord, win);
 			break;
 			case GuiItem_CALENDAR_SMALL://	GuiItemCalendar_draw((GuiItemCalendar*)self, img, coord, win);
 			break;
@@ -932,9 +1057,8 @@ void GuiItem_draw(GuiItem* self, Win* win, Image4* img)
 
 			case GuiItem_SWITCH: GuiItemSwitch_draw((GuiItemSwitch*)self, img, coord, win);
 				break;
-			case GuiItem_MAP:
-			//GuiItemMap_draw((GuiItemMap*) self, img, coord, win);
-			break;
+			case GuiItem_MAP:	GuiItemMap_draw((GuiItemMap*)self, img, coord, win);
+				break;
 			case GuiItem_COLOR: GuiItemColor_draw((GuiItemColor*)self, img, coord, win);
 				break;
 			case GuiItem_LEVEL: GuiItemLevel_draw((GuiItemLevel*)self, img, coord, win);
@@ -947,11 +1071,11 @@ void GuiItem_draw(GuiItem* self, Win* win, Image4* img)
 	int i;
 	for (i = 0; i < self->subs.num; i++)
 	{
-		img->rect = img_rect_backup;
+		Image4_setRect(img, img_rect_backup);
 		GuiItem_draw(self->subs.ptrs[i], win, img);
 	}
 
-	img->rect = img_rect_backup;
+	Image4_setRect(img, img_rect_backup);
 
 	if (realDraw)
 	{
@@ -968,7 +1092,7 @@ void GuiItem_draw(GuiItem* self, Win* win, Image4* img)
 			Image4_drawBorder(img, coord, 1, Rgba_initBlack());
 	}
 
-	img->rect = img_rect_backup;
+	Image4_setRect(img, img_rect_backup);
 }
 
 static BOOL _GuiItem_setNextCursor(GuiItem* self, BOOL* found)
@@ -978,7 +1102,7 @@ static BOOL _GuiItem_setNextCursor(GuiItem* self, BOOL* found)
 		GuiItemEdit* edit = (GuiItemEdit*)self;
 		*found |= (edit->tabAway && OsWinIO_isCursorGuiItem(self));
 
-		if (*found && GuiItemEdit_setCursor(edit, TRUE))
+		if (*found && GuiItem_isEnable(self) && GuiItemEdit_setCursor(edit, TRUE))
 			return TRUE;
 	}
 

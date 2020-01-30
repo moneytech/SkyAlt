@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -89,9 +89,19 @@ BIG DbColumnN_array_findIDactive_pos(const double* link, const UBIG r, DbTable* 
 	return -1;
 }
 
+BOOL DbColumnN_array_free(double** link)
+{
+	const UBIG oldN = DbColumnN_array_size(*link);
+
+	Os_free(*link, DbColumnN_array_size(*link));
+	*link = 0;
+
+	return oldN != 0;
+}
+
 BOOL DbColumnN_array_resize(double** link, const UBIG N)
 {
-	UBIG oldN = *link ? (*link)[0] : 0;
+	UBIG oldN = DbColumnN_array_size(*link);
 
 	if (N == oldN)
 		return FALSE;
@@ -382,15 +392,23 @@ DbColumnN* DbColumnN_new(DbColumns* parent, DbFormatTYPE format, DbTable* btable
 	return self;
 }
 
-void DbColumnN_clear(DbColumnN* self)
+void DbColumnN_removeAllLinks(DbColumnN* self)
 {
 	const UBIG NUM_ROWS = DbColumn_numRows(&self->base);
 	UBIG i;
 	for (i = 0; i < NUM_ROWS; i++)
 	{
-		double* link = DbColumn_getItem(&self->base, i)->fltArr;
-		Os_free(link, DbColumnN_array_size(link));
+		double** link = &DbColumn_getItem(&self->base, i)->fltArr;
+		Os_free(*link, DbColumnN_array_size(*link));
+		*link = 0;
 	}
+
+	DbColumn_setChangeAll(&self->base);
+}
+
+void DbColumnN_clear(DbColumnN* self)
+{
+	DbColumnN_removeAllLinks(self);
 	DbColumn_clearItems(&self->base);
 }
 void DbColumnN_delete(DbColumnN* self)
@@ -404,6 +422,13 @@ double* DbColumnN_getLinks(const DbColumnN* self, const UBIG r)
 {
 	return DbColumn_getItemConst(&self->base, r)->fltArr;
 }
+
+/*double* DbColumnN_getLinksAndSetNull(DbColumnN* self, const UBIG r)
+{
+	double* links = DbColumn_getItem(&self->base, r)->fltArr;
+	DbColumn_getItem(&self->base, r)->fltArr = 0;
+	return links;
+}*/
 
 DbTable* DbColumnN_getBTable(const DbColumnN* self)
 {
@@ -493,20 +518,6 @@ FileRow DbColumnN_getFileId(const DbColumnN* self, const UBIG r, UBIG i)
 	return (i < N) ? ids[i] : FileRow_initEmpty();
 }
 
-StdBigs DbColumnN_copyActiveBigs(DbColumnN* self, UBIG r)
-{
-	StdBigs arr = StdBigs_init();
-
-	UBIG i = 0;
-	while (DbColumnN_jump(self, r, &i, 1) >= 0)
-	{
-		StdBigs_add(&arr, DbColumnN_getIndex(self, r, i));
-		i++;
-	}
-
-	return arr;
-}
-
 double* DbColumnN_exportRowArray(DbColumnN* self, UBIG r, double* out, BIG* out_maxBytes)
 {
 	UBIG N = DbColumnN_sizeHard(self, r);
@@ -565,23 +576,30 @@ void DbColumnN_reversOrder(DbColumnN* self, const UBIG rSrc)
 		DbColumn_setChange(&self->base, rSrc);
 }
 
-void DbColumnN_clearRow(DbColumnN* self, const UBIG rSrc)
-{
-	if (DbColumnN_array_resize(&DbColumn_getItem(&self->base, rSrc)->fltArr, 0))
-		DbColumn_setChange(&self->base, rSrc);
-}
-
 void DbColumnN_deleteRowData(DbColumnN* self, const UBIG rSrc)
 {
-	DbColumnN_array_resize(&DbColumn_getItem(&self->base, rSrc)->fltArr, 0);
-	DbColumn_setChange(&self->base, rSrc);
+	if (DbColumnN_array_free(&DbColumn_getItem(&self->base, rSrc)->fltArr))
+		DbColumn_setChange(&self->base, rSrc);
 }
 
 void DbColumnN_setArray(DbColumnN* self, const UBIG r, double* bigArr)
 {
-	DbColumnN_clearRow(self, r);
+	DbColumnN_deleteRowData(self, r);
 	DbColumn_getItem(&self->base, r)->fltArr = bigArr;
 	DbColumn_setChange(&self->base, r);
+}
+
+void DbColumnN_setArrayBigs(DbColumnN* self, const UBIG r, const StdBigs* arr)
+{
+	DbColumnN_resize(self, r, arr->num);
+
+	double* ids = DbColumnN_getFirst(self, r);
+	UBIG i;
+	for (i = 0; i < arr->num; i++)
+	{
+		*ids = arr->ptrs[i];
+		ids++;
+	}
 }
 
 void DbColumnN_maintenanceContent(DbColumnN* self)
@@ -604,7 +622,7 @@ void DbColumnN_maintenance(DbColumnN* self)
 	for (i = 0; i < NUM_ROWS; i++)
 	{
 		if (!DbColumn1_isValid(active, i))
-			DbColumnN_clearRow(self, i);	//removes all link
+			DbColumnN_deleteRowData(self, i);	//removes all link
 	}
 }
 
@@ -618,7 +636,7 @@ void DbColumnN_copyRow(DbColumnN* self, const UBIG rDst, DbColumnN* copy, const 
 	TableItem* dst = DbColumn_getItem(&self->base, rDst);
 	TableItem* src = DbColumn_getItem(&copy->base, rCopy);
 
-	DbColumnN_array_resize(&dst->fltArr, 0);
+	DbColumnN_array_free(&dst->fltArr);
 	dst->fltArr = DbColumnN_array_copy(src->fltArr);
 
 	DbColumn_setChange(&self->base, rDst);
@@ -628,7 +646,7 @@ void DbColumnN_setOne(DbColumnN* self, const UBIG rSrc, const UBIG rAdd)
 {
 	TableItem* src = DbColumn_getItem(&self->base, rSrc);
 
-	DbColumnN_array_resize(&src->fltArr, 0);
+	DbColumnN_array_free(&src->fltArr);
 	DbColumnN_array_addID(&src->fltArr, rAdd);
 
 	DbColumn_setChange(&self->base, rSrc);
@@ -769,44 +787,26 @@ BOOL DbColumnN_cmpBigActive(DbColumnN* a, DbColumnN* b)
 	return TRUE;
 }
 
-void DbColumnN_short(const DbColumnN* self, StdBigs* poses, const BIG start, const BIG end, const BOOL ascending)
+int _DbColumnN_cmp(const void* context, const void* a, const void* b)
 {
-	volatile StdProgress* progress = DbRoot_getProgress();
+	const DbColumnN* self = context;
 
-	if (self->btable)	//active
-	{
-		//slow, very slow!
-		BIG i, j;
-		for (i = start; i < end && progress->running; i++)
-			for (j = start; j < end && progress->running; j++)
-				if (DbColumnN_sizeActive(self, poses->ptrs[j]) > DbColumnN_sizeActive(self, poses->ptrs[i]))	//compares lenghts
-					StdBigs_swap(poses, i, j);
+	UBIG fa = DbColumnN_sizeActive(self, *(BIG*)a);
+	UBIG fb = DbColumnN_sizeActive(self, *(BIG*)b);
 
-		if (!ascending && i == end && progress->running)
-			StdBigs_reversEx(poses, start, end);
-	}
-	else
-	{
-		//slow, very slow!
-		BIG i, j;
-		for (i = start; i < end && progress->running; i++)
-			for (j = start; j < end && progress->running; j++)
-				if (DbColumnN_sizeHard(self, poses->ptrs[j]) > DbColumnN_sizeHard(self, poses->ptrs[i]))	//compares lenghts
-					StdBigs_swap(poses, i, j);
-
-		if (!ascending && i == end && progress->running)
-			StdBigs_reversEx(poses, start, end);
-	}
+	return (fa > fb) - (fa < fb);
 }
 
 void DbColumnN_qshort(const DbColumnN* self, StdBigs* poses, const BIG start, const BIG end, const BOOL ascending)
 {
-	volatile StdProgress* progress = DbRoot_getProgress();
+	Os_qsort(&poses->ptrs[start], end - start, sizeof(BIG), _DbColumnN_cmp, (void*)self);
 
+	/*
+	//Binary Insertion Sort
 	BIG i;
 	if (self->btable)	//active
 	{
-		for (i = start + 1; i < end && progress->running; i++)
+		for (i = start + 1; i < end && StdProgress_is(); i++)
 		{
 			BIG lo = start;
 			BIG hi = i;
@@ -826,12 +826,12 @@ void DbColumnN_qshort(const DbColumnN* self, StdBigs* poses, const BIG start, co
 			if (m < i)
 				StdBigs_rotate(poses, m, i);
 
-			progress->done = ((float)i - start) / (end - start);
+			StdProgress_setEx("SHORTING", (i - start), (end - start));
 		}
 	}
 	else
 	{
-		for (i = start + 1; i < end && progress->running; i++)
+		for (i = start + 1; i < end && StdProgress_is(); i++)
 		{
 			BIG lo = 0;
 			BIG hi = i;
@@ -851,16 +851,13 @@ void DbColumnN_qshort(const DbColumnN* self, StdBigs* poses, const BIG start, co
 			if (m < i)
 				StdBigs_rotate(poses, m, i);
 
-			progress->done = ((float)i - start) / (end - start);
+			StdProgress_setEx("SHORTING", (i - start), (end - start));
 		}
-	}
+	}*/
 
-	if (!ascending && i == end && progress->running)
+	if (!ascending && StdProgress_is())
 		StdBigs_reversEx(poses, start, end);
 }
-
-
-
 
 BIG DbColumnN_search(const DbColumnN* self, double value)
 {
@@ -879,7 +876,95 @@ BIG DbColumnN_search(const DbColumnN* self, double value)
 	return -1;
 }
 
+double DbColumnN_min(DbColumnN* self)
+{
+	DbColumn1* active = DbColumn_getActive(&self->base);
+	const UBIG NUM_ROWS = DbColumn_numRows(&self->base);
+	double minV = 0;
 
+	if (NUM_ROWS > 0)
+	{
+		BOOL first = TRUE;
+		UBIG i, ii;
+		for (i = 0; i < NUM_ROWS; i++)
+		{
+			if (DbColumn1_isValid(active, i))
+			{
+				UBIG N = DbColumnN_sizeHard(self, i);
+				double* links = DbColumnN_getFirst(self, i);
+				for (ii = 0; ii < N; ii++)
+				{
+					if (first)
+						minV = links[ii], first = FALSE;
+					else
+						minV = Std_dmin(links[ii], minV);
+				}
+			}
+		}
+	}
+	return minV;
+}
 
+double DbColumnN_max(DbColumnN* self)
+{
+	DbColumn1* active = DbColumn_getActive(&self->base);
+	const UBIG NUM_ROWS = DbColumn_numRows(&self->base);
+	double minV = 0;
 
+	if (NUM_ROWS > 0)
+	{
+		BOOL first = TRUE;
+		UBIG i, ii;
+		for (i = 0; i < NUM_ROWS; i++)
+		{
+			if (DbColumn1_isValid(active, i))
+			{
+				UBIG N = DbColumnN_sizeHard(self, i);
+				double* links = DbColumnN_getFirst(self, i);
+				for (ii = 0; ii < N; ii++)
+				{
+					if (first)
+						minV = links[ii], first = FALSE;
+					else
+						minV = Std_dmax(links[ii], minV);
+				}
+			}
+		}
+	}
+	return minV;
+}
 
+void DbColumnN_getArrayPoses(const DbColumnN* self, UBIG row, StdBigs* out)
+{
+	StdBigs_clear(out);
+
+	UBIG N = DbColumnN_sizeHard(self, row);
+	StdBigs_resize(out, N);
+
+	double* links = DbColumnN_getFirst(self, row);
+
+	UBIG pos = 0;
+	UBIG i;
+	for (i = 0; i < N; i++)
+	{
+		BIG it = links[i];
+		if (DbTable_isRowActive(self->btable, it))
+			out->ptrs[pos++] = it;
+	}
+
+	StdBigs_resize(out, pos);
+}
+
+/*StdBigs DbColumnN_copyActiveBigs(DbColumnN* self, UBIG r)
+{
+	StdBigs arr = StdBigs_init();
+
+	UBIG i = 0;
+	while (DbColumnN_jump(self, r, &i, 1) >= 0)
+	{
+		StdBigs_add(&arr, DbColumnN_getIndex(self, r, i));
+		i++;
+	}
+
+	return arr;
+}*/

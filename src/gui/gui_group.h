@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -20,7 +20,7 @@ typedef struct GuiItemGroup_s
 	DbValue scrollH;
 }GuiItemGroup;
 
-GuiItem* GuiItemGroup_new(Quad2i grid, UBIG viewRow, DbRows filter, DbValue scrollH)
+GuiItem* GuiItemGroup_new(Quad2i grid, BIG viewRow, DbRows filter, DbValue scrollH)
 {
 	GuiItemGroup* self = Os_malloc(sizeof(GuiItemGroup));
 	self->base = GuiItem_init(GuiItem_GROUP, grid);
@@ -85,33 +85,22 @@ BIG GuiItemGroup_getLaneRow(const GuiItemGroup* self, UBIG i)
 
 UINT GuiItemGroup_getLaneWidth(const GuiItemGroup* self, UBIG c)
 {
-	DbValue v = DbRows_getSubsOption(self->viewRow, "group", FALSE, c, "width", FALSE);
-	int width = DbValue_getNumber(&v);
-	DbValue_free(&v);
-	return Std_bmax(1, width);
+	return Std_bmax(1, DbRows_getSubsOptionNumber(self->viewRow, "group", FALSE, c, "width", FALSE));
 }
 
 BOOL GuiItemGroup_getLaneAscending(const GuiItemGroup* self, UBIG c)
 {
-	DbValue v = DbRows_getSubsOption(self->viewRow, "group", FALSE, c, "ascending", FALSE);
-	BOOL asc = DbValue_getNumber(&v);
-	DbValue_free(&v);
-	return asc;
+	return DbRows_getSubsOptionNumber(self->viewRow, "group", FALSE, c, "ascending", FALSE) != 0;
 }
 
 UINT GuiItemGroup_getLaneSelect(const GuiItemGroup* self, UBIG c)
 {
-	DbValue v = DbRows_getSubsOption(self->viewRow, "group", FALSE, c, "select", FALSE);
-	int select = DbValue_getNumber(&v);
-	DbValue_free(&v);
-	return Std_bmax(0, select);
+	return Std_bmax(0, DbRows_getSubsOptionNumber(self->viewRow, "group", FALSE, c, "select", FALSE));
 }
 
 void GuiItemGroup_setLaneSelect(GuiItemGroup* self, int c, UINT pos)
 {
-	DbValue v = DbRows_getSubsOption(self->viewRow, "group", FALSE, c, "select", FALSE);
-	DbValue_setNumber(&v, pos);
-	DbValue_free(&v);
+	DbRows_setSubsOptionNumber(self->viewRow, "group", FALSE, c, "select", FALSE, pos);
 }
 
 void GuiItemGroup_draw(GuiItemGroup* self, Image4* img, Quad2i coord, Win* win)
@@ -168,7 +157,7 @@ void GuiItemGroup_clickShowRecords(GuiItem* self)
 		GuiItemLayout_addRow(layout, 0, 100);
 
 		//Table
-		GuiItem_addSubName((GuiItem*)layout, "table", (GuiItem*)GuiItemTable_new(Quad2i_init4(0, 0, 1, 1), guiRow, DbRows_initLink(DbFilter_getColumnGroupRows(group->filter.filter), srcRow), TRUE, FALSE, DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initStaticCopyCHAR("0 0 0 0")));
+		GuiItem_addSubName((GuiItem*)layout, "table", (GuiItem*)GuiItemTable_new(Quad2i_init4(0, 0, 1, 1), guiRow, DbRows_initLinkN(DbFilter_getColumnGroupRows(group->filter.filter), srcRow), TRUE, FALSE, DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initStaticCopyCHAR("0 0 0 0")));
 
 		GuiItemRoot_addDialogLayout(GuiItemRoot_createDialogLayout(Vec2i_init2(50, 20), DbValue_initLang("GROUP"), (GuiItem*)layout, 0));
 	}
@@ -180,8 +169,8 @@ void GuiItemGroup_clickSelectRow(GuiItem* self)
 	GuiItemList* list = GuiItem_findParentType(self, GuiItem_LIST);
 	if (group && list)
 	{
-		int c = ((GuiItemLayout*)self)->extra_big;
-		BIG pos = Std_max(0, DbRows_findLinkPos(&list->filter, GuiItem_getRow(self)));
+		BIG c = GuiItem_findAttribute(self, "c");
+		BIG pos = GuiItemList_getClickPos(list, GuiItem_getRow(self));
 
 		//save
 		GuiItemGroup_setLaneSelect(group, c, pos);
@@ -193,6 +182,58 @@ void GuiItemGroup_clickSelectRow(GuiItem* self)
 
 		GuiItem_setResize(&group->base, TRUE);
 	}
+}
+
+GuiItemList* GuiItemGroup_getLaneList(Quad2i grid, DbColumn* columnLane, DbFilter* filter, BIG* selectRow, BIG selectPos, GuiItemCallback* clickSelectRow, GuiItemCallback* clickShowRecords)
+{
+	//list
+	DbRows ids = DbRows_initLinkN(DbFilter_getColumnGroupSubs(filter), *selectRow);
+	*selectRow = DbRows_getRow(&ids, selectPos);	//get next select row
+
+	//skin
+	GuiItemLayout* skin = GuiItemLayout_new(Quad2i_init4(0, 0, 1, 1));
+	GuiItemLayout_setDrawBackground(skin, FALSE);
+	GuiItemLayout_addColumn(skin, 0, 99);
+	GuiItemLayout_addColumn(skin, 1, 2);
+	GuiItemLayout_addColumn(skin, 2, 2);
+
+	skin->highlightRow = *selectRow;	//last doesn't have highlight
+	skin->enableClickLayout = TRUE;
+	GuiItem_setCallClick(&skin->base, clickSelectRow);
+
+	//value
+	{
+		GuiItemLayout* skin2 = GuiItemLayout_new(Quad2i_init4(0, 0, 1, 1));
+		GuiItemLayout_addColumn(skin2, 0, 99);
+		skin2->drawBackground = FALSE;
+
+		GuiItem* name = GuiItem_addSubName((GuiItem*)skin2, "value", GuiItemTable_getCardSkinItem(Quad2i_init4(0, 0, 1, 1), DbValue_initGET(columnLane, -1), FALSE));// , TRUE));
+		if (name->type == GuiItem_TEXT)
+			((GuiItemText*)name)->drawBackground = FALSE;
+		GuiItem_setTouchRecommand(name, FALSE);
+
+		DbRows ids2 = DbRows_initLinkN(DbFilter_getColumnGroupRows(filter), -1);
+		GuiItemList* list2 = (GuiItemList*)GuiItem_addSubName((GuiItem*)skin, "value_list", GuiItemList_new(Quad2i_init4(0, 0, 1, 1), ids2, (GuiItem*)skin2, DbValue_initEmpty()));
+		list2->showScroll = FALSE;
+		GuiItemList_setShowBorder(list2, FALSE);
+	}
+
+	//count
+	{
+		DbValue cv = DbValue_initGET((DbColumn*)DbFilter_getColumnGroupCount(filter), -1);
+		cv.staticPost = Std_newUNI_char("x");
+		GuiItem_addSubName((GuiItem*)skin, "count", GuiItemText_new(Quad2i_init4(1, 0, 1, 1), FALSE, cv, DbValue_initEmpty()));
+	}
+
+	//show
+	if (clickShowRecords)
+		GuiItem_addSubName((GuiItem*)skin, "show", GuiItemButton_newClassicEx(Quad2i_init4(2, 0, 1, 1), DbValue_initLang("SHOW"), clickShowRecords));
+
+	//list
+	GuiItemList* list = (GuiItemList*)GuiItemList_new(grid, ids, (GuiItem*)skin, DbValue_initEmpty());
+	GuiItemList_setShowBorder(list, FALSE);
+
+	return list;
 }
 
 GuiItemLayout* GuiItemGroup_resize(GuiItemGroup* self, GuiItemLayout* layout, Win* win)
@@ -241,6 +282,8 @@ GuiItemLayout* GuiItemGroup_resize(GuiItemGroup* self, GuiItemLayout* layout, Wi
 
 		GuiItem_setAttribute((GuiItem*)layColumn, "c", c);
 
+		GuiItem_setChangeSize(&layColumn->base, TRUE, DbValue_initOption(crow, "width", 0), FALSE);
+
 		//header
 		{
 			GuiItemLayout* layHeader = GuiItemLayout_new(Quad2i_init4(0, 0, 1, 1));
@@ -249,12 +292,12 @@ GuiItemLayout* GuiItemGroup_resize(GuiItemGroup* self, GuiItemLayout* layout, Wi
 			GuiItemLayout_addColumn(layHeader, 1, 99);
 			GuiItem_addSubName((GuiItem*)layColumn, "layout_header", (GuiItem*)layHeader);
 
-			GuiItem_setChangeSize(&layHeader->base, TRUE, DbValue_initOption(crow, "width", 0), FALSE);
+			//GuiItem_setChangeSize(&layHeader->base, TRUE, DbValue_initOption(crow, "width", 0), FALSE);
 			GuiItem_setDrop(&layHeader->base, "group", "group", TRUE, DbRows_getSubsArray(self->viewRow, "group"), crow);
 
 			GuiItem_setIcon((GuiItem*)layHeader, GuiImage_new1(GuiItem_getColumnIcon(column ? DbColumnFormat_findColumn(column) : -1)));
 
-			GuiItem_addSubName((GuiItem*)layHeader, "column", GuiItemComboDynamic_new(Quad2i_init4(0, 0, 1, 1), FALSE, DbRows_initLink(DbRoot_getColumnSubs(), crow), DbValue_initOption(-1, "name", 0), DbRows_initSubs(table, "columns", FALSE), DbValue_initEmpty()));
+			GuiItem_addSubName((GuiItem*)layHeader, "column", GuiItemComboDynamic_new(Quad2i_init4(0, 0, 1, 1), TRUE, DbRows_initLink1(DbRoot_ref(), crow), DbValue_initOption(-1, "name", 0), DbRows_initSubs(table, "columns", FALSE), DbValue_initEmpty()));
 
 			GuiItem_addSubName((GuiItem*)layHeader, "ascending", GuiItemComboStatic_new(Quad2i_init4(1, 0, 1, 1), DbValue_initOption(crow, "ascending", 0), Lang_find("LANGUAGE_ORDER"), DbValue_initEmpty()));
 
@@ -263,49 +306,8 @@ GuiItemLayout* GuiItemGroup_resize(GuiItemGroup* self, GuiItemLayout* layout, Wi
 
 		if (column)
 		{
-			//list
-			DbRows ids = DbRows_initLink(DbFilter_getColumnGroupSubs(self->filter.filter), selectRow);
-			selectRow = DbRows_getRow(&ids, selectPos);	//get next select row
-
-			//skin
-			GuiItemLayout* skin = GuiItemLayout_new(Quad2i_init4(0, 0, 1, 1));
-			GuiItemLayout_setDrawBackground(skin, FALSE);
-			GuiItemLayout_addColumn(skin, 0, 99);
-			GuiItemLayout_addColumn(skin, 1, 2);
-			GuiItemLayout_addColumn(skin, 2, 2);
-
-			skin->extra_big = c;
-			skin->highlightRow = selectRow;	//last doesn't have highlight
-			skin->enableClickLayout = TRUE;
-			GuiItem_setCallClick(&skin->base, &GuiItemGroup_clickSelectRow);
-
-			//value
-			{
-				GuiItemLayout* skin2 = GuiItemLayout_new(Quad2i_init4(0, 0, 1, 1));
-				GuiItemLayout_addColumn(skin2, 0, 99);
-				skin2->drawBackground = FALSE;
-				GuiItemText* name = (GuiItemText*)GuiItem_addSubName((GuiItem*)skin2, "value", GuiItemText_new(Quad2i_init4(0, 0, 1, 1), FALSE, DbValue_initGET(GuiItemGroup_getLane(self, c), -1), DbValue_initEmpty()));
-				name->drawBackground = FALSE;
-
-				DbRows ids2 = DbRows_initLink(DbFilter_getColumnGroupRows(self->filter.filter), -1);
-				GuiItemList* list2 = (GuiItemList*)GuiItem_addSubName((GuiItem*)skin, "value_list", GuiItemList_new(Quad2i_init4(0, 0, 1, 1), ids2, (GuiItem*)skin2, DbValue_initEmpty()));
-				list2->showScroll = FALSE;
-				GuiItemList_setShowBorder(list2, FALSE);
-			}
-
-			//count
-			{
-				DbValue cv = DbValue_initGET((DbColumn*)DbFilter_getColumnGroupCount(self->filter.filter), -1);
-				cv.staticPost = Std_newUNI_char("x");
-				GuiItem_addSubName((GuiItem*)skin, "count", GuiItemText_new(Quad2i_init4(1, 0, 1, 1), FALSE, cv, DbValue_initEmpty()));
-			}
-
-			//show
-			GuiItem_addSubName((GuiItem*)skin, "show", GuiItemButton_newClassicEx(Quad2i_init4(2, 0, 1, 1), DbValue_initLang("SHOW"), &GuiItemGroup_clickShowRecords));
-
-			//list
-			GuiItemList* list = (GuiItemList*)GuiItem_addSubName((GuiItem*)layColumn, "list", GuiItemList_new(Quad2i_init4(0, 1, 1, 1), ids, (GuiItem*)skin, DbValue_initEmpty()));
-			GuiItemList_setShowBorder(list, FALSE);
+			GuiItemList* list = (GuiItemList*)GuiItemGroup_getLaneList(Quad2i_init4(0, 1, 1, 1), GuiItemGroup_getLane(self, c), self->filter.filter, &selectRow, selectPos, &GuiItemGroup_clickSelectRow, &GuiItemGroup_clickShowRecords);
+			GuiItem_addSubName((GuiItem*)layColumn, "list", (GuiItem*)list);
 		}
 
 		width_sum += width;

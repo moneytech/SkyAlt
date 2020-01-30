@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -28,7 +28,7 @@ typedef enum
 void UiDialogImport_clickImport(GuiItem* item)
 {
 	BIG row = GuiItem_findAttribute(item, "row");
-	if(row < 0)
+	if (row < 0)
 		row = DbRoot_createFolderRow();
 
 	const UNI* pathUNI = GuiItemEdit_getText((GuiItemEdit*)GuiItem_findName(item, "path"));
@@ -49,9 +49,9 @@ void UiDialogImport_clickImport(GuiItem* item)
 			UNI* pathNameUNI = Std_newUNI_char(path_name);
 
 			if (type == UI_IMPORT_CSV)
-				IOCsv_read(path, firstRowColumnNames, recognizeColumnType, &rows, DbRoot_getProgress());	//csv
+				IOCsv_read(path, firstRowColumnNames, recognizeColumnType, &rows);	//csv
 			else
-				IOTsv_read(path, firstRowColumnNames, recognizeColumnType, &rows, DbRoot_getProgress());	//tsv
+				IOTsv_read(path, firstRowColumnNames, recognizeColumnType, &rows);	//tsv
 
 			Std_deleteUNI(pathNameUNI);
 			Std_deleteCHAR(path_folder);
@@ -66,7 +66,7 @@ void UiDialogImport_clickImport(GuiItem* item)
 
 			char* path = Std_newCHAR_uni(pathUNI);
 			if (path)
-				IOFiles_read(path, subDirs, &rows, DbRoot_getProgress());
+				IOFiles_read(path, subDirs, &rows);
 			Std_deleteCHAR(path);
 		}
 

@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -16,6 +16,7 @@ typedef struct UiIniSettings_s
 	BOOL file_existed;
 	int license_ver;
 	int update;
+	int online;
 	int theme;
 	int threads;
 	int dpi;
@@ -76,6 +77,10 @@ void UiIniSettings_setTheme(int theme)
 {
 	g_ini->theme = theme;
 }
+UINT UiIniSettings_getTheme(void)
+{
+	return g_ini->theme;
+}
 
 void UiIniSettings_setWindow(Quad2i coord)
 {
@@ -92,9 +97,13 @@ void UiIniSettings_setUpdate(int update)
 	g_ini->update = update;
 }
 
-UINT UiIniSettings_getTheme(void)
+BOOL UiIniSettings_isNetworkOnline(void)
 {
-	return g_ini->theme;
+	return g_ini->online;
+}
+void UiIniSettings_setNetworkOnline(BOOL online)
+{
+	g_ini->online = online;
 }
 
 UBIG UiIniSettings_getNumThreads(void)
@@ -153,7 +162,7 @@ BOOL UiIniSettings_new(void)
 	g_ini->license_ver = 0;
 	g_ini->update = 1;
 	g_ini->theme = 0;
-
+	g_ini->online = TRUE;
 	g_ini->threads = 0;	//auto: get from Operation system
 	g_ini->dpi = 0;
 
@@ -184,6 +193,9 @@ BOOL UiIniSettings_new(void)
 
 			if (sscanf(line, "update = %d", &value1) == 1)
 				g_ini->update = value1;
+
+			if (sscanf(line, "online = %d", &value1) == 1)
+				g_ini->online = value1;
 
 			if (sscanf(line, "theme = %d", &value1) == 1)
 				g_ini->theme = value1;
@@ -238,6 +250,8 @@ void UiIniSettings_delete(void)
 
 			snprintf(line, sizeof(line), "update = %d\r\n", g_ini->update);
 			OsFile_write(&file, line, Std_sizeCHAR(line));
+			snprintf(line, sizeof(line), "online = %d\r\n", g_ini->online);
+			OsFile_write(&file, line, Std_sizeCHAR(line));
 
 			snprintf(line, sizeof(line), "theme = %d\r\n", g_ini->theme);
 			OsFile_write(&file, line, Std_sizeCHAR(line));
@@ -270,6 +284,7 @@ void UiIniSettings_delete(void)
 			OsFile_free(&file);
 		}
 
+		Std_deleteCHAR(g_ini->language);
 		Std_deleteCHAR(g_ini->project);
 
 		Os_free(g_ini, sizeof(UiIniSettings));

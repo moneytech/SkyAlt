@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -55,12 +55,16 @@ typedef struct GuiItemMenu_s
 	BOOL underline;
 	BOOL mouseOver;
 	BOOL textCenter;
+	BOOL transparent;
 
 	BOOL closeAuto;
 
 	GuiImage* image;
+	BOOL imageIcon;
 
 	BOOL highligthBackground;
+
+	BOOL err;
 
 	GuiItemLayout* context;
 }GuiItemMenu;
@@ -105,19 +109,26 @@ GuiItem* GuiItemMenu_new(Quad2i grid, DbValue value, BOOL circle)
 	self->underline = TRUE;
 	self->mouseOver = TRUE;
 	self->image = 0;
+	self->imageIcon = FALSE;
 
 	self->context = 0;
 	self->textCenter = TRUE;
 	self->closeAuto = TRUE;
 	self->highligthBackground = FALSE;
+	self->transparent = TRUE;
+
+	self->base.icon_draw_back = FALSE;
+
+	self->err = FALSE;
 
 	return (GuiItem*)self;
 }
 
-GuiItem* GuiItemMenu_newImage(Quad2i grid, GuiImage* image)
+GuiItem* GuiItemMenu_newImage(Quad2i grid, GuiImage* image, BOOL imageIcon)
 {
 	GuiItemMenu* self = (GuiItemMenu*)GuiItemMenu_new(grid, DbValue_initEmpty(), FALSE);
 	self->image = image;
+	self->imageIcon = imageIcon;
 	return (GuiItem*)self;
 }
 
@@ -181,10 +192,21 @@ void GuiItemMenu_setCenter(GuiItemMenu* self, BOOL textCenter)
 	self->textCenter = textCenter;
 }
 
+static void _GuiItemMenu_updateIconDrawBack(GuiItemMenu* self)
+{
+	self->base.icon_draw_back = !self->transparent || !self->highligthBackground;
+}
+
+void GuiItemMenu_setTransparent(GuiItemMenu* self, BOOL transparent)
+{
+	self->transparent = transparent;
+	_GuiItemMenu_updateIconDrawBack(self);
+}
+
 void GuiItemMenu_setHighligthBackground(GuiItemMenu* self, BOOL highligthBackground)
 {
 	self->highligthBackground = highligthBackground;
-	self->base.icon_transparent_back = !highligthBackground;
+	_GuiItemMenu_updateIconDrawBack(self);
 }
 
 void GuiItemMenu_setCloseAuto(GuiItemMenu* self, BOOL closeAuto)
@@ -240,7 +262,7 @@ static GuiItem* _GuiItemMenu_createContext(GuiItemMenu* self)
 				item = GuiItem_addSubName(&layout->base, nameId, GuiItemMenu_new(Quad2i_init4(0, i, 1, 1), DbValue_initCopy(&it->text), FALSE));
 				GuiItemMenu_addItem((GuiItemMenu*)item, DbValue_initLang("YES_IAM_SURE"), it->click);
 
-				GuiItemMenu_setUnderline((GuiItemMenu*)item, FALSE);
+				GuiItemMenu_setUnderline((GuiItemMenu*)item, TRUE);
 				((GuiItemMenu*)item)->textCenter = FALSE;
 			}
 			else
@@ -259,17 +281,29 @@ static GuiItem* _GuiItemMenu_createContext(GuiItemMenu* self)
 	return (GuiItem*)layout;
 }
 
+static Quad2i _GuiItemMenu_getImageCoord(const GuiItemMenu* self, Quad2i coord)
+{
+	return self->imageIcon ? GuiItem_getIconCoord(&coord) : coord;
+}
+
+Quad2i GuiItemMenu_getCoordSpace(GuiItemMenu* self, Quad2i coord)
+{
+	if (self->base.drawTable)
+		return Quad2i_addSpace(coord, 1);
+	else
+		return Quad2i_addSpace(coord, 3);
+}
+
 void GuiItemMenu_draw(GuiItemMenu* self, Image4* img, Quad2i coord, Win* win)
 {
 	Rgba back_cd = self->base.back_cd;
 	Rgba front_cd = self->base.front_cd;
 
-	if (self->base.drawTable)
-		coord = Quad2i_addSpace(coord, 1);
+	coord = GuiItemMenu_getCoordSpace(self, coord);
 
 	if (self->image)
 	{
-		GuiImage_draw(self->image, img, coord, front_cd);
+		GuiImage_draw(self->image, img, _GuiItemMenu_getImageCoord(self, coord), front_cd);
 	}
 	else
 	{
@@ -290,7 +324,7 @@ void GuiItemMenu_draw(GuiItemMenu* self, Image4* img, Quad2i coord, Win* win)
 		}
 		else
 		{
-			if (self->mouseOver || self->base.drawTable || self->highligthBackground)
+			if (!self->transparent || self->mouseOver || self->base.drawTable || self->highligthBackground)
 				Image4_drawBoxQuad(img, coord, back_cd);
 		}
 
@@ -313,31 +347,27 @@ void GuiItemMenu_draw(GuiItemMenu* self, Image4* img, Quad2i coord, Win* win)
 void GuiItemMenu_update(GuiItemMenu* self, Quad2i coord, Win* win)
 {
 	if (self->image)
-		GuiImage_update(self->image, coord);
+		GuiImage_update(self->image, _GuiItemMenu_getImageCoord(self, coord).size);
 
 	GuiItem_setRedraw(&self->base, (DbValue_hasChanged(&self->value)));
 }
 
 void GuiItemMenu_touch(GuiItemMenu* self, Quad2i coord, Win* win)
 {
-	Rgba back_cd = g_theme.white;
+	Rgba back_cd = self->transparent ? g_theme.white : g_theme.background;
 	Rgba front_cd = g_theme.black;
 
-	//u Table header použít 'highligthBackground'
 	if (self->base.drawTable)
-	{
 		back_cd = g_theme.white;
-	}
 
 	if (self->circle)
-	{
 		back_cd = Rgba_aprox(back_cd, front_cd, 0.2f);
-	}
 
 	if (self->highligthBackground)
-	{
-		back_cd = Rgba_aprox(g_theme.background, g_theme.main, 0.5f);
-	}
+		back_cd = g_theme.main;
+
+	if (self->err)
+		back_cd = g_theme.warning;
 
 	self->mouseOver = FALSE;
 

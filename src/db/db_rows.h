@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -27,13 +27,24 @@ static DbRows _DbRows_init(DbTable* table, DbColumn* column)
 	return self;
 }
 
+void _DbRows_setFilter(DbRows* self, DbFilter* filter)
+{
+	//if (self->filter)
+	//	DbRoot_removeFilter(self->filter);
+
+	self->filter = (!filter || DbFilter_isEmpty(filter)) ? 0 : filter;	//DbRoot_addFilter(filter);
+
+	if (filter && !self->filter)
+		self->table = DbFilter_getTable(filter);
+}
+
 DbRows DbRows_initCopy(const DbRows* src)
 {
 	DbRows self = *src;
 	self.array = StdBigs_initCopy(&src->array);
 
 	if (src->filter)
-		self.filter = DbRoot_addFilter(src->filter);
+		self.filter = src->filter;	//DbRoot_addFilter(src->filter);
 
 	return self;
 }
@@ -42,7 +53,7 @@ void DbRows_free(DbRows* self)
 {
 	StdBigs_free(&self->array);
 
-	DbRoot_removeFilter(self->filter);
+	//	DbRoot_removeFilter(self->filter);
 
 	Os_memset(self, sizeof(DbRows));
 }
@@ -57,7 +68,13 @@ DbRows DbRows_initTable(DbTable* table)
 	return _DbRows_init(table, 0);
 }
 
-DbRows DbRows_initLink(DbColumnN* column, BIG row)
+DbRows DbRows_initLink1(DbColumn1* column, BIG row)
+{
+	DbRows self = _DbRows_init(0, &column->base);
+	self.row = row;
+	return self;
+}
+DbRows DbRows_initLinkN(DbColumnN* column, BIG row)
 {
 	DbRows self = _DbRows_init(0, &column->base);
 	self.row = row;
@@ -74,8 +91,10 @@ DbRows DbRows_initArray(DbTable* table, StdBigs array)
 
 BOOL DbRows_hasChanged(DbRows* self)
 {
-	if (self->filter)
-		return DbFilter_execute(self->filter);
+	//mohu si uložit num_changes pro Table nebo Column ...
+
+	//if (self->filter)
+	//	return DbFilter_execute(self->filter);
 	return FALSE;
 }
 
@@ -124,14 +143,25 @@ FileRow DbRows_getFileId(const DbRows* self, UBIG pos)
 
 BIG DbRows_getRow(const DbRows* self, UBIG pos)
 {
-	if (self->filter)
+	if (self->arrayStatic)	//must be first!
 	{
-		return pos < self->filter->rows.num ? self->filter->rows.ptrs[pos] : -1;
+		BIG i;
+		for (i = 0; i < self->array.num; i++)
+		{
+			BIG r = self->array.ptrs[i];
+			if (DbTable_isRowActive(self->table, r))
+			{
+				if (pos == 0)
+					return r;
+				pos--;
+			}
+		}
+		return -1;
 	}
 	else
-		if (self->arrayStatic)	//must be first!
+		if (self->filter)
 		{
-			return pos < self->array.num ? self->array.ptrs[pos] : -1;
+			return pos < self->filter->rows.num ? self->filter->rows.ptrs[pos] : -1;
 		}
 		else
 			if (self->table)
@@ -147,6 +177,26 @@ BIG DbRows_getRow(const DbRows* self, UBIG pos)
 	return -1;
 }
 
+void DbRows_getArrayPoses(const DbRows* self, StdBigs* out)
+{
+	StdBigs_clear(out);
+
+	if (self->arrayStatic)	//must be first!
+	{
+		StdBigs_copy(out, &self->array);
+	}
+	else
+		if (self->filter)
+		{
+			StdBigs_copy(out, &self->filter->rows);
+		}
+		else
+			if (self->table)
+			{
+				DbTable_getArrayPoses(self->table, out);
+			}
+}
+
 BOOL DbRows_isRow(const DbRows* self, UBIG pos)
 {
 	return DbRows_getRow(self, pos) >= 0;
@@ -154,13 +204,23 @@ BOOL DbRows_isRow(const DbRows* self, UBIG pos)
 
 UBIG DbRows_getSize(const DbRows* self)
 {
-	if (self->filter)
+	if (self->arrayStatic) //must be first!
 	{
-		return self->filter->rows.num;
+		UBIG n = 0;
+		BIG i;
+		for (i = 0; i < self->array.num; i++)
+		{
+			if (DbTable_isRowActive(self->table, self->array.ptrs[i]))
+				n++;
+		}
+		return n;
 	}
+
 	else
-		if (self->arrayStatic) //must be first!
-			return self->array.num;
+		if (self->filter)
+		{
+			return self->filter->rows.num;
+		}
 		else
 			if (self->table)
 			{
@@ -184,11 +244,15 @@ BIG DbRows_findSubType(BIG row, const char* subType)
 {
 	return DbRoot_findChildType(row, subType);
 }
+BIG DbRows_findOrCreateSubType(BIG row, const char* subType)
+{
+	return DbRoot_findOrCreateChildType(row, subType);
+}
 
 DbRows DbRows_getSubsArray(BIG row, const char* subType)
 {
 	UBIG columnsRow = DbRoot_findOrCreateChildType(row, subType);
-	return DbRows_initLink(DbRoot_getColumnSubs(), columnsRow);
+	return DbRows_initLinkN(DbRoot_subs(), columnsRow);
 }
 
 BIG DbRows_getAddSubsLine(BIG row, const char* subType)
@@ -196,8 +260,7 @@ BIG DbRows_getAddSubsLine(BIG row, const char* subType)
 	DbRows rows = DbRows_getSubsArray(row, subType);
 
 	BIG r = DbRows_addNewRow(&rows);
-	_DbRoot_setOptionNumber(r, "width", 7);
-
+	_DbRoot_setOptionNumber(r, "width", 8);
 
 	DbRows_free(&rows);
 
@@ -208,36 +271,53 @@ static BIG _DbRows_getSubsIndex(const BIG row, const char* subType, const BOOL o
 {
 	UBIG num = 0;
 
-	DbColumnN* subs = DbRoot_getColumnSubs();
+	//DbColumnN* subs = DbRoot_getColumnSubs();
 
 	BIG propRow = DbRows_findSubType(row, subType);
 	DbTable* table = DbRoot_findParentTable(row);
 
-	if (table && propRow >= 0)
+	if (table && propRow >= 0 && (!onlyEnable || DbRows_isEnable(propRow)))
 	{
 		UBIG i = 0;
 		BIG it;
-		while ((it = DbColumnN_jump(subs, propRow, &i, 1)) >= 0)
+		while ((it = DbColumnN_jump(DbRoot_subs(), propRow, &i, 1)) >= 0)
 		{
 			if (!onlyEnable || _DbRoot_isEnable(it))
 			{
 				DbColumn* column = DbColumns_find(table->columns, DbRoot_getFileId(it));
 				if (!column)
-					column = DbColumns_find(table->columns, DbRoot_getFileId(DbColumnN_getFirstRow(subs, it)));
+					column = DbRoot_ref_column(it);
 
-				if (index == num)
+				if (!onlyEnable || column)	//!onlyEnable for group-lanes
 				{
-					*out_column = column;
-					*out_row = it;
-					return num;
+					if (index == num)
+					{
+						*out_column = column;
+						*out_row = it;
+						return num;
+					}
+					num++;
 				}
-				num++;
 			}
 			i++;
 		}
 	}
 
 	return index < 0 ? num : -1;
+}
+
+DbRows DbRows_initRefLink(BIG row, const char* subType)
+{
+	return DbRows_initLink1(DbRoot_ref(), DbRows_findOrCreateSubType(row, subType));
+}
+
+DbRows DbRows_initSubLink(BIG row, const char* subType)
+{
+	return DbRows_initLinkN(DbRoot_subs(), DbRows_findOrCreateSubType(row, subType));
+}
+DbValue DbRows_getSubOption(BIG row, const char* subType, const char* optionName, const UNI* defValue)
+{
+	return DbValue_initOption(DbRows_findOrCreateSubType(row, subType), optionName, defValue);
 }
 
 DbRows DbRows_initSubs(DbTable* table, const char* subType, BOOL onlyEnable)
@@ -250,6 +330,29 @@ DbRows DbRows_initSubs(DbTable* table, const char* subType, BOOL onlyEnable)
 	while (_DbRows_getSubsIndex(DbTable_getRow(table), subType, onlyEnable, index, &column, &row2) == index)
 	{
 		StdBigs_add(&arr, row2);
+		index++;
+	}
+
+	return DbRows_initArray(DbRoot_getInfoTable(), arr);
+}
+
+DbRows DbRows_initSubsEx(DbTable* table, const char* subType, BOOL onlyEnable, BOOL typeNumber, BOOL typeString, BOOL typeLink)
+{
+	StdBigs arr = StdBigs_init();
+
+	DbColumn* column;
+	BIG it;
+	BIG index = 0;
+	while (_DbRows_getSubsIndex(DbTable_getRow(table), subType, onlyEnable, index, &column, &it) == index)
+	{
+		BOOL add = FALSE;
+		add |= typeLink && DbColumn_getBTable(column);
+		add |= typeNumber && !DbColumn_getBTable(column) && (column->type == DbColumn_1 || column->type == DbColumn_N);
+		add |= typeString && column->type == DbColumn_STRING_32;
+
+		if (add)
+			StdBigs_add(&arr, it);
+
 		index++;
 	}
 
@@ -285,11 +388,38 @@ DbValue DbRows_getSubsOption(BIG row, const char* subType, BOOL onlyEnable, BIG 
 	return _DbRows_getSubsIndex(row, subType, onlyEnable, index, &column, &row2) == index ? DbValue_initOption(columnDirect ? DbColumn_getRow(column) : row2, optionName, 0) : DbValue_initEmpty();
 }
 
+double DbRows_getSubsOptionNumber(BIG row, const char* subType, BOOL onlyEnable, BIG index, const char* optionName, BOOL columnDirect)
+{
+	DbValue v = DbRows_getSubsOption(row, subType, onlyEnable, index, optionName, columnDirect);
+	double value = DbValue_getNumber(&v);
+	DbValue_free(&v);
+	return value;
+}
+void DbRows_setSubsOptionNumber(BIG row, const char* subType, BOOL onlyEnable, BIG index, const char* optionName, BOOL columnDirect, double value)
+{
+	DbValue v = DbRows_getSubsOption(row, subType, onlyEnable, index, optionName, columnDirect);
+	DbValue_setNumber(&v, value);
+	DbValue_free(&v);
+}
+
 DbColumn* DbRows_getSubsColumn(BIG row, const char* subType, BOOL onlyEnable, BIG index)
 {
 	DbColumn* column;
 	BIG row2;
 	return _DbRows_getSubsIndex(row, subType, onlyEnable, index, &column, &row2) == index ? column : 0;
+}
+
+StdArr DbRows_getSubsColumns(BIG row, const char* subType, BOOL onlyEnable)
+{
+	StdArr arr = StdArr_init();
+
+	StdArr_resize(&arr, DbRows_getSubsNum(row, subType, onlyEnable));
+
+	BIG i;
+	for (i = 0; i < arr.num; i++)
+		arr.ptrs[i] = DbRows_getSubsColumn(row, subType, onlyEnable, i);
+
+	return arr;
 }
 
 BIG DbRows_getSubsRow(BIG row, const char* subType, BOOL onlyEnable, BIG index)
@@ -310,7 +440,7 @@ DbValues DbRows_getOptions(BIG row, const char* subType, const char* valueType, 
 {
 	DbValues values = DbValues_init();
 
-	DbColumnN* subs = DbRoot_getColumnSubs();
+	//DbColumnN* subs = DbRoot_getColumnSubs();
 
 	BIG propRow = DbRows_findSubType(row, subType);
 	DbTable* table = DbRoot_findParentTable(row);
@@ -319,7 +449,7 @@ DbValues DbRows_getOptions(BIG row, const char* subType, const char* valueType, 
 	{
 		UBIG i = 0;
 		BIG it;
-		while ((it = DbColumnN_jump(subs, propRow, &i, 1)) >= 0)
+		while ((it = DbColumnN_jump(DbRoot_subs(), propRow, &i, 1)) >= 0)
 		{
 			if (!onlyEnable || _DbRoot_isEnable(it))
 				DbValues_add(&values, DbValue_initOption(it, valueType, 0));
@@ -330,150 +460,42 @@ DbValues DbRows_getOptions(BIG row, const char* subType, const char* valueType, 
 	return values;
 }
 
+BOOL DbRows_isEnable(BIG row)
+{
+	return _DbRoot_isEnable(row);
+}
+void DbRows_setEnable(BIG row, BOOL enable)
+{
+	_DbRoot_setEnable(row, enable);
+}
+
 DbRows DbRows_initTables(void)
 {
 	DbRows self = DbRows_initArray(0, DbRoot_getTableLinks());
 	return self;
 }
 
-void _DbRows_addFilter(DbFilter** filterOrig, BIG row)
-{
-	DbColumnN* subs = DbRoot_getColumnSubs();
-	DbTable* table = DbRoot_findParentTable(row);
-
-	if (table)
-	{
-		BIG selectRow = DbRows_findSubType(row, "select");
-		BIG groupRow = DbRows_findSubType(row, "group");
-		BIG shortRow = DbRows_findSubType(row, "short");
-
-		BOOL selectOk = (selectRow >= 0 && _DbRoot_isEnable(selectRow));
-		BOOL groupOk = (groupRow >= 0 && _DbRoot_isEnable(groupRow));
-		BOOL shortOk = (shortRow >= 0 && _DbRoot_isEnable(shortRow));
-
-		if (selectOk || groupOk || shortOk)
-		{
-			DbFilter* filter = DbFilter_new(table, DbRoot_getFileId(DbTable_getRow(table)));
-			if (!*filterOrig)
-				*filterOrig = filter;
-			else
-				DbFilter_addParent(*filterOrig, filter);
-
-			UBIG i;
-			BIG it;
-			if (shortOk)
-			{
-				i = 0;
-				while ((it = DbColumnN_jump(subs, shortRow, &i, 1)) >= 0)
-				{
-					DbColumn* column = DbColumns_find(table->columns, DbRoot_getFileId(DbColumnN_getFirstRow(subs, it)));
-					if (column && _DbRoot_isEnable(it))
-						DbFilter_addShort(filter, column, _DbRoot_isAscending(it));
-					i++;
-				}
-			}
-
-			if (groupOk)
-			{
-				//group
-				i = 0;
-				while ((it = DbColumnN_jump(subs, groupRow, &i, 1)) >= 0)
-				{
-					DbColumn* column = DbColumns_find(table->columns, DbRoot_getFileId(DbColumnN_getFirstRow(subs, it)));
-					if (column && _DbRoot_isEnable(it))
-						DbFilter_addGroup(filter, column, _DbRoot_isAscending(it), FALSE);
-					i++;
-				}
-			}
-
-			if (selectOk)
-			{
-				DbFilter_setMaxRecords(filter, _DbRoot_getOptionNumber(selectRow, "maxRecords", 0));
-
-				//select
-				i = 0;
-				while ((it = DbColumnN_jump(subs, selectRow, &i, 1)) >= 0)
-				{
-					BIG colRow = DbRoot_findOrCreateChildType(it, "column");
-					DbColumn* column = DbColumns_find(table->columns, DbRoot_getFileId(DbColumnN_getFirstRow(subs, colRow)));
-					if (column && _DbRoot_isEnable(it))
-					{
-						DbFormatTYPE format = DbColumnFormat_findColumn(column);
-
-						UNI value[32];
-						if (format == DbFormat_MENU || format == DbFormat_TAGS)
-						{
-							BIG row = DbColumnN_getFirstRow(DbRoot_getColumnSubs(), DbRoot_findOrCreateChildType(it, "option"));
-							Std_buildNumberUNI(row, 0, value);
-						}
-						else
-							_DbRoot_getOptionString(it, "value", 0, value, 32);
-
-						UINT funcIndex = _DbRoot_getOptionNumber(it, "func", 0);
-						DbFilter_addSelect(filter, _DbRoot_isAND(it), column, DbFilterSelectFunc_get(format, funcIndex), value);
-					}
-					i++;
-				}
-			}
-		}
-
-		if (!DbRoot_isType_table(row))
-		{
-			BIG parentRow = DbRoot_findParent(row);
-			if (parentRow >= 0)
-				_DbRows_addFilter(filterOrig, parentRow);
-		}
-
-	}
-}
-
 DbRows DbRows_initFilter(BIG row)
 {
-	DbFilter* filter = 0;
-	_DbRows_addFilter(&filter, row);
-
-	//add search
-	UNI search[64];
-	_DbRoot_getOptionString(row, "search", 0, search, 64);
-	if (Std_sizeUNI(search))
-	{
-		DbTable* table = DbRoot_findParentTable(row);
-		if (!filter)
-			filter = DbFilter_new(table, DbRoot_getFileId(row));
-
-		int i;
-		for (i = 0; i < DbColumns_num(table->columns); i++)
-			DbFilter_addSelect(filter, FALSE, DbColumns_get(table->columns, i), DbFilterSelectFunc_find(DbFormat_TEXT, "FILTER_FUNC_CONTAIN"), search);
-	}
+	DbFilter* filter = _DbRoot_findFilterParent(row);	//DbRoot_findFilter(row);
 
 	DbRows self;
-	if (!DbFilter_isEmpty(filter))
+	if (!filter || DbFilter_isEmpty(filter))
 	{
-		self = DbRows_initEmpty();
-		self.filter = DbRoot_addFilter(filter);
-		self.table = DbRoot_findParentTable(row);
+		self = DbRows_initTable(DbRoot_findParentTable(row));
 	}
 	else
 	{
- 		DbTable* table = DbRoot_findParentTable(row);
-		self = DbRows_initTable(table);
+		self = DbRows_initEmpty();
+		_DbRows_setFilter(&self, filter);
+		self.table = DbRoot_findParentTable(row);
 	}
 	self.row = row;
-
 	return self;
-}
-
-void DbRows_forceEmptyFilter(DbRows* self)
-{
-	DbTable* table = DbRows_getTable(self);
-	if (!self->filter && table)
-		self->filter = DbFilter_new(table, DbRoot_getFileId(self->row));
 }
 
 BOOL DbRows_hasFilterSubActive(BIG row, const char* subName)
 {
-	DbColumnN* subs = DbRoot_getColumnSubs();
-
 	DbTable* table = DbRoot_findParentTable(row);
 	if (table)
 	{
@@ -485,12 +507,25 @@ BOOL DbRows_hasFilterSubActive(BIG row, const char* subName)
 
 			UBIG i = 0;
 			BIG it;
-			while ((it = DbColumnN_jump(subs, subRow, &i, 1)) >= 0)
+			while ((it = DbColumnN_jump(DbRoot_subs(), subRow, &i, 1)) >= 0)
 			{
 				if (_DbRoot_isEnable(it))
-					return TRUE;
+				{
+					DbColumn* column = DbRoot_ref_column(it);
+					if (!column)
+					{
+						BIG colRow = DbRoot_findChildType(it, "column");
+						if (colRow >= 0)
+							column = DbRoot_ref_column(colRow);
+					}
+					return column != 0;
+					//return TRUE;
+				}
 				i++;
 			}
+
+			if (Std_cmpCHAR(subName, "select") && _DbRoot_getOptionNumber(subRow, "maxRecords", 0) > 0)
+				return TRUE;
 		}
 	}
 
@@ -499,7 +534,7 @@ BOOL DbRows_hasFilterSubActive(BIG row, const char* subName)
 
 BOOL DbRows_hasColumnsSubDeactive(BIG row, const char* columnsName)
 {
-	DbColumnN* subs = DbRoot_getColumnSubs();
+	//DbColumnN* subs = DbRoot_getColumnSubs();
 
 	BIG columnsRow = DbRows_findSubType(row, columnsName);
 	if (columnsRow >= 0)
@@ -507,7 +542,7 @@ BOOL DbRows_hasColumnsSubDeactive(BIG row, const char* columnsName)
 		//short
 		UBIG i = 0;
 		BIG it;
-		while ((it = DbColumnN_jump(subs, columnsRow, &i, 1)) >= 0)
+		while ((it = DbColumnN_jump(DbRoot_subs(), columnsRow, &i, 1)) >= 0)
 		{
 			if (!_DbRoot_isEnable(it))
 				return TRUE;
@@ -571,17 +606,17 @@ BIG DbRows_addNewRow(DbRows* self)
 
 void DbRows_removeRow(DbRows* self, BIG row)
 {
-	if (self->arrayStatic)
-	{
-		//self->array.ptrs[pos];	//...
-		//DbTable_removeRow(self->table, row);
-	}
+	if (self->table)
+		DbTable_removeRow(self->table, row);
 	else
-		if (self->table)
-			DbTable_removeRow(self->table, row);
-		else
-			if (self->column && self->row >= 0)
-				DbColumn_remove(self->column, self->row, row);
+		if (self->column && self->row >= 0)
+			DbColumn_remove(self->column, self->row, row);
+}
+
+void DbRows_removeRowDirect(DbTable* table, BIG row)
+{
+	if (table)
+		DbTable_removeRow(table, row);
 }
 
 void DbRows_removeFile(DbRows* self, FileRow fileRow)
@@ -614,15 +649,18 @@ BIG DbRows_findLinkPos(DbRows* self, BIG findRow)
 	return -1;
 }
 
-BOOL DbRows_getColumnMinMax(DbRows* self, DbColumn1* column, double* mn, double* mx)
+BOOL DbRows_getColumnMinMax(DbRows* self, DbColumn* column, double* mn, double* mx)
 {
 	const UBIG N = DbRows_getSize(self);
+	if (N == 0)
+		return FALSE;
+
 	UBIG i;
 	for (i = 0; i < N; i++)
 	{
 		UBIG it = DbRows_getRow(self, i);
 
-		double v = DbColumn1_get(column, it);
+		double v = DbColumn_getFlt(column, it, 0);
 		*mn = Std_dmin(*mn, v);
 		*mx = Std_dmax(*mx, v);
 	}
@@ -630,7 +668,7 @@ BOOL DbRows_getColumnMinMax(DbRows* self, DbColumn1* column, double* mn, double*
 	return (N > 0);
 }
 
-BOOL DbRows_getColumnsMinMax(DbRows* self, DbColumn1** columns, double* mn, double* mx)
+BOOL DbRows_getColumnsMinMax(DbRows* self, DbColumn** columns, double* mn, double* mx)
 {
 	if (!columns)
 		return FALSE;
@@ -639,16 +677,19 @@ BOOL DbRows_getColumnsMinMax(DbRows* self, DbColumn1** columns, double* mn, doub
 	UBIG i;
 	for (i = 0; i < N; i++)
 	{
-		UBIG it = DbRows_getRow(self, i);
+		UBIG r = DbRows_getRow(self, i);
 
-		UBIG v = 0;
-		DbColumn1* column = *columns;
-		while (column)
-			v += DbColumn1_get(column, it);
+		UBIG sum = 0;
+		DbColumn** it = columns;
+		while (*it)
+		{
+			sum += Std_dmax(0, DbColumn_getFlt(*it, r, 0));	//no negative values
+			it++;
+		}
 
-		*mn = Std_dmin(*mn, v);
-		*mx = Std_dmax(*mx, v);
+		*mn = Std_dmin(*mn, sum);
+		*mx = Std_dmax(*mx, sum);
 	}
 
-	return (N > 0 && *columns);
+	return (N > 0);
 }

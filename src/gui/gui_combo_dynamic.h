@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -39,6 +39,8 @@ GuiItem* GuiItemComboDynamic_new(Quad2i grid, BOOL warningBackground, DbRows val
 
 	self->warningBackground = warningBackground;
 	self->openCall = 0;
+
+	self->base.icon_draw_back = FALSE;
 
 	return (GuiItem*)self;
 }
@@ -157,6 +159,9 @@ static GuiItemLayout* _GuiItemComboDynamic_createDialog(GuiItemComboDynamic* sel
 
 		GuiItemButton* button = (GuiItemButton*)GuiItem_addSubName(&layout->base, nameId, GuiItemButton_newAlphaEx(Quad2i_init4(0, 1 + i, 1, 1), nameValue, &GuiItemComboDynamic_clickSelect));
 		button->stayPressed = (row == valueRow);
+		button->textCenter = FALSE;
+		GuiItemTable_callListIcon((GuiItem*)button);
+		//GuiItem_setIconCallback((GuiItem*)button, &GuiItemTable_callListIcon);
 	}
 
 	return layout;
@@ -176,7 +181,7 @@ void GuiItemComboDynamic_draw(GuiItemComboDynamic* self, Image4* img, Quad2i coo
 		Image4_drawBoxQuad(img, origCoord, g_theme.white);
 
 	const UNI* description = DbValue_result(&self->description);
-	if(Std_sizeUNI(description))
+	if (Std_sizeUNI(description))
 	{
 		if (coord.size.y * 1.5f > 2 * cell)
 		{
@@ -190,7 +195,7 @@ void GuiItemComboDynamic_draw(GuiItemComboDynamic* self, Image4* img, Quad2i coo
 		{
 			Image4_drawText(img, Vec2i_add(Vec2i_init2(0, cell / 2), coord.start), FALSE, font, description, textH, 0, front);
 
-			int s = Std_min(coord.size.x * 0.4f, coord.size.x);
+			int s = Std_min(OsFont_getTextSizeX(font, description, textH), coord.size.x * 0.4f);
 			coord.start.x += s;
 			coord.size.x -= s;
 		}
@@ -198,6 +203,16 @@ void GuiItemComboDynamic_draw(GuiItemComboDynamic* self, Image4* img, Quad2i coo
 
 	//combo
 	{
+		//value
+		BIG valueRow = GuiItemComboDynamic_getValueRow(self);
+		const UNI* text = valueRow >= 0 ? GuiItemComboDynamic_getOption(self, valueRow) : 0;
+		if (valueRow < 0)
+		{
+			text = Lang_find("CHOOSE");
+			if (self->warningBackground && GuiItem_isEnable(&self->base))
+				back = g_theme.warning;
+		}
+
 		coord.start.y = coord.start.y + coord.size.y / 2 - cell / 2;
 		coord.size.y = cell;
 		coord = Quad2i_addSpace(coord, 3);
@@ -214,21 +229,12 @@ void GuiItemComboDynamic_draw(GuiItemComboDynamic* self, Image4* img, Quad2i coo
 		Vec2i mid = Quad2i_getMiddle(arrow);
 		Image4_drawArrow(img, Vec2i_init2(mid.x, mid.y + s), Vec2i_init2(mid.x, mid.y - s), 4 * s, front);
 
-		//value
-		BIG valueRow = GuiItemComboDynamic_getValueRow(self);
-		const UNI* text = valueRow >= 0 ? GuiItemComboDynamic_getOption(self, valueRow) : 0;
-		if (valueRow < 0)
-		{
-			text = Lang_find("CHOOSE");
-			if (self->warningBackground)
-				back = g_theme.warning;
-		}
-
 		img->rect.size.x -= coord.size.y;	//don't draw over
+		Image4_repairRect(img);
 		Image4_drawText(img, Vec2i_add(Vec2i_init2(textH / 2, coord.size.y / 2), coord.start), FALSE, font, text, textH, 0, front);
 		img->rect.size.x += coord.size.y;
+		Image4_repairRect(img);
 	}
-
 
 	if (self->base.drawTable)
 	{

@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -19,11 +19,14 @@ typedef struct UiScreen_s
 	LimitTime limitDraw;
 
 	BOOL close;
+	BOOL reloadProject;	//index changed
 
 	UNI* newPathOpen;
 	UNI* newPathCreate;
 	UNI* newPassword;
 	BIG newCycles;
+
+	BOOL indexChanged;
 }UiScreen;
 
 UiScreen* g_UiScreen = 0;
@@ -70,6 +73,21 @@ void UiScreen_changeDPI(int add)
 	UiScreen_setDPI(OsWinIO_getDPI() - add);
 }
 
+BOOL UiScreen_isIndexChanged(void)
+{
+	return g_UiScreen->indexChanged;
+}
+void UiScreen_setIndexChanged(BOOL indexChanged)
+{
+	if (g_UiScreen->indexChanged != indexChanged)
+		GuiItemRoot_resizeAll();
+	g_UiScreen->indexChanged = indexChanged;
+}
+void UiScreen_reloadProject(void)
+{
+	g_UiScreen->reloadProject = TRUE;
+}
+
 Win* UiScreen_getWin(void)
 {
 	return g_UiScreen->win;
@@ -102,9 +120,18 @@ static void UiScreen_updateWindowTitle(void)
 
 		UiIniSettings_setProject(project);	//update .ini
 
+		UNI* lic = License_getTitle();
+
 		titleName = Std_newCHAR(STD_TITLE);
+		titleName = Std_addAfterCHAR(titleName, "(");
+		titleName = Std_addAfterCHAR_uni(titleName, lic);
+		titleName = Std_addAfterCHAR(titleName, ")");
+
 		titleName = Std_addAfterCHAR(titleName, " - ");
+
 		titleName = Std_addAfterCHAR(titleName, project);
+
+		Std_deleteUNI(lic);
 	}
 	else
 		titleName = UiScreen_getNameVersion();
@@ -126,19 +153,19 @@ void UiScreen_createProject(const UNI* path, const UNI* password, BIG cycles)
 	g_UiScreen->newCycles = cycles;
 }
 
-BOOL GuiItemRoot_tryNewProject(void)
+BOOL UiScreen_tryNewProject(void)
 {
-	BOOL changed = Std_sizeUNI(g_UiScreen->newPathCreate) || Std_sizeUNI(g_UiScreen->newPathOpen);
+	BOOL changed = Std_sizeUNI(g_UiScreen->newPathCreate) || Std_sizeUNI(g_UiScreen->newPathOpen) || g_UiScreen->reloadProject;
 
 	if (Std_sizeUNI(g_UiScreen->newPathCreate))
 	{
 		char* path = Std_newCHAR_uni(g_UiScreen->newPathCreate);
 
-		FileProject_newCreate(path, g_UiScreen->newPassword, g_UiScreen->newCycles, DbRoot_getProgress());
+		FileProject_newCreate(path, g_UiScreen->newPassword, g_UiScreen->newCycles);
 		DbRoot_newCreate();
 		DbRoot_save();
 
-		if (!DbRoot_getProgress()->running)
+		if (!StdProgress_is())
 			OsFileDir_removeFile(path);
 
 		Std_deleteCHAR(path);
@@ -147,10 +174,9 @@ BOOL GuiItemRoot_tryNewProject(void)
 	if (Std_sizeUNI(g_UiScreen->newPathOpen))
 	{
 		char* path = Std_newCHAR_uni(g_UiScreen->newPathOpen);
-		if (FileProject_newOpen(path, g_UiScreen->newPassword, DbRoot_getProgress()))
-		{
+		if (FileProject_newOpen(path, g_UiScreen->newPassword))
 			DbRoot_newOpen();
-		}
+
 		Std_deleteCHAR(path);
 	}
 
@@ -161,10 +187,17 @@ BOOL GuiItemRoot_tryNewProject(void)
 	g_UiScreen->newPathOpen = 0;
 	g_UiScreen->newPassword = 0;
 
+	if (g_UiScreen->reloadProject)
+	{
+		DbRoot_newOpen();
+		g_UiScreen->reloadProject = FALSE;
+		g_UiScreen->indexChanged = FALSE;
+	}
+
 	if (changed)
 		UiScreen_updateWindowTitle();
 
-	return changed;
+	return changed && DbRoot_is();
 }
 
 void UiScreen_askResize(void)
@@ -203,20 +236,34 @@ void UiScreen_setStartup(void)
 void UiScreen_setRoot(void)
 {
 	GuiItemRoot_setContentLayout(UiRoot_new());
+
+	if (License_exist())
+	{
+		if (License_isTimeValid())
+		{
+			if (License_getRemainingDays() < LICENSE_DAYS_WARNING)
+				Logs_addInfo("LICENSE_EXPIRATION_SOON");
+		}
+		else
+			Logs_addError("COMMERCIAL_EXPIRED");
+	}
 }
 
 BOOL UiScreen_tick(void* selff, Quad2i* redrawRect);
 
 void UiScreen_delete(void)
 {
-	Quad2i coord;
-	Win_getWindowCoord(g_UiScreen->win, &coord);
-	UiIniSettings_setWindow(coord);
-	UiIniSettings_setLanguage(Lang_getLangName());
+	if (g_UiScreen)
+	{
+		Quad2i coord;
+		Win_getWindowCoord(g_UiScreen->win, &coord);
+		UiIniSettings_setWindow(coord);
+		UiIniSettings_setLanguage(Lang_getLangName());
 
-	Win_delete(g_UiScreen->win);
-	Os_free(g_UiScreen, sizeof(UiScreen));
-	g_UiScreen = 0;
+		Win_delete(g_UiScreen->win);
+		Os_free(g_UiScreen, sizeof(UiScreen));
+		g_UiScreen = 0;
+	}
 }
 
 BOOL UiScreen_new(void)
@@ -238,6 +285,9 @@ BOOL UiScreen_new(void)
 	g_UiScreen->newPassword = 0;
 	g_UiScreen->newCycles = 0;
 
+	g_UiScreen->indexChanged = FALSE;
+	g_UiScreen->reloadProject = FALSE;
+
 	UiScreen_updateWindowTitle();
 
 	return TRUE;
@@ -251,7 +301,7 @@ void UiScreen_start(void)
 	}
 	else
 	{
-		GuiItemRoot_setContentLayout(UiDialogLicense_new(FALSE));
+		GuiItemRoot_setContentLayout(UiDialogEula_new(FALSE));
 	}
 
 	g_ini->file_existed = TRUE;
@@ -274,7 +324,7 @@ BOOL UiScreen_tick(void* selff, Quad2i* redrawRect)
 {
 	UiScreen* self = selff;
 
-	if (GuiItemRoot_tryNewProject())
+	if (UiScreen_tryNewProject())
 		UiScreen_setRoot();
 
 	//touch
@@ -326,7 +376,7 @@ BOOL UiScreen_tick(void* selff, Quad2i* redrawRect)
 	}
 
 	//render
-	BOOL doDraw = LimitTime_isTimeout(&self->limitDraw);
+	BOOL doDraw = LimitTime_isTimeout(&self->limitDraw);	//smazat ...
 	BOOL doUpdate = LimitTime_isTimeout(&self->limitData);
 
 	if (UiAutoUpdate_isRunFinished())
@@ -350,6 +400,15 @@ BOOL UiScreen_tick(void* selff, Quad2i* redrawRect)
 		self->close = TRUE;
 
 	OsWinIO_tick();
+
+	if (DbRoot_is())
+	{
+		if (DbRoot_tryUpdateFileIndexes())
+		{
+			g_UiScreen->indexChanged = TRUE;
+			GuiItemRoot_resizeAll();
+		}
+	}
 
 	return !self->close;
 }

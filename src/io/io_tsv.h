@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -31,9 +31,8 @@ static int _IOTsv_readItem(OsFile* f, char* buff, const int max_buff, BOOL* eol,
 	return pos;
 }
 
-BOOL IOTsv_write(const char* path, BOOL firstRowColumnNames, DbRows* rows, DbValues* columns, volatile StdProgress* progress)
+BOOL IOTsv_write(const char* path, BOOL firstRowColumnNames, DbRows* rows, DbValues* columns)
 {
-	progress->done = 0;
 	const double maxRows = DbRows_getSize(rows);
 
 	OsFile f;
@@ -45,7 +44,7 @@ BOOL IOTsv_write(const char* path, BOOL firstRowColumnNames, DbRows* rows, DbVal
 		if (firstRowColumnNames)
 		{
 			UNI name[64];
-			for (c = 0; c < N_COLS && progress->running; c++)
+			for (c = 0; c < N_COLS && StdProgress_is(); c++)
 			{
 				OsFile_writeUNI(&f, DbColumn_getName(columns->values[c].column, name, 64));
 				if (c + 1 < N_COLS)
@@ -55,11 +54,11 @@ BOOL IOTsv_write(const char* path, BOOL firstRowColumnNames, DbRows* rows, DbVal
 			OsFile_writeUNIch(&f, L'\n');
 		}
 
-		for (r = 0; r < maxRows && progress->running; r++)
+		for (r = 0; r < maxRows && StdProgress_is(); r++)
 		{
 			BIG row = DbRows_getRow(rows, r);
 
-			for (c = 0; c < N_COLS && progress->running; c++)
+			for (c = 0; c < N_COLS && StdProgress_is(); c++)
 			{
 				const UNI* str = DbValue_now_getText(&columns->values[c], row);
 
@@ -69,7 +68,7 @@ BOOL IOTsv_write(const char* path, BOOL firstRowColumnNames, DbRows* rows, DbVal
 					OsFile_writeUNIch(&f, L'\t');
 			}
 
-			progress->done = r / maxRows;
+			StdProgress_setEx("EXPORTING", r, maxRows);
 			OsFile_writeUNIch(&f, L'\n');
 		}
 
@@ -82,9 +81,8 @@ BOOL IOTsv_write(const char* path, BOOL firstRowColumnNames, DbRows* rows, DbVal
 	return FALSE;
 }
 
-BOOL IOTsv_read(const char* path, BOOL firstRowColumnNames, BOOL recognizeColumnType, DbRows* tableOut, volatile StdProgress* progress)
+BOOL IOTsv_read(const char* path, BOOL firstRowColumnNames, BOOL recognizeColumnType, DbRows* tableOut)
 {
-	progress->done = 0;
 	const double fileBytes = OsFile_bytes(path);
 
 	OsFile f;
@@ -96,7 +94,7 @@ BOOL IOTsv_read(const char* path, BOOL firstRowColumnNames, BOOL recognizeColumn
 		DbValues columns = DbValues_init();
 
 		BOOL eof = FALSE;
-		while (progress->running && !eof) //rows
+		while (StdProgress_is() && !eof) //rows
 		{
 			UINT c = 0;
 			BIG r = -1;
@@ -139,7 +137,7 @@ BOOL IOTsv_read(const char* path, BOOL firstRowColumnNames, BOOL recognizeColumn
 				recognizeColumnType = FALSE;
 			firstRowColumnNames = FALSE;
 
-			progress->done = OsFile_getSeekPos(&f) / fileBytes;
+			StdProgress_setEx("IMPORTING", OsFile_getSeekPos(&f), fileBytes);
 		}
 
 		DbValues_free(&columns);

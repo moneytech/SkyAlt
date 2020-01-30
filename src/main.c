@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -20,9 +20,8 @@
 #include "gui.h"
 #include "ui.h"
 #include "media.h"
-
- //#include "ui/ui_logo.h"
- //#include "ui/ui_icons.h"
+#include "map.h"
+#include "license.h"
 
 const char* __asan_default_options() { return "malloc_context_size=100";/*divide by ':'*/ }	//fsanitize will print longer scope
 
@@ -31,7 +30,10 @@ int main(int argc, char** argv)
 #ifndef _DEBUG
 	Os_showConsole(FALSE);
 #endif
+	StdProgress_initGlobal();
 	Logs_initGlobal();
+	OsODBC_initGlobal();
+	OSMedia_initGlobal();
 	Win_init();
 	OsCrypto_initGlobal();
 	OsNet_init();
@@ -40,20 +42,29 @@ int main(int argc, char** argv)
 	if (!OsWinIO_new())
 		return -1;
 	UiIniSettings_new();
+	Map_new();
 	UiAutoUpdate_new();
 	if (UiIniSettings_getUpdate())
 		;//UiAutoUpdate_run();
 
+	License_init();
+
 	//UiIcons_convertFolder("../icons");
 	//UiLogo_convertZlib();
+	//MapTiles_createCache();
+	//MapPoly_createCache();
+
+	//License_makeFile(_UNI32("SkyAlt inc."), 36, 12);
 
 	if (Lang_initGlobal(UiIniSettings_getLanguage()))
 	{
 		UiAutoUpdate_cleanOld();
-		DbRoot_initProgress();
+		//DbRoot_initProgress();
 
 		UiScreen_new();
 		FileCache_new();
+		MediaNetwork_new(UiIniSettings_isNetworkOnline());
+		Map_updateNet();
 		MediaLibrary_new();
 		GuiItemRoot_new();
 
@@ -73,14 +84,15 @@ int main(int argc, char** argv)
 			Std_deleteUNI(lastProject);
 		}
 
-		//UiApp_new();
 		UiScreen_start();
 
 		//<< waiting for close >>
 
 		GuiItemRoot_delete();
 		DbRoot_delete();
+		FileProject_delete();
 		MediaLibrary_delete();
+		MediaNetwork_delete();
 		FileCache_delete();
 		UiScreen_delete();
 	}
@@ -91,18 +103,23 @@ int main(int argc, char** argv)
 		Os_showConsole(TRUE);
 	}
 
+	License_free();
+	Map_delete();
 	UiIniSettings_delete();
 
 	UiAutoUpdate_delete();
 	OsWinIO_delete();
 
-	DbRoot_freeProgress();
+	//DbRoot_freeProgress();
 
 	OsHTTPS_freeGlobal();
 	OsNet_free();
 	OsCrypto_freeGlobal();
+	OSMedia_freeGlobal();
+	OsODBC_freeGlobal();
 	Logs_freeGlobal();
 	Lang_freeGlobal();
+	StdProgress_freeGlobal();
 
 	Os_showMemleaks();
 

@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -29,6 +29,8 @@ DbValue DbValue_initEmpty(void)
 	self.index = 0;
 	self.ignoreUpdateResult = FALSE;
 	self.optionFormat = DbFormat_TEXT;
+	self.changed = FALSE;
+	self.insight = 0;
 	return self;
 }
 
@@ -42,6 +44,11 @@ DbValue DbValue_initCopy(const DbValue* src)
 	self.resultTemp = StdString_initCopy(&src->resultTemp);
 	self.staticPre = Std_newUNI(src->staticPre);
 	self.staticPost = Std_newUNI(src->staticPost);
+
+	if (src->insight)
+		self.insight = DbInsight_newCopy(src->insight);
+
+	self.changed = TRUE;
 	return self;
 }
 
@@ -107,6 +114,16 @@ DbValue DbValue_initOptionEnable(BIG row)
 	return DbValue_initOption(row, "enable", _UNI32("1"));
 }
 
+DbValue DbValue_initInsight(UINT funcType, const DbRows* filter, DbColumn* column)
+{
+	DbValue self = DbValue_initEmpty();
+
+	self.insight = DbInsight_new(DbInsightSelectFunc_get(funcType), filter->table, filter->filter, 0);
+	DbInsight_addItem(self.insight, column);
+
+	return self;
+}
+
 void DbValue_free(DbValue* self)
 {
 	Std_deleteUNI(self->staticText);
@@ -116,12 +133,19 @@ void DbValue_free(DbValue* self)
 	Std_deleteUNI(self->staticPre);
 	Std_deleteUNI(self->staticPost);
 
+	if (self->insight)
+		DbInsight_delete(self->insight);
+
 	Os_memset(self, sizeof(DbValue));
 }
 
 const UNI* DbValue_result(const DbValue* self)
 {
 	return self->result.str;
+}
+const UNI* DbValue_resultNoPost(const DbValue* self)
+{
+	return self->resultCmp.str;
 }
 
 BIG DbValue_getRow(const DbValue* self)
@@ -178,49 +202,57 @@ static void _DbValue_updateResult(DbValue* self)
 	if (self->ignoreUpdateResult)
 		return;
 
-	if (self->lang_id)
+	if (self->insight)
 	{
-		_DbValue_updateCmp(self, Lang_find(self->lang_id));
+		_DbValue_updateCmp(self, self->insight->result_string.str);
 	}
 	else
-		if (self->column && self->row >= 0)
+		if (self->lang_id)
 		{
-			if (self->option)
-			{
-				//if(!DbColumnString32_getOption(...))	//not 64, but StdString ...
-
-				UNI str[64];
-				DbColumnString32_getOption((DbColumnString32*)self->column, self->row, self->option, self->staticText, str, 64);
-
-				if (self->optionFormat == DbFormat_DATE)
-				{
-					OsDate date = OsDate_initFromNumber(Std_getNumberFromUNI(str));
-					if (OsDate_is(&date))
-					{
-						UNI formatTime = _DbRoot_getOptionNumber(self->row, "timeFormat", 0);
-
-						char month[32];
-						Std_copyCHAR_uni(month, 32, Lang_find_month(date.m_month));
-						char time[64];
-						OsDate_getStringDateTime(&date, UiIniSettings_getDateFormat(), formatTime, month, time);
-						Std_copyUNI_char(str, 64, time);
-					}
-				}
-
-				_DbValue_updateCmp(self, str);
-			}
-			else
-			{
-				const UNI* str = self->formated ? DbColumn_getStringCopyWithFormatLong(self->column, self->row, &self->resultTemp) : DbColumn_getStringCopyLong(self->column, self->row, &self->resultTemp);
-				_DbValue_updateCmp(self, str);
-			}
+			_DbValue_updateCmp(self, Lang_find(self->lang_id));
 		}
 		else
-			_DbValue_updateCmp(self, self->staticText);
+			if (self->column && self->row >= 0)
+			{
+				if (self->option)
+				{
+					//if(!DbColumnString32_getOption(...))	//not 64, but StdString ...
+
+					UNI str[64];
+					DbColumnString32_getOption((DbColumnString32*)self->column, self->row, self->option, self->staticText, str, 64);
+
+					if (self->optionFormat == DbFormat_DATE)
+					{
+						OsDate date = OsDate_initFromNumber(Std_getNumberFromUNI(str));
+						if (OsDate_is(&date))
+						{
+							UNI formatTime = _DbRoot_getOptionNumber(self->row, "timeFormat", 0);
+
+							char month[32];
+							Std_copyCHAR_uni(month, 32, Lang_find_month(date.m_month));
+							char time[64];
+							OsDate_getStringDateTime(&date, UiIniSettings_getDateFormat(), formatTime, month, time);
+							Std_copyUNI_char(str, 64, time);
+						}
+					}
+
+					_DbValue_updateCmp(self, str);
+				}
+				else
+				{
+					const UNI* str = self->formated ? DbColumn_getStringCopyWithFormatLong(self->column, self->row, &self->resultTemp) : DbColumn_getStringCopyLong(self->column, self->row, &self->resultTemp);
+					_DbValue_updateCmp(self, str);
+				}
+			}
+			else
+				_DbValue_updateCmp(self, self->staticText);
 }
 
 BOOL DbValue_hasChanged(DbValue* self)
 {
+	if (self->insight)
+		return DbInsight_execute(self->insight);
+
 	_DbValue_updateResult(self);
 
 	BOOL changed = self->changed;
@@ -239,26 +271,31 @@ double DbValue_getNumber(const DbValue* self)
 {
 	double ret = 0;
 
-	if (self->lang_id)
+	if (self->insight)
 	{
-		ret = Std_getNumberFromUNI(Lang_find(self->lang_id));
+		ret = self->insight->result_number;
 	}
 	else
-		if (self->column && self->row >= 0)
+		if (self->lang_id)
 		{
-			if (self->option)
-			{
-				UNI str[64];
-				DbColumnString32_getOption((DbColumnString32*)self->column, self->row, self->option, self->staticText, str, 64);
-				ret = Std_getNumberFromUNI(str);
-			}
-			else
-			{
-				ret = DbColumn_getFlt(self->column, self->row, self->index);
-			}
+			ret = Std_getNumberFromUNI(Lang_find(self->lang_id));
 		}
 		else
-			ret = Std_getNumberFromUNI(self->staticText);
+			if (self->column && self->row >= 0)
+			{
+				if (self->option)
+				{
+					UNI str[64];
+					DbColumnString32_getOption((DbColumnString32*)self->column, self->row, self->option, self->staticText, str, 64);
+					ret = Std_getNumberFromUNI(str);
+				}
+				else
+				{
+					ret = DbColumn_getFlt(self->column, self->row, self->index);
+				}
+			}
+			else
+				ret = Std_getNumberFromUNI(self->staticText);
 
 	return ret;
 }
@@ -293,7 +330,7 @@ void DbValue_setFormated(DbValue* self, BOOL formated)
 
 	self->formated = formated;
 
-	if(changed)
+	if (changed)
 		_DbValue_updateResult(self);
 }
 
@@ -344,17 +381,12 @@ void DbValue_setText(DbValue* self, UNI* value)
 
 void DbValue_setCd(DbValue* self, Rgba cd)
 {
-	if (DbValue_isType1(self))
-		DbColumn1_set((DbColumn1*)self->column, self->row, Rgba_asNumber(cd));
-
+	DbValue_setNumber(self, Rgba_asNumber(cd));
 	_DbValue_updateResult(self);
 }
 Rgba DbValue_getCd(const DbValue* self)
 {
-	Rgba cd = Rgba_initBlack();
-	if (DbValue_isType1(self))
-		cd = Rgba_initFromNumber(DbColumn1_get((DbColumn1*)self->column, self->row));
-	return cd;
+	return Rgba_initFromNumber(DbValue_getNumber(self));
 }
 
 void DbValue_setDate(DbValue* self, OsDate date)
@@ -389,39 +421,18 @@ UBIG DbValue_readFileCache(const DbValue* self, const UBIG index, UBIG pos, UBIG
 {
 	return DbColumn_fileGetDataEx(self->column, self->row, index, pos, size, buff);
 }
-void DbValue_importFile(DbValue* self, OsFile* srcFile, const UBIG index, UNI ext[8], volatile StdProgress* progress)
+void DbValue_importFile(DbValue* self, OsFile* srcFile, const UBIG index, UNI ext[8])
 {
-	DbColumn_fileImport(self->column, self->row, index, srcFile, ext, progress);
+	DbColumn_fileImport(self->column, self->row, index, srcFile, ext);
 }
-void DbValue_importData(DbValue* self, UBIG size, UCHAR* data, const UBIG index, UNI ext[8], volatile StdProgress* progress)
+void DbValue_importData(DbValue* self, UBIG size, UCHAR* data, const UBIG index, UNI ext[8])
 {
-	DbColumn_fileImportData(self->column, self->row, index, ext, size, data, progress);
-}
-
-void DbValue_exportFile(const DbValue* self, OsFile* dstFile, const UBIG index, volatile StdProgress* progress)
-{
-	DbColumn_fileExport(self->column, self->row, index, dstFile, progress);
+	DbColumn_fileImportData(self->column, self->row, index, ext, size, data);
 }
 
-BOOL DbValue_getMapPosition(const DbValue* self, Vec2f* out)
+void DbValue_exportFile(const DbValue* self, OsFile* dstFile, const UBIG index)
 {
-	if (DbValue_isTypeString32(self))
-	{
-		const UNI* text = DbColumnString32_get((DbColumnString32*)self->column, self->row);
-
-		BIG pos = Std_findUNI_last(text, ';');
-		if (pos >= 0)
-		{
-			BIG space = Std_findUNI_last(&text[pos], ' ');
-			if (space >= 0)
-			{
-				out->x = Std_getNumberFromUNI_n(&text[pos + 1], space);	//long
-				out->y = Std_getNumberFromUNI(&text[pos + space + 1]);	//lat
-				return TRUE;
-			}
-		}
-	}
-	return FALSE;
+	DbColumn_fileExport(self->column, self->row, index, dstFile);
 }
 
 DbFormatTYPE DbValue_getFormat(const DbValue* self)
@@ -432,7 +443,7 @@ DbFormatTYPE DbValue_getFormat(const DbValue* self)
 BOOL DbValue_isFormatUnderline(const DbValue* self)
 {
 	DbFormatTYPE format = DbValue_getFormat(self);
-	return (format == DbFormat_PHONE || format == DbFormat_EMAIL || format == DbFormat_URL);
+	return (format == DbFormat_PHONE || format == DbFormat_EMAIL || format == DbFormat_URL || format == DbFormat_LOCATION);
 }
 
 const UNI* DbValue_now_getText(DbValue* self, BIG row)
@@ -449,6 +460,14 @@ double DbValue_getOptionNumber(BIG row, const char* name, double defValue)
 void DbValue_setOptionNumber(BIG row, const char* name, double value)
 {
 	_DbRoot_setOptionNumber(row, name, value);
+}
+UNI* DbValue_getOptionString(BIG row, const char* name, UNI* out, const UBIG outMaxSize)
+{
+	return _DbRoot_getOptionString(row, name, 0, out, outMaxSize);
+}
+void DbValue_setOptionString(BIG row, const char* name, const UNI* value)
+{
+	_DbRoot_setOptionString(row, name, value);
 }
 
 DbValues DbValues_init(void)

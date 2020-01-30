@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -20,6 +20,7 @@ void DbColumn_setDefaultOptions(BIG row, DbFormatTYPE type)
 		case DbFormat_NUMBER_N:
 		case DbFormat_PERCENTAGE:
 		_DbRoot_getOptionNumber(row, "precision", 2);	//rewrite only If doesn't exist!
+		_DbRoot_getOptionNumber(row, "units", 0);
 		_DbRoot_getOptionNumber(row, "mult100", 0);
 		break;
 
@@ -28,8 +29,10 @@ void DbColumn_setDefaultOptions(BIG row, DbFormatTYPE type)
 		break;
 
 		case DbFormat_CURRENCY:
-		_DbRoot_getOptionString(row, "currency", _UNI32("$"), str, 64);
+		_DbRoot_getOptionString(row, "currency_before", _UNI32("$"), str, 64);
+		_DbRoot_getOptionString(row, "currency_after", _UNI32(" USD"), str, 64);
 		_DbRoot_getOptionNumber(row, "precision", 1);
+		_DbRoot_getOptionNumber(row, "units", 0);
 		_DbRoot_getOptionNumber(row, "before", 1);
 		break;
 
@@ -54,6 +57,9 @@ void DbColumn_setDefaultOptions(BIG row, DbFormatTYPE type)
 
 		case DbFormat_LINK_1:
 		case DbFormat_LINK_N:
+		case DbFormat_LINK_MIRRORED:
+		case DbFormat_LINK_JOINTED:
+		case DbFormat_LINK_FILTERED:
 		_DbRoot_getOptionNumber(row, "numColumnPreviews", 1);
 		break;
 
@@ -242,7 +248,7 @@ static BIG _DbColumn_addOption(StdArr* names, const UNI* str, BIG optionsRow, St
 	{
 		UBIG r = DbTable_addRow(DbRoot_getInfoTable());
 		_DbRoot_setOptionString(r, "name", str);
-		DbColumnN_add(DbRoot_getColumnSubs(), optionsRow, r);
+		DbColumnN_add(DbRoot_subs(), optionsRow, r);
 
 		StdBigs_add(rows, r);
 		StdArr_add(names, Std_newUNI(str));
@@ -451,6 +457,10 @@ const DbColumnConvert g_column_converts[] = {
 	{ DbFormat_LINK_N, DbFormat_LINK_1, &DbColumn_convert_N_1 },
 	{ DbFormat_LINK_N, DbFormat_TEXT, &DbColumn_convert_to_string },
 
+	{ DbFormat_LINK_MIRRORED, DbFormat_LINK_N, 0},
+	{ DbFormat_LINK_JOINTED, DbFormat_LINK_N, 0},
+	{ DbFormat_LINK_FILTERED, DbFormat_LINK_N, 0},
+
 	{ DbFormat_MENU, DbFormat_TAGS, 0 },
 	{ DbFormat_MENU, DbFormat_TEXT, &DbColumn_convert_menu_to_string },
 	{ DbFormat_MENU, DbFormat_URL, &DbColumn_convert_menu_to_string },
@@ -557,6 +567,8 @@ const DbColumnConvert g_column_converts[] = {
 	{ DbFormat_LOCATION, DbFormat_URL, 0 },
 	{ DbFormat_LOCATION, DbFormat_PHONE, 0 },
 	{ DbFormat_LOCATION, DbFormat_EMAIL, 0 },
+
+	{ DbFormat_SUMMARY, DbFormat_NUMBER_1, 0 },
 };
 
 static UBIG _DbColumnConvert_numAll(void)
@@ -564,21 +576,25 @@ static UBIG _DbColumnConvert_numAll(void)
 	return sizeof(g_column_converts) / sizeof(DbColumnConvert);
 }
 
-UBIG DbColumnConvert_num(DbFormatTYPE srcType)
+UBIG DbColumnConvert_num(DbFormatTYPE srcType, BOOL sameColType)
 {
+	DbColumnTYPE colType = DbColumnFormat_findColumnType(srcType);
+
 	UBIG n = 0;
 	BIG i;
 	for (i = 0; i < _DbColumnConvert_numAll(); i++)
-		if (g_column_converts[i].srcType == srcType)
+		if (g_column_converts[i].srcType == srcType && (!sameColType || DbColumnFormat_findColumnType(g_column_converts[i].dstType) == colType))
 			n++;
 	return n;
 }
-const DbColumnConvert* DbColumnConvert_get(DbFormatTYPE srcType, BIG index)
+const DbColumnConvert* DbColumnConvert_get(DbFormatTYPE srcType, BIG index, BOOL sameColType)
 {
+	DbColumnTYPE colType = DbColumnFormat_findColumnType(srcType);
+
 	BIG i;
 	for (i = 0; i < _DbColumnConvert_numAll(); i++)
 	{
-		if (g_column_converts[i].srcType == srcType)
+		if (g_column_converts[i].srcType == srcType && (!sameColType || DbColumnFormat_findColumnType(g_column_converts[i].dstType) == colType))
 		{
 			if (index == 0)
 				return &g_column_converts[i];

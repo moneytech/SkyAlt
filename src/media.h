@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -37,9 +37,12 @@ BOOL MediaLibrary_isPlay(FileRow fileId);
 void MediaLibrary_setSeek(FileRow fileId, float t);
 float MediaLibrary_getSeek(FileRow fileId);
 
-
 void MediaNetwork_delete(void);
-BOOL MediaNetwork_new(void);
+BOOL MediaNetwork_new(BOOL online);
 BOOL MediaNetwork_is(void);
-BIG MediaNetwork_download(const char* url, UCHAR* dst, UBIG start, UBIG max_bytes, double priority);
+void MediaNetwork_run(BOOL run);
+void MediaNetwork_addDelay(const char* url, double delay);
+BIG MediaNetwork_download(const char* url, double priority, UCHAR** buff);
 BOOL MediaNetwork_undownload(const char* url);
+BOOL MediaNetwork_isDownloadActive(void);
+double MediaNetwork_getBandwidth(void);

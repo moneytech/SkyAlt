@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -26,16 +26,23 @@ typedef struct GuiItemParticles_s
 	BIG num_draw;
 
 	Quad2i old_rect;
-	UINT curr_phase;
 
 	Image1 logoOrig;
 	Image1 logo;
 
 	double anim_max_time; //zero = deactivated
 	double anim_act_time;
+
+	BOOL showInfo;
+
+	const UNI* textStatus;
+	float oldDone;
+
+	float restTimeStart;
+	float restTimeResult;
 } GuiItemParticles;
 
-GuiItemParticles* GuiItemParticles_new(Quad2i grid, const Image1 logo)
+GuiItemParticles* GuiItemParticles_new(Quad2i grid, const Image1 logo, BOOL showInfo)
 {
 	GuiItemParticles* self = Os_malloc(sizeof(GuiItemParticles));
 	self->base = GuiItem_init(GuiItem_PARTICLES, grid);
@@ -50,8 +57,6 @@ GuiItemParticles* GuiItemParticles_new(Quad2i grid, const Image1 logo)
 	self->vels = 0;
 	self->alphas = 0;
 
-	self->curr_phase = 0;
-
 	self->num_draw = 0;
 	self->old_rect = Quad2i_init();
 
@@ -59,6 +64,13 @@ GuiItemParticles* GuiItemParticles_new(Quad2i grid, const Image1 logo)
 	self->anim_act_time = 0;
 	self->time = 0;
 
+	self->textStatus = 0;
+	self->oldDone = 0;
+
+	self->restTimeStart = 0;
+	self->restTimeResult = 0;
+
+	self->showInfo = showInfo;
 	return self;
 }
 
@@ -73,7 +85,6 @@ void GuiItemParticles_clear(GuiItemParticles* self)
 	self->num = 0;
 
 	self->time = 0;
-	self->curr_phase = StdProgress_getPhase(DbRoot_getProgress());
 }
 
 void GuiItemParticles_delete(GuiItemParticles* self)
@@ -101,6 +112,16 @@ static void _GuiItemParticles_resizeLogo(GuiItemParticles* self, Vec2i size)
 	}
 }
 
+Vec2i _GuiItemParticles_getLogoSize(const GuiItemParticles* self)
+{
+	Vec2i size = self->base.coordScreen.size;
+
+	if (self->showInfo)
+		size.y -= OsWinIO_cellSize();
+
+	return size;
+}
+
 void GuiItemParticles_emit(GuiItemParticles* self)
 {
 	GuiItemParticles_clear(self);
@@ -108,7 +129,8 @@ void GuiItemParticles_emit(GuiItemParticles* self)
 
 	int x, y, i, j;
 
-	_GuiItemParticles_resizeLogo(self, self->base.coordScreen.size);
+	//resize
+	_GuiItemParticles_resizeLogo(self, _GuiItemParticles_getLogoSize(self));
 
 	//get num particles
 	UBIG n = 0;
@@ -184,17 +206,37 @@ static float _GuiItemParticles_getDone(GuiItemParticles* self, const float DT)
 	if (self->anim_max_time)
 	{
 		self->anim_act_time += DT;
-		DbRoot_getProgress()->done = self->anim_act_time / self->anim_max_time;
+		StdProgress_setEx(0, self->anim_act_time, self->anim_max_time);
 	}
 
-	if (self->curr_phase != StdProgress_getPhase(DbRoot_getProgress()))
-		GuiItemParticles_emit(self);
+	const UNI* oldStatus = self->textStatus;
 
-	return DbRoot_getProgress()->done;
+	const char* trans = StdProgress_getTranslationID();
+	self->textStatus = trans ? Lang_find(trans) : 0;
+
+	float time = Os_time();
+
+	const float done = StdProgress_get();
+	if (oldStatus != self->textStatus || done < self->oldDone)
+	{
+		GuiItemParticles_emit(self);
+		self->restTimeStart = time;
+	}
+
+	if (done)
+		self->restTimeResult = (time - self->restTimeStart) / done * (1 - done);
+
+	self->oldDone = done;
+	return done;
 }
 
 void GuiItemParticles_draw(GuiItemParticles* self, Image4* img, Quad2i coord, Win* win)
 {
+	//redraw logo with text info
+	//Quad2i q = coord;
+	//q.size.y += OsWinIO_cellSize() * 2;	//text
+	//img->rect = Quad2i_extend(img->rect, q);
+
 	int i;
 	Vec2i startDraw = _GuiItemParticles_getMidStart(self, coord);
 
@@ -204,22 +246,25 @@ void GuiItemParticles_draw(GuiItemParticles* self, Image4* img, Quad2i coord, Wi
 	if (self->num_draw == 0)
 		return;
 
-	//Logo phases
-	if (DbRoot_getProgress()->num_phases > 1)
+	//Text
+	if (self->showInfo)
 	{
-		UNI text[17];
-		for (i = 0; i < StdProgress_getPhase(DbRoot_getProgress()); i++)
-			text[i] = 9679;	//'●'
-		//text[act] = L'◐';
-		for (i = StdProgress_getPhase(DbRoot_getProgress()); i < DbRoot_getProgress()->num_phases; i++)
-			text[i] = 9675;	//'○';
-		text[i] = 0;
-
-		int textH = OsWinIO_cellSize() / 3;
+		const int cell = OsWinIO_cellSize();
+		int textH = cell / 2.5;
 		Vec2i pos;
-		pos.y = coord.size.y - textH / 2 - 1;
+		pos.y = coord.size.y - cell / 2;
 		pos.x = coord.size.x / 2;
-		Image4_drawText(img, Vec2i_add(pos, coord.start), TRUE, OsWinIO_getFontDefault(), text, textH, 0, self->base.front_cd);
+
+		//Filtring(10% - 5sec)
+		{
+			char prc[32];
+			snprintf(prc, 32, "(%.1f%% - %.1fsec)", StdProgress_get() * 100, self->restTimeResult);
+			UNI str[64];
+			Std_copyUNI(str, 64, self->textStatus);
+			Std_copyUNI_char(str + Std_sizeUNI(str), 64 - Std_sizeUNI(str), prc);
+
+			Image4_drawTextBackground(img, Vec2i_add(coord.start, pos), TRUE, OsWinIO_getFontDefault(), str, textH, 0, self->base.front_cd, logoCd, 2);
+		}
 	}
 
 	const Quad2i winRect = Quad2i_init2(Vec2i_init(), Win_getImage(win).size);
@@ -254,7 +299,7 @@ void GuiItemParticles_draw(GuiItemParticles* self, Image4* img, Quad2i coord, Wi
 
 void GuiItemParticles_update(GuiItemParticles* self, Quad2i coord, Win* win)
 {
-	if (self->base.coordScreen.size.y != self->logo.size.y)
+	if (_GuiItemParticles_getLogoSize(self).y != self->logo.size.y)
 		GuiItemParticles_emit(self);
 
 	//note: not here because update() has low FPS
@@ -290,7 +335,8 @@ void GuiItemParticles_touch(GuiItemParticles* self, Quad2i coord, Win* win)
 	self->num_draw = 0;
 
 	Vec2i startDraw = _GuiItemParticles_getMidStart(self, coord);
-	Quad2i rect = Quad2i_init2(Vec2i_init(), self->logo.size); //logo
+	Quad2i rect = Quad2i_init();// Quad2i_init2(Vec2i_init(), self->logo.size); //logo
+	//rect.size.y += OsWinIO_cellSize();	//text
 
 	for (i = 0; i < self->num; i++)
 	{
@@ -331,6 +377,13 @@ void GuiItemParticles_touch(GuiItemParticles* self, Quad2i coord, Win* win)
 	{
 		rect.start = Vec2i_add(rect.start, startDraw);
 		rect = Quad2i_addSpace(rect, -1); //px=-0.1 is rounder to 0(not -1), so this fixes that
+
+		//redraw logo with text info
+		//Quad2i q = coord;
+		//q.size.y += OsWinIO_cellSize();	//text
+		//rect = Quad2i_extend(rect, q);
+
+		rect = Quad2i_extend(rect, coord);
 
 		GuiItemRoot_addBufferRect(rect);
 	}

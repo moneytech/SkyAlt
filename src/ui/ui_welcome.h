@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -20,13 +20,17 @@ void UiWelcome_clickOpenDialog(GuiItem* item)
 {
 	GuiItemRoot_addDialogLayout(UiDialogOpen_new(0));
 }
+void UiWelcome_clickOpenExamplesDialog(GuiItem* item)
+{
+	GuiItemRoot_addDialogLayout(UiDialogOpenExamples_new(0));
+}
 
 void UiWelcome_clickOpenDrop(GuiItem* item)
 {
 	UNI* pathUNI = OsWinIO_getDropFile(0);
 	if (pathUNI)
 	{
-		if(FileProject_isExist(pathUNI))
+		if (FileProject_isExist(pathUNI))
 		{
 			GuiItemLayout* dialog = UiDialogOpen_new(pathUNI);
 			GuiItemRoot_addDialogLayout(dialog);
@@ -59,9 +63,9 @@ GuiItemLayout* UiWelcome_new(void)
 	GuiItemLayout_addRow(layout, 3, 2);
 	GuiItemLayout_addRow(layout, 4, 2);		//space
 	GuiItemLayout_addRow(layout, 5, 2);
-	GuiItemLayout_addRow(layout, 6, 100);	//space
-	GuiItemLayout_addRow(layout, 7, 1);
-	GuiItemLayout_addRow(layout, 8, 2);
+	GuiItemLayout_addRow(layout, 7, 2);
+	GuiItemLayout_addRow(layout, 8, 100);	//space
+	GuiItemLayout_addRow(layout, 10, 2);
 
 	GuiItemLayout_setDrop(layout, &UiWelcome_clickOpenDrop);
 
@@ -74,11 +78,14 @@ GuiItemLayout* UiWelcome_new(void)
 	//Open
 	GuiItem_addSubName((GuiItem*)layout, "open", GuiItemButton_newClassicEx(Quad2i_init4(1, 5, 2, 1), DbValue_initLang("OPEN"), UiWelcome_clickOpenDialog));
 
+	//Examples
+	GuiItem_addSubName((GuiItem*)layout, "open", GuiItemButton_newClassicEx(Quad2i_init4(1, 7, 2, 1), DbValue_initLang("OPEN_EXAMPLE"), UiWelcome_clickOpenExamplesDialog));
+
 	//Version
-	GuiItem_addSubName((GuiItem*)layout, "version", GuiItemText_new(Quad2i_init4(1, 7, 1, 1), TRUE, DbValue_initStatic(UiScreen_getNameVersionUNI()), DbValue_initEmpty()));
+	GuiItem_addSubName((GuiItem*)layout, "version", GuiItemText_new(Quad2i_init4(1, 9, 1, 1), TRUE, DbValue_initStatic(UiScreen_getNameVersionUNI()), DbValue_initEmpty()));
 
 	//Laguage
-	GuiItem_addSubName((GuiItem*)layout, "language", GuiItemComboStatic_newEx(Quad2i_init4(2, 7, 1, 1), DbValue_initNumber(Lang_getPos()), Lang_find("LANGUAGE_LIST"), DbValue_initLang("LANGUAGE"), &UiWelcome_clickChooseLanguage));
+	GuiItem_addSubName((GuiItem*)layout, "language", GuiItemComboStatic_newEx(Quad2i_init4(2, 9, 1, 1), DbValue_initNumber(Lang_getPos()), Lang_find("LANGUAGE_LIST"), DbValue_initLang("LANGUAGE"), &UiWelcome_clickChooseLanguage));
 
 	GuiItem_setShortcutKey((GuiItem*)layout, FALSE, Win_EXTRAKEY_CTRL | Win_EXTRAKEY_NEW, 0, &UiWelcome_clickCreateDialog);
 

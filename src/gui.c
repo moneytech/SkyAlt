@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -18,6 +18,7 @@
 #include "language.h"
 #include "file.h"
 #include "db.h"
+#include "map.h"
 #include "media.h"
 #include "io.h"
 #include "ui.h"	//icons
@@ -28,6 +29,7 @@
 typedef struct GuiItemRoot_s GuiItemRoot;
 void GuiItemRoot_showPicker(Vec2i pickerPos, BOOL pickerOpen, BOOL pickerFolder, BOOL pickerMultiple, const UNI* pickerAction, const UNI* pickerExts);
 void GuiItemRoot_setDrawRectOver(Quad2i drawRectOver);
+void GuiItemRoot_setDrawRectOver2(Quad2i drawRectOver);
 void GuiItemRoot_addBufferRect(Quad2i rect);
 void GuiItemRoot_redrawAll(void);
 BOOL GuiItemRoot_hasChanges(void);
@@ -54,6 +56,8 @@ void GuiItem_delete(GuiItem* self);
 GuiItem* GuiItemLevel_getBackChain(const GuiItemLevel* self);
 
 GuiItemLayout* GuiItemTags_dialogFileAdd(DbColumn* column);
+
+Image1 GuiItemChart_getIcon(BIG row);
 
 #include "gui/gui_image.h"
 #include "gui/gui_theme.h"
@@ -88,8 +92,8 @@ GuiItemLayout* GuiItemTags_dialogFileAdd(DbColumn* column);
 #include "gui/gui_table.h"
 #include "gui/gui_group.h"
 //#include "gui/gui_kanban.h"
-//#include "gui/gui_chart.h"
-//#include "gui/gui_map.h"
+#include "gui/gui_chart.h"
+#include "gui/gui_map.h"
 //#include "gui/gui_timeline.h"
 
 #include "gui/gui_color.h"

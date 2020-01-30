@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -33,9 +33,11 @@ BOOL Os_getMAC(UCHAR mac[6])
 	struct ifreq s;
 	memset(&s, 0, sizeof(s));
 
-	int fd = socket(PF_INET, SOCK_DGRAM, IPPROTO_IP);
+	int fd = socket(AF_INET, SOCK_DGRAM, 0);
 
-	strcpy(s.ifr_name, "eth0");
+	s.ifr_addr.sa_family = AF_INET;
+	strncpy(s.ifr_name, "enp0s3", IFNAMSIZ - 1);
+	//strcpy(s.ifr_name, "eth0");
 	BOOL ok = !ioctl(fd, SIOCGIFHWADDR, &s);
 	if (ok)
 	{
@@ -67,6 +69,7 @@ void OsWeb_openWebBrowser(const char* webAddress)
 
 #ifdef _WIN32
 	ShellExecute(NULL, "open", webAddress, NULL, NULL, SW_SHOWNORMAL);
+	return;
 #else
 #ifdef __APPLE__
 	const char* cmdS = "open ";
@@ -80,33 +83,55 @@ void OsWeb_openWebBrowser(const char* webAddress)
 	strcat(path, webAddress);	//add address
 	strcat(path, cmdE);
 
-	system(path);	//go
+	if (system(path) < 0)	//go
+		printf("Warning: system() web_browser\n");
 	free(path);
 #endif
 }
 
-void OsWeb_openEmail(const char* dstEmail)
+char* OsWeb_generateEmailText(const char* dstEmail, const char* subject)
 {
 	if (!dstEmail)
-		return;
+		return 0;
 
 #ifdef _WIN32
-	const char* cmdS = 0;	//...
+	const char* cmdS = "mailto:";
 #elif __APPLE__
-	//...
+	const char* cmdS = " ";//...
 #else
 	const char* cmdS = "xdg-open mailto:";
 #endif
 
-	char* path = malloc(Std_sizeCHAR(cmdS) + Std_sizeCHAR(dstEmail) + 1);
-	if (path)
-	{
-		strcpy(path, cmdS);
-		strcat(path, dstEmail);	//add address
+	const char* cmdS2 = subject ? "?subject=" : 0;
 
-		system(path);	//go
-		free(path);
+	char* path = malloc(Std_sizeCHAR(cmdS) + Std_sizeCHAR(dstEmail) + Std_sizeCHAR(cmdS2) + Std_sizeCHAR(subject) + 1);
+	strcpy(path, cmdS);
+	strcat(path, dstEmail);	//add address
+	if (cmdS2)
+	{
+		strcat(path, cmdS2);
+		strcat(path, subject);	//add address
 	}
+
+	return path;
+}
+
+void OsWeb_openEmail(const char* dstEmail, const char* subject)
+{
+	char* path = OsWeb_generateEmailText(dstEmail, subject);
+	if (!path)
+		return;
+
+#ifdef _WIN32
+	ShellExecute(NULL, "open", path, NULL, NULL, SW_SHOWNORMAL);
+#elif __APPLE__
+	//...
+#else
+	if (system(path) < 0)	//go
+		printf("Warning: system() email\n");
+#endif
+
+	free(path);
 }
 
 const char* OsNet_init()
@@ -368,12 +393,19 @@ typedef struct OsHTTPSData_s
 	volatile BOOL* running;
 	UBIG finalSize;
 } OsHTTPSData;
+BOOL OsHTTPSData_isRunning(const OsHTTPSData* self)
+{
+	if (self->running)
+		return *self->running;
+	else
+		return StdProgress_is();
+}
 static UBIG _OsHTTPS_write(void* contents, size_t size, size_t nmemb, void* userp)
 {
 	OsHTTPSData* output = (OsHTTPSData*)userp;
 
 	UBIG addSize = 0;
-	if (!output->running || (output->running && *output->running))
+	if (OsHTTPSData_isRunning(output))
 	{
 		addSize = size * nmemb;
 		output->data = realloc(output->data, output->size + addSize + 1);
@@ -382,11 +414,21 @@ static UBIG _OsHTTPS_write(void* contents, size_t size, size_t nmemb, void* user
 
 		output->data[output->size] = 0;	//only to be sure(to_UNI() or print())
 
+		float done = output->size / (float)output->finalSize;
 		if (output->out_done)
-			*output->out_done = output->size / (float)output->finalSize;
+			*output->out_done = done;
+		else
+			StdProgress_set("DOWNLOADING", done);
 	}
 
 	return addSize;
+}
+
+static void _OsHTTPS_resetAndSetUrl(OsHTTPS* self, const char* url)
+{
+	curl_easy_reset(self->m_curl);
+	curl_easy_setopt(self->m_curl, CURLOPT_USERAGENT, NET_USER_AGENT);
+	curl_easy_setopt(self->m_curl, CURLOPT_URL, url);
 }
 
 BIG OsHTTPS_get(OsHTTPS* self, const char* sub_addr, char** output)
@@ -398,8 +440,7 @@ BIG OsHTTPS_get(OsHTTPS* self, const char* sub_addr, char** output)
 	strcpy(path, self->server_addr);
 	strcat(path, sub_addr);
 
-	curl_easy_reset(self->m_curl);
-	curl_easy_setopt(self->m_curl, CURLOPT_URL, path);
+	_OsHTTPS_resetAndSetUrl(self, path);
 	curl_easy_setopt(self->m_curl, CURLOPT_WRITEFUNCTION, _OsHTTPS_write);
 
 	OsHTTPSData st;
@@ -407,7 +448,7 @@ BIG OsHTTPS_get(OsHTTPS* self, const char* sub_addr, char** output)
 	st.size = 0;
 	st.out_done = 0;
 	st.running = 0;
-	st.finalSize = 0;
+	st.finalSize = 1;	//no divide 0
 	curl_easy_setopt(self->m_curl, CURLOPT_WRITEDATA, (void*)&st);
 	if (curl_easy_perform(self->m_curl) == CURLE_OK)
 	{
@@ -429,13 +470,13 @@ BIG OsHTTPS_getSize(OsHTTPS* self, const char* sub_addr)
 	strcpy(path, self->server_addr);
 	strcat(path, sub_addr);
 
-	curl_easy_reset(self->m_curl);
-	curl_easy_setopt(self->m_curl, CURLOPT_URL, path);
+	_OsHTTPS_resetAndSetUrl(self, path);
 	curl_easy_setopt(self->m_curl, CURLOPT_NOBODY, 1L);	//don't download body(file)
 
-	free(path);
+	CURLcode err = curl_easy_perform(self->m_curl);
 
-	if (curl_easy_perform(self->m_curl) == CURLE_OK)
+	free(path);
+	if (err == CURLE_OK)
 	{
 		double filesize = 0;
 		CURLcode res = curl_easy_getinfo(self->m_curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &filesize);
@@ -448,38 +489,39 @@ BIG OsHTTPS_getSize(OsHTTPS* self, const char* sub_addr)
 BIG OsHTTPS_downloadWithStatus(const char* path, volatile float* out_done, volatile BOOL* running, char** output)
 {
 	BIG size = -2;
-	*out_done = 0;
 
 	OsHTTPS self;
 	if (OsHTTPS_init(&self, path))
 	{
 		size = OsHTTPS_getSize(&self, "");
-
-		curl_easy_reset(self.m_curl);
-		curl_easy_setopt(self.m_curl, CURLOPT_URL, path);
-		curl_easy_setopt(self.m_curl, CURLOPT_WRITEFUNCTION, _OsHTTPS_write);
-
-		OsHTTPSData st;
-		st.data = 0;
-		st.size = 0;
-		st.out_done = out_done;
-		st.running = running;
-		st.finalSize = size;
-		curl_easy_setopt(self.m_curl, CURLOPT_WRITEDATA, (void*)&st);
-		if (curl_easy_perform(self.m_curl) == CURLE_OK)
+		//if(size > 0)
 		{
-			*output = st.data;
-			size = st.size;
-		}
-		else
-		{
-			free(st.data);
-			size = -2;
+			_OsHTTPS_resetAndSetUrl(&self, path);
+			curl_easy_setopt(self.m_curl, CURLOPT_WRITEFUNCTION, _OsHTTPS_write);
+
+			OsHTTPSData st;
+			st.data = 0;
+			st.size = 0;
+			st.out_done = out_done;
+			st.running = running;
+			st.finalSize = Std_abs(size);
+			curl_easy_setopt(self.m_curl, CURLOPT_WRITEDATA, (void*)&st);
+
+			CURLcode err = curl_easy_perform(self.m_curl);
+			if (err == CURLE_OK && OsHTTPSData_isRunning(&st))
+			{
+				*output = st.data;
+				size = st.size;
+			}
+			else
+			{
+				free(st.data);
+				size = -2;
+			}
 		}
 
 		OsHTTPS_free(&self);
 	}
 
-	*out_done = 1;
 	return size;
 }

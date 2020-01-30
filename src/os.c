@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -29,6 +29,8 @@
 #include "os/os_zlib.h"
 #include "os/os_audio.h"
 #include "os/os_media.h"
+#include "os/os_qshort.h"
+#include "os/os_odbc.h"
 
 #ifdef _WIN32
 #include "os/os_window_win.h"
@@ -66,15 +68,27 @@ double Os_atof(const char* str)
 void Os_gcvt(double value, int digits, char* str)
 {
 #ifdef _WIN32
-	_gcvt(value, digits, str);
+	str = _gcvt(value, digits, str);
 #elif __linux__
-	gcvt(value, digits, str);
+	str = gcvt(value, digits, str);
 #endif
 }
 
 double Os_cos(double x)
 {
 	return cos(x);
+}
+double Os_acos(double x)
+{
+	return acos(x);
+}
+double Os_sin(double x)
+{
+	return sin(x);
+}
+double Os_asin(double x)
+{
+	return asin(x);
 }
 double Os_tan(double x)
 {
@@ -153,6 +167,12 @@ void* Os_memmove(void* dst, void* src, UBIG size)
 int Os_memcmp(void* a, void* b, UBIG size)
 {
 	return memcmp(a, b, size);
+}
+
+void Os_qsort(void* base, UBIG num, int item_size, int (cmpfunc)(const void* context, const void* a, const void* b), void* context)
+{
+	//qsort_s(base, num, item_size, cmpfunc, context);
+	_Os_quicksort(base, num, item_size, cmpfunc, context);
 }
 
 void Os_showConsole(BOOL show)

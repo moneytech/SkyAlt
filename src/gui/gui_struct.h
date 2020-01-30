@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -19,19 +19,24 @@ typedef enum
 	GuiStruct_SHOW_VIEWS,
 }GuiStruct_SHOW;
 
-static Image1 GuiStruct_getIcon(UBIG row)
+Image1 GuiStruct_getIcon(UBIG row)
 {
-	if (DbRoot_isType_folder(row))	return UiIcons_init_project();
+	//if (DbRoot_isTypeViewReference(row))
+	//	row = DbRoot_getOrigReference(row);
+
+	if (DbRoot_isType_folder(row))	return UiIcons_init_folder();
+	if (DbRoot_isType_remote(row))	return UiIcons_init_remote();
 	if (DbRoot_isType_table(row))	return UiIcons_init_table();
 
 	if (DbRoot_isTypeView_filter(row))	return UiIcons_init_table_filter();
+	if (DbRoot_isTypeView_summary(row))	return UiIcons_init_column_insight();
 	if (DbRoot_isTypeView_cards(row))	return UiIcons_init_cards();
 	if (DbRoot_isTypeView_group(row))	return UiIcons_init_group();
 	if (DbRoot_isTypeView_kanban(row))	return UiIcons_init_kanban();
 	if (DbRoot_isTypeView_calendar(row))return UiIcons_init_calendar();
 	if (DbRoot_isTypeView_timeline(row))return UiIcons_init_timeline();
-	if (DbRoot_isTypeView_chart(row))	return UiIcons_init_graph();
 	if (DbRoot_isTypeView_map(row))		return UiIcons_init_map();
+	if (DbRoot_isTypeView_chart(row))	return GuiItemChart_getIcon(row);	//icon from chart type
 
 	return Image1_init();
 }
@@ -51,13 +56,14 @@ static BOOL _GuiStruct_isEnable(UBIG row, GuiStruct_SHOW showType)
 
 static BOOL _GuiStruct_hasSubs(BIG row)
 {
-	return DbRoot_isType_folder(row) || DbRoot_isType_table(row) || DbRoot_isTypeView_filter(row);
+	return DbRoot_isType_folder(row) || DbRoot_isType_remote(row) || DbRoot_isType_table(row) || DbRoot_isTypeView_filter(row) || DbRoot_isTypeView_summary(row);
 }
 
 static BOOL _GuiStruct_canGoSubsEx(UBIG row, BIG onlyTableRow, BIG onlyColumnBtableRow, GuiStruct_SHOW showType)
 {
 	BOOL isRoot = DbRoot_isType_root(row);
 	BOOL isFolder = DbRoot_isType_folder(row);
+	BOOL isRemote = DbRoot_isType_remote(row);
 	BOOL isTable = DbRoot_isType_table(row);
 	//BOOL isColumn = DbRoot_isType_column(row);
 	BOOL isView = DbRoot_isTypeView(row);
@@ -67,6 +73,9 @@ static BOOL _GuiStruct_canGoSubsEx(UBIG row, BIG onlyTableRow, BIG onlyColumnBta
 		return TRUE;
 
 	if (isFolder)
+		return TRUE;
+
+	if (isRemote)
 		return TRUE;
 
 	if (isTable && onlyTableRow >= 0 && onlyTableRow != row)
@@ -109,7 +118,7 @@ static BOOL _GuiStruct_showButtonSearchSub(const BIG row, const UNI* search)
 	{
 		BIG it;
 		UBIG i = 0;
-		while ((it = DbColumnN_jump(DbRoot_getColumnSubs(), row, &i, 1)) >= 0)
+		while ((it = DbColumnN_jump(DbRoot_subs(), row, &i, 1)) >= 0)
 		{
 			if (_GuiStruct_showButtonSearchSub(it, search))
 				return TRUE;
@@ -138,9 +147,12 @@ static BOOL _GuiStruct_showColumnBtable(BIG row, BIG onlyColumnBtableRow)
 	return TRUE;
 }
 
-static void _GuiStruct_buildListItem(GuiItemLayout* parentLayout, Quad2i grid, UBIG row, const UNI* search, BIG highlightRow, BIG ignoreRow, GuiStruct_SHOW showType, GuiItemCallback* click)
+static void _GuiStruct_buildListItem(GuiItemLayout* parentLayout, Quad2i grid, UBIG row, const UNI* search, BIG highlightRow, BIG ignoreRow, BOOL onlyColumnType_links, GuiStruct_SHOW showType, GuiItemCallback* click)
 {
-	BOOL show = (_GuiStruct_showButtonSearch(row, search) && _GuiStruct_isEnable(row, showType) && row != ignoreRow);
+	DbColumn* column = DbRoot_findColumn(row);
+	DbTable* btable = column ? DbColumn_getBTable(column) : 0;
+
+	BOOL show = (_GuiStruct_showButtonSearch(row, search) && _GuiStruct_isEnable(row, showType) && row != ignoreRow && (!onlyColumnType_links || btable));
 
 	char nameId[64];
 	Std_buildNumber(row, 0, nameId);
@@ -158,20 +170,20 @@ static void _GuiStruct_buildListItem(GuiItemLayout* parentLayout, Quad2i grid, U
 		GuiItem_setIcon((GuiItem*)b, GuiImage_new1(icon));
 }
 
-static void _GuiStruct_buildDashboardSub(GuiItemLayout* layoutList, UBIG row, int* y, const UNI* search, BIG highlightRow, BIG onlyTableRow, BIG onlyColumnBtableRow, BIG ignoreRow, GuiStruct_SHOW showType, GuiItemCallback* click);
+static void _GuiStruct_buildDashboardSub(GuiItemLayout* layoutList, UBIG row, int* y, const UNI* search, BIG highlightRow, BIG onlyTableRow, BIG onlyColumnBtableRow, BOOL onlyColumnType_links, BIG ignoreRow, GuiStruct_SHOW showType, GuiItemCallback* click);
 
-static GuiItemLayout* _GuiStruct_buildDashboard(UBIG row, int* y, const UNI* search, BIG highlightRow, BIG onlyTableRow, BIG onlyColumnBtableRow, BIG ignoreRow, GuiStruct_SHOW showType, GuiItemCallback* click)
+static GuiItemLayout* _GuiStruct_buildDashboard(UBIG row, int* y, const UNI* search, BIG highlightRow, BIG onlyTableRow, BIG onlyColumnBtableRow, BOOL onlyColumnType_links, BIG ignoreRow, GuiStruct_SHOW showType, GuiItemCallback* click)
 {
 	GuiItemLayout* layout = GuiItemLayout_new(Quad2i_init4(0, *y, 1, 1));
 	GuiItemLayout_addColumn(layout, 1, 99);
 
-	_GuiStruct_buildListItem(layout, Quad2i_init4(0, 0, 2, 1), row, search, highlightRow, ignoreRow, showType, click);
+	_GuiStruct_buildListItem(layout, Quad2i_init4(0, 0, 2, 1), row, search, highlightRow, ignoreRow, onlyColumnType_links, showType, click);
 
 	int yy = 0;
 	if (_GuiStruct_canGoSubsEx(row, onlyTableRow, onlyColumnBtableRow, showType))
 	{
 		BIG row2 = -1;
-		if (DbRoot_isType_root(row) || DbRoot_isType_folder(row))
+		if (DbRoot_isType_root(row) || DbRoot_isType_folder(row) || DbRoot_isType_remote(row))
 			row2 = row;
 		else
 			if (DbRoot_isType_table(row) && showType == GuiStruct_SHOW_COLUMNS)	//note: table has both(column & views)
@@ -183,7 +195,7 @@ static GuiItemLayout* _GuiStruct_buildDashboard(UBIG row, int* y, const UNI* sea
 		{
 			GuiItemLayout* layoutList = GuiItemLayout_new(Quad2i_init4(1, 1, 3, 1));
 			GuiItemLayout_addColumn(layoutList, 0, 99);
-			_GuiStruct_buildDashboardSub(layoutList, row2, &yy, search, highlightRow, onlyTableRow, onlyColumnBtableRow, ignoreRow, showType, click);
+			_GuiStruct_buildDashboardSub(layoutList, row2, &yy, search, highlightRow, onlyTableRow, onlyColumnBtableRow, onlyColumnType_links, ignoreRow, showType, click);
 
 			if (yy)
 			{
@@ -201,11 +213,11 @@ static GuiItemLayout* _GuiStruct_buildDashboard(UBIG row, int* y, const UNI* sea
 	return layout;
 }
 
-static void _GuiStruct_buildDashboardSub(GuiItemLayout* layoutList, UBIG row, int* y, const UNI* search, BIG highlightRow, BIG onlyTableRow, BIG onlyColumnBtableRow, BIG ignoreRow, GuiStruct_SHOW showType, GuiItemCallback* click)
+static void _GuiStruct_buildDashboardSub(GuiItemLayout* layoutList, UBIG row, int* y, const UNI* search, BIG highlightRow, BIG onlyTableRow, BIG onlyColumnBtableRow, BOOL onlyColumnType_links, BIG ignoreRow, GuiStruct_SHOW showType, GuiItemCallback* click)
 {
 	BIG it;
 	UBIG i = 0;
-	while ((it = DbColumnN_jump(DbRoot_getColumnSubs(), row, &i, 1)) >= 0)
+	while ((it = DbColumnN_jump(DbRoot_subs(), row, &i, 1)) >= 0)
 	{
 		char nameId[64];
 		Std_buildNumber(it, 0, nameId);
@@ -215,7 +227,7 @@ static void _GuiStruct_buildDashboardSub(GuiItemLayout* layoutList, UBIG row, in
 		{
 			if (_GuiStruct_hasSubs(it))
 			{
-				GuiItem_addSubName((GuiItem*)layoutList, nameId, (GuiItem*)_GuiStruct_buildDashboard(it, y, search, highlightRow, onlyTableRow, onlyColumnBtableRow, ignoreRow, showType, click));
+				GuiItem_addSubName((GuiItem*)layoutList, nameId, (GuiItem*)_GuiStruct_buildDashboard(it, y, search, highlightRow, onlyTableRow, onlyColumnBtableRow, onlyColumnType_links, ignoreRow, showType, click));
 			}
 			else
 			{
@@ -226,7 +238,7 @@ static void _GuiStruct_buildDashboardSub(GuiItemLayout* layoutList, UBIG row, in
 					GuiItemLayout_addColumn(lai, 0, 99);
 					GuiItem_addSubName((GuiItem*)layoutList, nameId, (GuiItem*)lai);
 
-					_GuiStruct_buildListItem(lai, Quad2i_init4(0, 0, 1, 1), it, search, highlightRow, ignoreRow, showType, click);
+					_GuiStruct_buildListItem(lai, Quad2i_init4(0, 0, 1, 1), it, search, highlightRow, ignoreRow, onlyColumnType_links, showType, click);
 
 					(*y)++;
 				}
@@ -240,6 +252,8 @@ static void _GuiStruct_buildDashboardSub(GuiItemLayout* layoutList, UBIG row, in
 void GuiStruct_rebuildList(GuiItem* item)
 {
 	GuiItemEdit* searchEd = GuiItem_findName(item, "search");
+	GuiItem_setShortcutKey((GuiItem*)searchEd, FALSE, Win_EXTRAKEY_CTRL | Win_EXTRAKEY_SEARCH, 0, &GuiItemEdit_clickActivate);
+
 	GuiItemLayout* list = GuiItem_findName(item, "list");
 
 	GuiStruct_SHOW showType = GuiItem_findAttribute(item, "showType");
@@ -248,6 +262,7 @@ void GuiStruct_rebuildList(GuiItem* item)
 	BIG ignoreRow = GuiItem_findAttribute(item, "ignoreRow");
 	BIG onlyTableRow = GuiItem_findAttribute(item, "onlyTableRow");
 	BIG onlyColumnBtableRow = GuiItem_findAttribute(item, "onlyColumnBtableRow");
+	BOOL onlyColumnType_links = GuiItem_findAttribute(item, "onlyColumnType_links");
 
 	if (list && searchEd)
 	{
@@ -255,7 +270,7 @@ void GuiStruct_rebuildList(GuiItem* item)
 
 		const UNI* search = GuiItemEdit_getText(searchEd);
 		int y = 0;
-		_GuiStruct_buildDashboardSub(list, DbRoot_getRootRow(), &y, search, highlightRow, onlyTableRow, onlyColumnBtableRow, ignoreRow, showType, click);
+		_GuiStruct_buildDashboardSub(list, DbRoot_getRootRow(), &y, search, highlightRow, onlyTableRow, onlyColumnBtableRow, onlyColumnType_links, ignoreRow, showType, click);
 	}
 }
 
@@ -272,7 +287,7 @@ void GuiStruct_clickEditSearch(GuiItem* item)
 		GuiItem_setResize(list, TRUE);
 }
 
-GuiItemLayout* GuiStruct_create(GuiStruct_SHOW showType, BIG highlightRow, DbValue title, GuiItemCallback* click, BIG onlyTableRow, BIG onlyColumnBtableRow, BIG ignoreRow)
+GuiItemLayout* GuiStruct_create(GuiStruct_SHOW showType, BIG highlightRow, DbValue title, GuiItemCallback* click, BIG onlyTableRow, BIG onlyColumnBtableRow, BIG ignoreRow, BOOL onlyColumnType_links)
 {
 	GuiItemLayout* layout = GuiItemLayout_new(Quad2i_init4(0, 0, 1, 1));
 	GuiItemLayout_addColumn(layout, 0, 10);
@@ -284,6 +299,7 @@ GuiItemLayout* GuiStruct_create(GuiStruct_SHOW showType, BIG highlightRow, DbVal
 	GuiItem_setAttribute(&layout->base, "ignoreRow", ignoreRow);
 	GuiItem_setAttribute(&layout->base, "onlyTableRow", onlyTableRow);
 	GuiItem_setAttribute(&layout->base, "onlyColumnBtableRow", onlyColumnBtableRow);
+	GuiItem_setAttribute(&layout->base, "onlyColumnType_links", onlyColumnType_links);
 
 	//title
 	GuiItem_addSubName((GuiItem*)layout, "search_title", GuiItemText_new(Quad2i_init4(0, 0, 1, 1), TRUE, title, DbValue_initLang("SEARCH")));

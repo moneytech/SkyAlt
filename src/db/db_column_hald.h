@@ -4,14 +4,14 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
  * Public License.
  */
 
-#define TableHald_NUM 128
+#define TableHald_NUM 512
 #define TableHald_NUMBITS (TableHald_NUM*64) //every UBIG has 64 bits
 
 typedef struct TableItem_s
@@ -52,8 +52,8 @@ void TableItem_delete(TableItem* self)
 typedef struct TableItemsBlock_s
 {
 	TableItem* items;
-	BOOL changed_save;
-	BOOL changed_exe;
+	BOOL changed_save;	//smazat, mít pøímo v TableItems(zbyteènì zvyšuje velikost na 16B a realloc je pomalejší) ...
+	BOOL changed_exe;	//smazat, mít pøímo v TableItems ...
 } TableItemsBlock;
 
 TableItemsBlock TableItemsBlock_init(double defValue)
@@ -83,12 +83,12 @@ void TableItemsBlock_resetAllTo0(TableItemsBlock* self)
 	self->changed_exe = FALSE;
 }
 
-/*void TableItemsBlock_resetAllTo1(TableItemsBlock* self)
+void TableItemsBlock_resetAllTo1(TableItemsBlock* self)
 {
 	Os_memsetEx(self->items, 255, TableItem_bytes()); //reset to 1
 	self->changed_save = TRUE;
 	self->changed_exe = TRUE;
-}*/
+}
 
 typedef struct TableItems_s
 {
@@ -217,19 +217,19 @@ void TableItems_maintenance(TableItems* self, const UBIG NUM_ROWS, TableItems* a
 	self->blocks = Os_realloc(self->blocks, self->num * sizeof(TableItemsBlock));
 }
 
-void TableItems_resetAllTo0(TableItems* self, UBIG startHald)
+void TableItems_resetAllTo0(TableItems* self)
 {
 	UBIG i;
-	for (i = startHald; i < self->num; i++)
+	for (i = 0; i < self->num; i++)
 		TableItemsBlock_resetAllTo0(&self->blocks[i]);
 }
 
-/*void TableItems_resetAllTo1(TableItems* self, UBIG startHald)
+void TableItems_resetAllTo1(TableItems* self)
 {
 	UBIG i;
-	for(i = startHald; i < self->num; i++)
+	for (i = 0; i < self->num; i++)
 		TableItemsBlock_resetAllTo1(&self->blocks[i]);
-}*/
+}
 
 BOOL TableItems_cmp(const TableItems* a, const TableItems* b, const UBIG NUM_ROWS)
 {

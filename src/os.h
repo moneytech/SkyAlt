@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -37,7 +37,7 @@ typedef long long BIG;
 #define TRUE 1
 #define FALSE 0
 
-#define STD_BUILD 1
+#define STD_BUILD 2	//! ...
 #define STD_TITLE "SkyAlt"
 
 #define STD_LICENSE_VER 1
@@ -49,13 +49,14 @@ typedef long long BIG;
 #define MAX_EXE_FPS 60
 #define MAX_WORKSPACE_UPDATE 0.1	//every 10sec
 
+#define NET_USER_AGENT "SkyAlt/0.2"
 
 #define TEXT_TAB_SPACES 2
 
 #ifdef _DEBUG
-#define MAX_COMPUTING_WAIT 3600000
+#define MAX_COMPUTING_WAIT 1000
 #else
-#define MAX_COMPUTING_WAIT 600
+#define MAX_COMPUTING_WAIT 400
 #endif
 
 #ifdef _WIN32
@@ -74,8 +75,20 @@ typedef long long BIG;
 #define STD_FILE_EXE ""
 #endif
 
+#ifdef _WIN32
+#define STD_DROP_FILE_HEADER _UNI32("file:///")
+#define STD_DROP_FILE_HEADER_CHAR "file:///"
+#elif __linux__
+#define STD_DROP_FILE_HEADER _UNI32("file://")
+#define STD_DROP_FILE_HEADER_CHAR "file://"
+#elif __APPLE__
+
+#endif
+
 #define STD_UPDATE_SERVER "https://www.skyalt.com/updates"
 #define STD_INI_PATH "SkyAlt.ini"
+#define STD_INI_MAP_PATH "map.ini"
+#define STD_INI_MAP_URL "https://www.skyalt.com/map.ini"
 
 UCHAR* Os_getUpdatePublicKey(void);
 
@@ -87,11 +100,11 @@ extern int snprintf(char* const _Buffer, UBIG const _BufferCount, char const* co
 extern int fprintf(void* const _Stream, char const* const _Format, ...);
 #elif __linux__
 #include <stdio.h>
-/*extern int sscanf(char const* const _Buffer, char const* const _Format, ...);
-extern int printf(char const* const _Format, ...);
-extern int sprintf(char* const _Buffer, char const* const _Format, ...);
-extern int snprintf(char* restrict buffer, size_t bufsz, const char* restrict format, ...);
-extern int fprintf(void* restrict stream, const char* restrict format, ...);*/
+//extern int sscanf(char const* const _Buffer, char const* const _Format, ...);
+//extern int printf(char const* const _Format, ...);
+//extern int sprintf(char* const _Buffer, char const* const _Format, ...);
+//extern int snprintf(char* restrict buffer, size_t bufsz, const char* restrict format, ...);
+//extern int fprintf(void* restrict stream, const char* restrict format, ...);
 #endif
 
 double Os_sqrt(double x);
@@ -99,6 +112,9 @@ double Os_pow(double x, double y);
 void Os_gcvt(double value, int digits, char* str);
 double Os_atof(const char* str);
 double Os_cos(double x);
+double Os_acos(double x);
+double Os_sin(double x);
+double Os_asin(double x);
 double Os_tan(double x);
 double Os_atan(double x);
 double Os_log(double x);
@@ -114,6 +130,8 @@ void Os_memsetEx(void* ptr, int value, UBIG size);
 void* Os_memcpy(void* dst, const void* src, UBIG size);
 void* Os_memmove(void* dst, void* src, UBIG size);
 int Os_memcmp(void* a, void* b, UBIG size);
+
+void Os_qsort(void* base, UBIG num, int item_size, int (cmpfunc)(const void* context, const void* a, const void* b), void* context);
 
 void Os_showConsole(BOOL show);
 
@@ -189,6 +207,7 @@ void OsFile_testOpen(void);
 double Os_time(void);
 int Os_timeZone(void);
 double Os_timeUTC(void);
+double Os_printTime(const char* text, double startTime);
 
 typedef enum
 {
@@ -364,7 +383,7 @@ typedef struct OsCryptoECDSA_s
 	void* key;	//EC_KEY* key;
 } OsCryptoECDSA;
 BOOL OsCryptoECDSA_initRandom(OsCryptoECDSA* self);
-BOOL OsCryptoECDSA_initFromKey(OsCryptoECDSA* self, OsCryptoECDSAKey* key);
+BOOL OsCryptoECDSA_initFromKey(OsCryptoECDSA* self, const OsCryptoECDSAKey* key);
 BOOL OsCryptoECDSA_initFromPublic(OsCryptoECDSA* self, const OsCryptoECDSAPublic* pub);
 void OsCryptoECDSA_free(OsCryptoECDSA* self);
 BOOL OsCryptoECDSA_exportKey(OsCryptoECDSA* self, OsCryptoECDSAKey* key);
@@ -442,7 +461,7 @@ BOOL Os_getMAC(UCHAR mac[6]);
 UBIG Os_getUID(void);
 
 void OsWeb_openWebBrowser(const char* webAddress);
-void OsWeb_openEmail(const char* dstEmail);
+void OsWeb_openEmail(const char* dstEmail, const char* subject);
 
 const char* OsNet_init();
 void OsNet_free();
@@ -516,7 +535,6 @@ typedef enum
 	Win_CURSOR_WAIT,
 	Win_CURSOR_HAND,
 	Win_CURSOR_FLEUR,
-
 	Win_CURSOR_COL_RESIZE,
 	Win_CURSOR_ROW_RESIZE,
 	Win_CURSOR_MOVE,
@@ -569,6 +587,12 @@ typedef enum
 #define Win_EXTRAKEY_LPANEL (1ULL << 34)
 
 #define Win_EXTRAKEY_PRINTSCREEN (1ULL << 35)
+
+#define Win_EXTRAKEY_SEARCH (1ULL << 36)
+#define Win_EXTRAKEY_ADD_RECORD (1ULL << 37)
+
+#define Win_EXTRAKEY_SELECT_ROW (1ULL << 38)
+#define Win_EXTRAKEY_SELECT_COLUMN (1ULL << 39)
 
 typedef struct Win_s Win;
 typedef struct Quad2i_s Quad2i;
@@ -632,9 +656,9 @@ void OsWinIO_setTouch_action(UINT touch_action);
 void OsWinIO_setDPI(UINT dpi);
 UINT OsWinIO_cellSize(void);
 UINT OsWinIO_lineSpace(void);
-int OsWinIO_rounded(void);
-int OsWinIO_shadows(void);
-float OsWinIO_shadowsAlpha(void);
+//int OsWinIO_rounded(void);
+//int OsWinIO_shadows(void);
+//float OsWinIO_shadowsAlpha(void);
 BOOL OsWinIO_new(void);
 void OsWinIO_delete(void);
 void OsWinIO_setDrop(UNI* str, Vec2i* pos);
@@ -662,7 +686,7 @@ BOOL OsWinIO_isStartTouch(void);
 BOOL OsWinIO_setCursorGuiItem(void* item);
 void OsWinIO_setCursorText(const UNI* text);
 void OsWinIO_resetCursorGuiItem(void);
-float OsWinIO_getEditboxAnim(void);
+double OsWinIO_getEditboxAnim(void* item);
 
 void OsWinIO_pleaseExit(void);
 void OsWinIO_pleaseTouch(void);
@@ -670,6 +694,7 @@ void OsWinIO_pleaseKey(void);
 void OsWinIO_setTouch(Vec2i* pos, UINT action, BOOL move);
 void OsWinIO_setTouchWheel(Vec2i* pos, int wheel);
 void OsWinIO_resetTouch(void);
+void OsWinIO_resetNumTouch(void);
 void OsWinIO_resetKey(void);
 void OsWinIO_tick(void);
 
@@ -715,6 +740,7 @@ const char* OsFont_initMemory(OsFont* self, const UNI* name, const UCHAR* memory
 BOOL OsFont_is(const OsFont* self, const UNI* name);
 OsFontLetter OsFont_get(OsFont* self, const UNI CH, const int Hpx);
 Vec2i OsFont_getTextSize(OsFont* self, const UNI* text, const int Hpx, const int betweenLinePx, int* extra_down);
+int OsFont_getTextSizeX(OsFont* self, const UNI* text, const int Hpx);
 int OsFont_getCharPixelPos(OsFont* self, const int Hpx, const UNI* text, int cur_pos);
 int OsFont_getCursorPos(OsFont* self, const int Hpx, const UNI* text, int pixel_x);
 
@@ -732,12 +758,53 @@ typedef BIG OSMediaCallback_read(void* self, UCHAR* buff, int buff_size);	//retu
 typedef BIG OSMediaCallback_seek(void* self, BIG offset);					//returns pos(or -1)
 
 typedef struct OSMedia_s OSMedia;
+void OSMedia_initGlobal(void);
+void OSMedia_freeGlobal(void);
 
 BOOL OSMedia_isAudio(const OSMedia* self);
 BOOL OSMedia_isVideo(const OSMedia* self);
 BOOL OSMedia_isSubtitles(const OSMedia* self);
 
-OSMedia* OSMedia_new(OSMediaCallback_read* funcRead, OSMediaCallback_seek* funcSeek, void* func_data, const char* fileName);	//note: fileName is the name, not path
+OSMedia* OSMedia_newOpen(OSMediaCallback_read* funcRead, OSMediaCallback_seek* funcSeek, void* func_data, const char* fileName);	//note: fileName is the name, not path
+UCHAR* OSMedia_newSave(const char* ext, Vec2i size, UCHAR* buff, UBIG bytes, UBIG* out_bytes);
 const Vec2i* OSMedia_getOrigSize(const OSMedia* self);
 void OSMedia_loadVideo(OSMedia* self, Image4* out);
 void OSMedia_delete(OSMedia* self);
+
+typedef struct Image1_s Image1;
+void OSMedia_scale1(Image1* dst, const Image1* src);
+void OSMedia_scale4(Image4* dst, const Image4* src);
+
+typedef struct OsODBC_s OsODBC;
+typedef struct OsODBCQuery_s OsODBCQuery;
+
+typedef enum
+{
+	OsODBC_UNKNOWN,
+	OsODBC_NUMBER,
+	OsODBC_STRING,
+	OsODBC_DATE,
+}OsODBCType;
+
+BOOL OsODBC_initGlobal(void);
+void OsODBC_freeGlobal(void);
+BIG OsODBC_getDriversList(UNI*** list);
+BIG OsODBC_getDataSourcesList(UNI*** list);
+
+OsODBC* OsODBC_new(const char* connectionName, const char* server, USHORT port, const char* userName, const char* password, const char* driver);
+void OsODBC_delete(OsODBC* self);
+BIG OsODBC_getTablesList(OsODBC* self, UNI*** list);
+BIG OsODBC_getColumnsList(OsODBC* self, const UNI* tableName, UNI*** out_names, BIG** out_types);
+BIG OsODBC_getPrimaryColumnList(OsODBC* self, const UNI* tableName, UNI*** out_names);
+UNI* OsODBC_getPrimaryColumnName(OsODBC* self, const UNI* tableName);
+BIG OsODBC_getForeignColumnList(OsODBC* self, const UNI* tableName, UNI*** out_srcColumnNames, UNI*** out_dstTableNames);
+OsODBCQuery* OsODBC_createQuery(OsODBC* self, char* statement);
+
+void OsODBCQuery_delete(OsODBCQuery* self);
+BOOL OsODBCQuery_addVarDouble(OsODBCQuery* self, int index, double* value);
+BOOL OsODBCQuery_addVarString(OsODBCQuery* self, int index, char* str, const int max_size);
+BOOL OsODBCQuery_addColumnDouble(OsODBCQuery* self, int index, double* value);
+BOOL OsODBCQuery_addColumnString(OsODBCQuery* self, int index, char* str, BIG max_len);
+BOOL OsODBCQuery_execute(OsODBCQuery* self);
+BOOL OsODBCQuery_fetch(OsODBCQuery* self);
+UBIG OsODBCQuery_count(OsODBCQuery* self);

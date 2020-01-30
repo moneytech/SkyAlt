@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -86,6 +86,17 @@ BOOL Std_cmpUNI_CHAR(const UNI* a, const char* b)
 	return Std_sizeUNI(a) == Std_sizeCHAR(b);
 }
 
+BOOL Std_cmpUNI_CHAR_small(const UNI* a, const char* b)
+{
+	if (a && b)
+	{
+		while (*a && Std_getUNIsmall(*a) == Std_getUNIsmall(*b))
+			a++, b++;
+		return !*a && !*b;
+	}
+	return Std_sizeUNI(a) == Std_sizeCHAR(b);
+}
+
 BOOL Std_cmpUNI_ex(const UNI* a, const UNI* b, BIG bN)
 {
 	if (a && b)
@@ -111,32 +122,38 @@ BOOL Std_cmpUNIsmall(const UNI* a, const UNI* b)
 	return a == b;
 }
 
-BOOL Std_cmpUNIascending(const UNI* a, const UNI* b)
+int Std_cmpUNIascending(const UNI* a, const UNI* b)
 {
 	if (a && b)
 	{
 		while (*a && *b)
 		{
 			if (Std_getUNIsmall(*a) != Std_getUNIsmall(*b))
-				return Std_getUNIsmall(*a) < Std_getUNIsmall(*b);
+				return Std_getUNIsmall(*a) > Std_getUNIsmall(*b) ? 1 : -1;
 			a++, b++;
 		}
 	}
-	return Std_sizeUNI(a) < Std_sizeUNI(b);	//!
+
+	const BIG sA = Std_sizeUNI(a);
+	const BIG sB = Std_sizeUNI(b);
+	return (sA > sB) - (sA < sB);
 }
 
-BOOL Std_cmpCHARascending(const char* a, const char* b)
+int Std_cmpCHARascending(const char* a, const char* b)
 {
 	if (a && b)
 	{
 		while (*a && *b)
 		{
 			if (Std_getUNIsmall(*a) != Std_getUNIsmall(*b))
-				return Std_getUNIsmall(*a) < Std_getUNIsmall(*b);
+				return Std_getUNIsmall(*a) > Std_getUNIsmall(*b) ? 1 : -1;
 			a++, b++;
 		}
 	}
-	return Std_sizeCHAR(a) < Std_sizeCHAR(b);	//!
+
+	const BIG sA = Std_sizeCHAR(a);
+	const BIG sB = Std_sizeCHAR(b);
+	return (sA > sB) - (sA < sB);
 }
 
 BOOL Std_cmpCHAR(const char* a, const char* b)
@@ -218,12 +235,37 @@ void Std_setHEX_char(char* self, const UCHAR* arr, const int N)
 		snprintf(&self[i * 2], 3, "%02x", arr[i]);
 	self[N * 2] = 0; //end
 }
+void Std_setHEX_uni(UNI* self, const UCHAR* arr, const int N)
+{
+	int i;
+	for (i = 0; i < N; i++)
+	{
+		char ch[3];
+		snprintf(ch, 3, "%02x", arr[i]);
+		self[i * 2 + 0] = ch[0];
+		self[i * 2 + 1] = ch[1];
+	}
+	self[N * 2] = 0; //end
+}
 
 void Std_getFromHEX(const char* str, const int N, UCHAR* out)
 {
 	int i;
 	for (i = 0; i < N / 2; i++)
 		sscanf(&str[i * 2], "%02hhX", &out[i]);
+}
+
+void Std_getFromHEX_uni(const UNI* str, const int N, UCHAR* out)
+{
+	int i;
+	for (i = 0; i < N / 2; i++)
+	{
+		char ch[3];
+		ch[0] = str[i * 2 + 0];
+		ch[1] = str[i * 2 + 1];
+		ch[2] = 0;
+		sscanf(ch, "%02hhX", &out[i]);
+	}
 }
 
 UNI* Std_newUNI(const UNI* src)
@@ -298,7 +340,11 @@ void Std_deleteUNI(UNI* self)
 
 void Std_replaceUNI(UNI** dst, const UNI* src)
 {
-	if (!Std_cmpUNI(*dst, src))
+	UBIG n = Std_sizeUNI(*dst);
+
+	if (n == Std_sizeUNI(src))
+		Os_memcpy(*dst, src, n * sizeof(UNI));
+	else
 	{
 		Std_deleteUNI(*dst);
 		*dst = Std_newUNI(src);
@@ -587,14 +633,36 @@ BIG Std_subUNI_small_char(const UNI* self, const char* find)
 
 UNI* Std_copyUNI(UNI* dst, UBIG dstMax_N, const UNI* src)
 {
-	dstMax_N = Std_bmin(dstMax_N, Std_sizeUNI(src));
-	Os_memcpy(dst, src, dstMax_N * sizeof(UNI));
+	BIG pos = 0;
+	while (src && src[pos] && pos < dstMax_N)
+	{
+		dst[pos] = src[pos];
+		pos++;
+	}
+	if (dst)
+		dst[pos] = 0;
 	return dst;
 }
 UNI* Std_copyUNI_char(UNI* dst, UBIG dstMax_N, const char* src)
 {
 	BIG pos = 0;
-	while (src && src[pos] && pos < dstMax_N + 1)
+	while (src && src[pos] && pos < dstMax_N)
+	{
+		dst[pos] = src[pos];
+		pos++;
+	}
+	if (dst)
+		dst[pos] = 0;
+
+	return dst ? &dst[pos] : dst;
+}
+
+char* Std_copyCHAR_uni(char* dst, UBIG dstMax_N, const UNI* src)
+{
+	dstMax_N--;	//end
+
+	BIG pos = 0;
+	while (src && src[pos] && pos < dstMax_N)
 	{
 		dst[pos] = src[pos];
 		pos++;
@@ -602,8 +670,7 @@ UNI* Std_copyUNI_char(UNI* dst, UBIG dstMax_N, const char* src)
 	dst[pos] = 0;
 	return dst;
 }
-
-char* Std_copyCHAR_uni(char* dst, UBIG dstMax_N, const UNI* src)
+char* Std_copyCHAR(char* dst, UBIG dstMax_N, const char* src)
 {
 	dstMax_N--;	//end
 
@@ -626,7 +693,7 @@ void Std_convertUpUNI(UNI* self)
 	}
 }
 
-char* Std_findSubCHAR(char* self, const char* find)
+const char* Std_findSubCHAR(const char* self, const char* find)
 {
 	while (self && *self)
 	{
@@ -826,6 +893,22 @@ void Std_removeLetterUNI(UNI* self, UNI ch)
 		*curr = 0;
 }
 
+void Std_removeLetterCHAR(char* self, char ch)
+{
+	char* curr = self;
+	while (self && *self)
+	{
+		if (*self != ch)
+		{
+			*curr = *self;
+			curr++;
+		}
+		self++;
+	}
+	if (curr)
+		*curr = 0;
+}
+
 void Std_array_print(UCHAR* data, UBIG data_size)
 {
 	printf("{");
@@ -898,6 +981,15 @@ char* Std_newCHAR_uni(const UNI* src)
 char* Std_newCHAR_uni_n(const UNI* src, const UBIG N)
 {
 	char* dst = Std_newCHAR_N(Std_min(Std_sizeUNI(src), N));
+	UBIG i;
+	for (i = 0; i < N; i++)
+		dst[i] = src[i];
+	return dst;
+}
+
+char* Std_newCHAR_n(const char* src, const UBIG N)
+{
+	char* dst = Std_newCHAR_N(Std_min(Std_sizeCHAR(src), N));
 	UBIG i;
 	for (i = 0; i < N; i++)
 		dst[i] = src[i];
@@ -1013,6 +1105,21 @@ char* Std_addAfterCHAR(char* dst, const char* src)
 	return dst;
 }
 
+char* Std_addAfterCHAR_uni(char* dst, const UNI* src)
+{
+	UBIG nDst = Std_sizeCHAR(dst);
+	UBIG nSrc = Std_sizeUNI(src);
+
+	dst = (char*)Os_realloc(dst, (nDst + nSrc + 1) * sizeof(char));
+
+	BIG i;
+	for (i = 0; i < nSrc; i++)
+		dst[nDst + i] = src[i];
+	dst[nDst + nSrc] = 0;
+
+	return dst;
+}
+
 UNI* Std_newNumberSize(UBIG size)
 {
 	UBIG mx = 1024ULL * 1024ULL * 1024ULL * 1024ULL;
@@ -1040,7 +1147,7 @@ UNI* Std_repeatUNI(const int N, const UNI ch)
 	return text;
 }
 
-BIG Std_encode_utf8(UCHAR* out, UNI in)
+int Std_encode_utf8(UNI in, UCHAR* out)
 {
 	if (in < 0x80)
 	{
@@ -1088,11 +1195,11 @@ char* Std_utf32_to_utf8(const UNI* in)
 	UCHAR* out = (UCHAR*)origOut;
 
 	BIG rc = 0;
-	BIG units;
+	int units;
 	UCHAR encoded[4];
 	while (*in > 0)
 	{
-		units = Std_encode_utf8(encoded, *in++);
+		units = Std_encode_utf8(*in, encoded);
 		if (units == -1)
 		{
 			Os_free(out, bytes * sizeof(char));
@@ -1120,6 +1227,7 @@ char* Std_utf32_to_utf8(const UNI* in)
 			out = 0;
 			break;
 		}
+		in++;
 	}
 
 	return origOut;
@@ -1142,9 +1250,7 @@ BIG Std_urlDecode(const char* s, char* dec)
 	{
 		c = *s++;
 		if (c == '+') c = ' ';
-		else if (c == '%' && (!Std_ishex(*s++) ||
-			!Std_ishex(*s++) ||
-			!sscanf(s - 2, "%2x", &c)))
+		else if (c == '%' && (!Std_ishex(*s++) || !Std_ishex(*s++) || !sscanf(s - 2, "%2x", &c)))
 			return -1;
 
 		if (dec) *o = c;
@@ -1160,37 +1266,45 @@ char* Std_newCHAR_urlDecode(const char* url)
 	return self;
 }
 
-static void _Std_urlEncode(const UCHAR* s, char* enc, char* tb)
+static int _Std_getRfc3986(int i)
 {
-	while (*s)
+	return Os_isalnum(i) || i == '~' || i == '-' || i == '.' || i == '_' ? i : 0;
+}
+/*static int _Std_getHTML5(int i)
+{
+	return Os_isalnum(i) || i == '*' || i == '-' || i == '.' || i == '_' ? i : (i == ' ') ? '+' : 0;
+}*/
+void Std_urlEncode(const UNI* s, char* out)
+{
+	while (s && *s)
 	{
-		if (tb[*s]) sprintf(enc, "%c", tb[*s]);
-		else        sprintf(enc, "%%%02X", *s);
-		while (*++enc);
+		int t = (*s >= 0 && *s < 256) ? _Std_getRfc3986(*s) : 0;
+		//int t = (*s < 256) ? _Std_getHTML5(*s) : 0;
+		if (t)
+		{
+			sprintf(out, "%c", t);
+			out++;
+		}
+		else
+		{
+			UCHAR encoded[4];
+			int units = Std_encode_utf8(*s, encoded);
+
+			int i;
+			for (i = 0; i < units; i++)
+			{
+				sprintf(out, "%%%02X", encoded[i]);
+				while (*++out);
+			}
+		}
 
 		s++;
 	}
 }
 
-void Std_urlEncode(const char* s, char* enc)
+char* Std_newCHAR_urlEncode(const UNI* url)
 {
-	char rfc3986[256] = { 0 };
-	//char html5[256] = {0};
-
-	int i;
-	for (i = 0; i < 256; i++)	//prepare(slow, mayby global var)
-	{
-		rfc3986[i] = Os_isalnum(i) || i == '~' || i == '-' || i == '.' || i == '_' ? i : 0;
-		//html5[i] = Os_isalnum(i)||i == '*'||i == '-'||i == '.'||i == '_' ? i : (i == ' ') ? '+' : 0;
-	}
-
-	_Std_urlEncode((UCHAR*)s, enc, rfc3986);
-	//_Std_urlEncode((UCHAR*)s, enc, html5);
-}
-
-char* Std_newCHAR_urlEncode(const char* url)
-{
-	char* self = (char*)Os_malloc(Std_sizeCHAR(url) * 3 + 1);
+	char* self = (char*)Os_malloc(Std_sizeUNI(url) * 3 + 1);
 	Std_urlEncode(url, self);
 	return self;
 }
@@ -1288,6 +1402,13 @@ void StdString_setCHAR_n(StdString* self, const char* str, UBIG n)
 void StdString_addCHAR(StdString* self, const char* str)
 {
 	_StdString_setCHAR_pos(self, str, Std_sizeUNI(self->str), Std_sizeCHAR(str));
+}
+
+void StdString_addNumber(StdString* self, int precision, double value)
+{
+	UNI nmbr[64];
+	Std_buildNumberUNI(value, precision, nmbr);
+	StdString_addUNI(self, nmbr);
 }
 
 BOOL StdString_cmp(const StdString* a, const StdString* b)

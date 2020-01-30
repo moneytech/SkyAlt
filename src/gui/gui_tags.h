@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -32,6 +32,8 @@ typedef struct GuiItemTagsItem_s
 	BOOL isImage;
 	BOOL isAudio;
 	BOOL isText;
+
+	BOOL showClose;
 }GuiItemTagsItem;
 
 void GuiItemTagsItem_resetTouch(GuiItemTagsItem* self)
@@ -60,6 +62,8 @@ GuiItemTagsItem* GuiItemTagsItem_new(DbValues columns)
 	self->isImage = FALSE;
 	self->isAudio = FALSE;
 	self->isText = FALSE;
+
+	self->showClose = TRUE;
 
 	GuiItemTagsItem_resetTouch(self);
 	return self;
@@ -120,8 +124,10 @@ BOOL GuiItemTagsItem_updateText(GuiItemTagsItem* self, BIG row, UBIG index)
 	return changed;
 }
 
-BOOL GuiItemTagsItem_updateCoord(GuiItemTagsItem* self, Quad2i coord)
+BOOL GuiItemTagsItem_updateCoord(GuiItemTagsItem* self, Quad2i coord, BOOL showClose)
 {
+	self->showClose = showClose;
+
 	Quad2i oldCoord = self->coord;
 	self->coord = coord;
 	return !Quad2i_cmp(oldCoord, coord);
@@ -131,9 +137,9 @@ static Quad2i _GuiItemTagsItem_getImageCoord(Quad2i coord)
 {
 	return Quad2i_addSpace(coord, 2);
 }
-BOOL GuiItemTagsItem_updateCoordFile(GuiItemTagsItem* self, Quad2i coord, FileRow file)
+BOOL GuiItemTagsItem_updateCoordFile(GuiItemTagsItem* self, Quad2i coord, FileRow file, BOOL showClose)
 {
-	BOOL changed = GuiItemTagsItem_updateCoord(self, coord);
+	BOOL changed = GuiItemTagsItem_updateCoord(self, coord, showClose);
 
 	changed |= !FileRow_cmp(self->file, file);
 	self->file = file;
@@ -157,7 +163,7 @@ int GuiItemTagsItem_closeX(void)
 
 Quad2i GuiItemTagsItem_rectText(const GuiItemTagsItem* self)
 {
-	const int sx = GuiItemTagsItem_closeX();
+	const int sx = self->showClose ? GuiItemTagsItem_closeX() : 0;
 	return Quad2i_init4(self->coord.start.x, self->coord.start.y, self->coord.size.x - sx, self->coord.size.y);
 }
 Quad2i GuiItemTagsItem_rectClose(const GuiItemTagsItem* self)
@@ -414,7 +420,7 @@ void GuiItemTags_update(GuiItemTags* self, Quad2i coord, Win* win)
 	const int textH = _GuiItem_textSize(1, coord.size.y);
 	OsFont* font = OsWinIO_getFontDefault();
 
-	start.x += cell + textH / 2;
+	start.x += (self->callbackAdd ? cell : 0) + textH / 2;
 
 	const UBIG N = DbRows_getSize(&self->source);
 
@@ -455,6 +461,8 @@ void GuiItemTags_update(GuiItemTags* self, Quad2i coord, Win* win)
 
 		if (self->showClose)
 			textSize += textH / 2 + GuiItemTagsItem_closeX();
+		//else
+		//	textSize += textH / 2;
 
 		int add_start = textSize + textH / 2;
 		if (start.x + add_start > end.x)	//new line
@@ -470,7 +478,7 @@ void GuiItemTags_update(GuiItemTags* self, Quad2i coord, Win* win)
 		if (start.y > end.y)	//outside
 			i = N;				//break loop
 
-		changed |= isFile ? GuiItemTagsItem_updateCoordFile(item, coordItem, DbRows_getFileId(&self->source, i)) : GuiItemTagsItem_updateCoord(item, coordItem);
+		changed |= isFile ? GuiItemTagsItem_updateCoordFile(item, coordItem, DbRows_getFileId(&self->source, i), self->showClose) : GuiItemTagsItem_updateCoord(item, coordItem, self->showClose);
 	}
 
 	GuiItem_setRedraw(&self->base, changed);
@@ -603,7 +611,7 @@ GuiItemLayout* GuiItemTags_dialogTagsAdd(DbColumn* column)
 	GuiItemLayout_addColumn(layAdd, 0, 10);
 	GuiItemLayout_addRow(layAdd, 0, 10);
 	GuiItem* skin = GuiItemButton_newClassicEx(Quad2i_init4(0, 0, 1, 1), DbValue_initOption(-1, "name", 0), &GuiItemTags_clickAddItem);
-	GuiItem_addSubName((GuiItem*)layAdd, "list", GuiItemList_new(Quad2i_init4(0, 0, 1, 1), DbRows_initLink(DbRoot_getColumnSubs(), optionsRow), skin, DbValue_initEmpty()));
+	GuiItem_addSubName((GuiItem*)layAdd, "list", GuiItemList_new(Quad2i_init4(0, 0, 1, 1), DbRows_initLinkN(DbRoot_subs(), optionsRow), skin, DbValue_initEmpty()));
 
 	return layAdd;
 }
@@ -620,12 +628,12 @@ GuiItemLayout* GuiItemTags_dialogTagsDetails(DbColumn* column)
 
 	GuiItem* drag = GuiItem_addSubName((GuiItem*)skin, "drag", GuiItemBox_newEmpty(Quad2i_init4(0, 0, 1, 1)));
 	GuiItem_setIcon(drag, GuiImage_new1(UiIcons_init_reoder()));
-	GuiItem_setDrop(drag, "option", "option", FALSE, DbRows_initLink((DbColumnN*)column, -1), -1);
+	GuiItem_setDrop(drag, "option", "option", FALSE, DbRows_initLinkN((DbColumnN*)column, -1), -1);
 
 	GuiItem_addSubName((GuiItem*)skin, "name", GuiItemText_new(Quad2i_init4(1, 0, 1, 1), FALSE, DbValue_initOption(-1, "name", 0), DbValue_initEmpty()));
 
 	//list
-	GuiItemList* list = (GuiItemList*)GuiItem_addSubName((GuiItem*)layDetails, "list", GuiItemList_new(Quad2i_init4(0, 0, 1, 1), DbRows_initLink((DbColumnN*)column, -1), (GuiItem*)skin, DbValue_initEmpty()));
+	GuiItemList* list = (GuiItemList*)GuiItem_addSubName((GuiItem*)layDetails, "list", GuiItemList_new(Quad2i_init4(0, 0, 1, 1), DbRows_initLinkN((DbColumnN*)column, -1), (GuiItem*)skin, DbValue_initEmpty()));
 	GuiItemList_setShowRemove(list, TRUE);
 
 	return layDetails;
@@ -643,7 +651,7 @@ GuiItemLayout* GuiItemTags_dialogLinksDetails(DbColumn* column)
 
 	DbTable* btable = DbColumn_getBTable(column);
 	if (btable)
-		layDetails = GuiItemTable_buildPage(DbTable_getRow(btable), FALSE, FALSE);
+		layDetails = GuiItemTable_buildPage(DbTable_getRow(btable), -1, FALSE, TRUE);// , FALSE);
 	return layDetails;
 }
 

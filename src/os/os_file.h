@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -20,6 +20,13 @@ OsFile OsFile_initEmpty(void)
 BOOL OsFile_init(OsFile* self, const char* path, const char* mode)
 {
 	self->m_file = path ? fopen(path, mode) : 0;
+
+	if (!self->m_file && Std_cmpCHAR(mode, OsFile_RW))
+	{
+		fclose(fopen(path, OsFile_W));  //create file
+		return OsFile_init(self, path, mode);
+	}
+
 	return self->m_file != 0;
 }
 BOOL OsFile_initTemp(OsFile* self)
@@ -160,14 +167,19 @@ BOOL OsFile_unlock(OsFile* self)
 
 char* OsFile_readLine(OsFile* self)
 {
-	UBIG pos = OsFile_getSeekPos(self);
+	char c;
+
+	//is end
+	if (OsFile_read(self, &c, 1) == 0)
+		return 0;
+	OsFile_seekRel(self, -1);
 
 	//skip empty
-	char c;
 	while (OsFile_read(self, &c, 1) == 1 && (c == '\r' || c == '\n'));
 	OsFile_seekRel(self, -1);
 
 	//size
+	UBIG pos = OsFile_getSeekPos(self);
 	int n = 0;
 	while (OsFile_read(self, &c, 1) == 1 && c != '\r' && c != '\n')
 		n++;

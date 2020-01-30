@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -20,25 +20,28 @@ typedef struct GuiItemLayout_s
 
 	BOOL drawBackground;
 	BOOL drawBackgroundWhite;
+	BOOL drawBackgroundBlack;
 
-	BOOL drawBackgroundAlternativeBold;
-	BOOL drawBackgroundAlternative;
+	BOOL drawBackgroundMain;
 	BOOL drawBorder;
 	BOOL drawBackgroundError; //for gui
 	BOOL drawBorderError; //for step
 
-	BOOL drawShadows;
-	BOOL smallerCoord;
+	BOOL whiteScroll;
+
+	//BOOL drawShadows;
+	int extraSpace;
 
 	GuiScroll scrollH;
 	GuiScroll scrollV;
 
 	BOOL enableClickLayout;
 
-	DbValue value;
+	DbValue title;
+	DbValue value;	//row + index
 
 	BIG highlightRow;
-	BIG extra_big;
+	//BIG extra_big;
 
 	BOOL showScrollV;
 	BOOL showScrollH;
@@ -64,19 +67,19 @@ void GuiItemLayout_initScroll(GuiItemLayout* self, Quad2i grid, GuiItemCallback*
 
 	self->drawBackground = TRUE;
 	self->drawBackgroundWhite = FALSE;
-	self->drawBackgroundAlternativeBold = FALSE;
-	self->drawBackgroundAlternative = FALSE;
+	self->drawBackgroundMain = FALSE;
 	self->drawBackgroundError = FALSE;
+	self->drawBackgroundBlack = FALSE;
 
 	self->drawBorder = FALSE;
 	self->drawBorderError = FALSE;
 
-	self->drawShadows = FALSE;
-	self->smallerCoord = FALSE;
+	//self->drawShadows = FALSE;
+	self->extraSpace = 0;
 
 	self->enableClickLayout = FALSE;
 	self->highlightRow = -1;
-	self->extra_big = 0;
+	//self->extra_big = 0;
 
 	self->showScrollV = TRUE;
 	self->showScrollH = FALSE;
@@ -84,9 +87,12 @@ void GuiItemLayout_initScroll(GuiItemLayout* self, Quad2i grid, GuiItemCallback*
 	self->drop = 0;
 	self->resize = 0;
 
+	self->title = DbValue_initEmpty();
 	self->value = DbValue_initEmpty();
 
 	self->imgBackground = Image4_init();
+
+	self->whiteScroll = FALSE;
 
 	GuiItem_setCallClick(&self->base, click);
 }
@@ -105,14 +111,13 @@ GuiItemLayout* GuiItemLayout_newScroll(Quad2i grid, GuiScroll scrollV)
 {
 	return GuiItemLayout_newExScroll(grid, 0, scrollV);
 }
-
-GuiItemLayout* GuiItemLayout_newEx(Quad2i grid, GuiItemCallback* click)
-{
-	return GuiItemLayout_newExScroll(grid, click, GuiScroll_initEmpty());
-}
 GuiItemLayout* GuiItemLayout_new(Quad2i grid)
 {
 	return GuiItemLayout_newScroll(grid, GuiScroll_initEmpty());
+}
+GuiItemLayout* GuiItemLayout_newEx(Quad2i grid, GuiItemCallback* click)
+{
+	return GuiItemLayout_newExScroll(grid, click, GuiScroll_initEmpty());
 }
 
 GuiItemLayout* GuiItemLayout_newCoord(GuiItem* src, BOOL sliderV, BOOL sliderH, Win* win)
@@ -124,6 +129,12 @@ GuiItemLayout* GuiItemLayout_newCoord(GuiItem* src, BOOL sliderV, BOOL sliderH, 
 	self->showScrollV = sliderV;
 	self->showScrollH = sliderH;
 
+	return self;
+}
+GuiItemLayout* GuiItemLayout_newTitle(Quad2i grid, DbValue title)
+{
+	GuiItemLayout* self = GuiItemLayout_new(grid);
+	self->title = title;
 	return self;
 }
 
@@ -158,6 +169,9 @@ void GuiItemLayout_free(GuiItemLayout* self)
 	GuiScroll_free(&self->scrollH);
 
 	Image4_free(&self->imgBackground);
+
+	DbValue_free(&self->title);
+	DbValue_free(&self->value);
 
 	GuiItem_free(&self->base);
 	Os_memset(self, sizeof(GuiItemLayout));
@@ -198,6 +212,20 @@ void GuiItemLayout_setBackgroundWhite(GuiItemLayout* self, BOOL drawBackgroundWh
 {
 	self->drawBackgroundWhite = drawBackgroundWhite;
 }
+void GuiItemLayout_setBackgroundBlack(GuiItemLayout* self, BOOL drawBackgroundBlack)
+{
+	self->drawBackgroundBlack = drawBackgroundBlack;
+}
+void GuiItemLayout_setBackgroundMain(GuiItemLayout* self, BOOL drawBackgroundMain)
+{
+	self->drawBackgroundMain = drawBackgroundMain;
+}
+
+void GuiItemLayout_setBackgroundError(GuiItemLayout* self, BOOL drawBackgroundError)
+{
+	self->drawBackgroundError = drawBackgroundError;
+}
+
 void GuiItemLayout_setDrawBackground(GuiItemLayout* self, BOOL drawBackground)
 {
 	self->drawBackground = drawBackground;
@@ -244,6 +272,11 @@ void GuiItemLayout_resizeArrayColumn(GuiItemLayout* self, UINT n)
 void GuiItemLayout_resizeArrayRow(GuiItemLayout* self, UINT n)
 {
 	GuiItemLayoutArray_resize(&self->rows, n);
+}
+void GuiItemLayout_clearArrays(GuiItemLayout* self)
+{
+	GuiItemLayout_resizeArrayColumn(self, 0);
+	GuiItemLayout_resizeArrayRow(self, 0);
 }
 
 void GuiItemLayout_addColumn(GuiItemLayout* self, UINT pos, int value)
@@ -332,39 +365,101 @@ BOOL GuiItemLayout_hasScrollH(const GuiItemLayout* self)
 	return(GuiScroll_is(&self->scrollH) && self->showScrollH);
 }
 
+void GuiItemLayout_showScroll(GuiItemLayout* self, BOOL v, BOOL h)
+{
+	self->showScrollV = v;
+	self->showScrollH = h;
+}
+
+BOOL GuiItemLayout_isTitle(const GuiItemLayout* self)
+{
+	const UNI* title = DbValue_result(&self->title);
+	return Std_sizeUNI(title) > 0;
+}
+
+Quad2i GuiItemLayout_getCoordSpace(GuiItemLayout* self, Quad2i coord)
+{
+	return Quad2i_addSpace(coord, self->extraSpace);
+}
+
 void GuiItemLayout_draw(GuiItemLayout* self, Image4* img, Quad2i coord, Win* win)
 {
-	if (self->smallerCoord)
-		coord = Quad2i_addSpace(coord, 3);
+	coord = GuiItemLayout_getCoordSpace(self, coord);
 
-	if (self->drawShadows)
-		coord = Quad2i_addSpace(coord, OsWinIO_shadows());
+	//if (self->drawShadows)
+	//	coord = Quad2i_addSpace(coord, OsWinIO_shadows());
 
-	if (self->drawBackground || self->drawBackgroundAlternative || self->drawBackgroundError || (self->highlightRow>= 0 && self->value.row == self->highlightRow))
+	if (self->drawBackground || self->drawBackgroundMain || self->drawBackgroundError || (self->highlightRow >= 0 && self->value.row == self->highlightRow))
 	{
+		Quad2i q = coord;
+		if (GuiItemLayout_isTitle(self))
+		{
+			q.start.y += OsWinIO_cellSize() / 2;
+			q.size.y -= OsWinIO_cellSize() / 2;
+		}
+
 		//background
-		Image4_drawBoxQuad(img, coord, self->base.back_cd);
+		Image4_drawBoxQuad(img, q, self->base.back_cd);
 
 		//background image
-		Image4_copyDirect(img, coord, &self->imgBackground);
+		Image4_copyDirect(img, q, &self->imgBackground);
 	}
 }
 
 void GuiItemLayout_drawPost(GuiItemLayout* self, Image4* img, Quad2i coord, Win* win)
 {
-	if (self->smallerCoord)
-		coord = Quad2i_addSpace(coord, 3);
+	coord = GuiItemLayout_getCoordSpace(self, coord);
 
 	if (GuiItemLayout_hasScrollV(self))
+	{
+		if (self->whiteScroll)
+			self->scrollV.cd = g_theme.white;
 		GuiScroll_drawV(&self->scrollV, Vec2i_init2(coord.start.x + coord.size.x - GuiScroll_widthWin(win), coord.start.y), img, win);
+	}
+
 	if (GuiItemLayout_hasScrollH(self))
+	{
+		if (self->whiteScroll)
+			self->scrollH.cd = g_theme.white;
 		GuiScroll_drawH(&self->scrollH, Vec2i_init2(coord.start.x, coord.start.y + coord.size.y - GuiScroll_widthWin(win)), img, win);
+	}
+	if (GuiItemLayout_isTitle(self))
+	{
+		const int cell = OsWinIO_cellSize();
+		int textH = _GuiItem_textSize(1, cell);
+		OsFont* font = OsWinIO_getFontDefault();
 
-	if (self->drawBorder)
-		Image4_drawBorder(img, coord, self->drawBorderError ? 2 : 1, self->base.front_cd);
+		//border
+		{
+			Quad2i q = coord;
+			q.start.y += cell / 2;
+			q.size.y -= cell / 2;
+			Image4_drawBorder(img, q, 1, self->base.front_cd);
+		}
+
+		//text
+		int space = cell / 4;
+		Vec2i mid = Vec2i_init2(coord.start.x + coord.size.x / 2, coord.start.y + cell / 2);
+		Image4_drawTextBackground(img, mid, TRUE, font, DbValue_result(&self->title), textH, 0, self->base.front_cd, self->base.back_cd, space);
+
+		//border around text
+		{
+			int ex;
+			Vec2i ts = OsFont_getTextSize(font, DbValue_result(&self->title), textH, 0, &ex);
+			Quad2i q = Quad2i_initMid(mid, ts);
+			q = Quad2i_addSpace(q, -space);
+
+			q.start.y++;
+			Vec2i qe = Quad2i_end(q);
+			Image4_drawLine(img, q.start, Vec2i_init2(qe.x, q.start.y), 1, self->base.front_cd);	//top H
+			Image4_drawLine(img, Vec2i_init2(q.start.x, q.start.y - 1), Vec2i_init2(q.start.x, q.start.y + q.size.y / 2), 1, self->base.front_cd);	//left V
+			Image4_drawLine(img, Vec2i_init2(qe.x, q.start.y), Vec2i_init2(qe.x, q.start.y + q.size.y / 2), 1, self->base.front_cd);	//right V
+		}
+	}
+	else
+		if (self->drawBorder)
+			Image4_drawBorder(img, coord, self->drawBorderError ? 2 : 1, self->base.front_cd);
 }
-
-void GuiItem_resize(GuiItem* self, GuiItemLayout* layout, Win* win);
 
 void GuiItemLayout_update(GuiItemLayout* self, Quad2i coord, Win* win)
 {
@@ -372,6 +467,8 @@ void GuiItemLayout_update(GuiItemLayout* self, Quad2i coord, Win* win)
 		GuiItem_setRedraw(&self->base, GuiScroll_getRedrawAndReset(&self->scrollV));
 	if (GuiItemLayout_hasScrollH(self))
 		GuiItem_setRedraw(&self->base, GuiScroll_getRedrawAndReset(&self->scrollH));
+
+	GuiItem_setRedraw(&self->base, DbValue_hasChanged(&self->title));
 }
 
 void GuiItemLayout_touch(GuiItemLayout* self, Quad2i coord, Win* win)
@@ -382,14 +479,14 @@ void GuiItemLayout_touch(GuiItemLayout* self, Quad2i coord, Win* win)
 	if (self->drawBorderError)
 		front_cd = g_theme.warning;
 
-	if (self->drawBackgroundAlternative)
-		back_cd = Rgba_aprox(g_theme.background, g_theme.main, 0.2f);
-
-	if (self->drawBackgroundAlternativeBold)
-		back_cd = g_theme.select;
+	if (self->drawBackgroundMain)
+		back_cd = g_theme.main;
 
 	if (self->drawBackgroundWhite)
 		back_cd = GuiItemTheme_getWhite_Background();
+
+	if (self->drawBackgroundBlack)
+		back_cd = g_theme.black;
 
 	if (self->drawBackgroundError)
 		back_cd = g_theme.warning;
@@ -429,21 +526,6 @@ void GuiItemLayout_touch(GuiItemLayout* self, Quad2i coord, Win* win)
 	}
 
 	_GuiItem_updateFinalCd(&self->base, back_cd, front_cd, coord, win);
-}
-
-void GuiItemLayout_setCopyBackground(GuiItem* self, const GuiItemLayout* orig)
-{
-	if (self->type == GuiItem_LAYOUT)
-	{
-		GuiItemLayout* lay = (GuiItemLayout*)self;
-		lay->drawBackground = orig->drawBackground;
-		lay->drawBackgroundAlternativeBold = orig->drawBackgroundAlternativeBold;
-		lay->drawBackgroundAlternative = orig->drawBackgroundAlternative;
-	}
-
-	BIG i;
-	for (i = 0; i < GuiItem_numSub(self); i++)
-		GuiItemLayout_setCopyBackground(GuiItem_getSub(self, i), orig);
 }
 
 GuiItemLayout* GuiItemLayout_resize(GuiItemLayout* self, GuiItemLayout* layout, Win* win)

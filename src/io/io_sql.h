@@ -4,18 +4,17 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
  * Public License.
  */
 
-BOOL IOSql_write(const char* path, DbRows* rows, DbValues* columns, volatile StdProgress* progress)
+BOOL IOSql_write(const char* path, DbRows* rows, DbValues* columns)
 {
 	BOOL ok = FALSE;
 
-	progress->done = 0;
 	const double maxRows = DbRows_getSize(rows);
 
 	char* folderPath;
@@ -109,7 +108,7 @@ BOOL IOSql_write(const char* path, DbRows* rows, DbValues* columns, volatile Std
 								if (DbValue_isTypeFile(column))
 								{
 									OsFile_writeUNI(&f, _UNI32("`"));
-									DbValue_exportFile(column, &f, 0, progress);
+									DbValue_exportFile(column, &f, 0);
 									OsFile_writeUNI(&f, _UNI32("`"));
 								}
 
@@ -119,7 +118,7 @@ BOOL IOSql_write(const char* path, DbRows* rows, DbValues* columns, volatile Std
 
 			fprintf(f.m_file, ");\n");
 
-			progress->done = r / maxRows;
+			StdProgress_setEx("EXPORTING", r, maxRows);
 		}
 
 		Std_deleteCHAR(tableName);

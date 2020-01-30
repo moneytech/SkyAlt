@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -30,8 +30,9 @@ typedef struct GuiItemText_s
 	BOOL drawBorder;
 
 	BOOL drawWhiteBack;
-
 	BOOL drawBackground;
+	BOOL drawBackground_procentage_visualize;
+	BOOL drawBackground_procentage_visualize_mult100;
 
 	BOOL cursorNone;
 
@@ -61,11 +62,14 @@ GuiItem* GuiItemText_new(Quad2i grid, BOOL enableCentring, DbValue text, DbValue
 	self->drawBackground = TRUE;
 	self->drawBorder = FALSE;
 	self->drawWhiteBack = FALSE;
+	self->drawBackground_procentage_visualize = FALSE;
+	self->drawBackground_procentage_visualize_mult100 = FALSE;
 	self->enableSelect = TRUE;
 
 	self->formatURL = FALSE;
 	self->formatEmail = FALSE;
 
+	self->base.icon_draw_back = FALSE;
 	return (GuiItem*)self;
 }
 GuiItem* GuiItemText_newUnderline(Quad2i grid, BOOL enableCentring, DbValue text, DbValue description, BOOL formatURL, BOOL formatEmail)
@@ -109,6 +113,11 @@ const UNI* GuiItemText_getText(const GuiItemText* self)
 void GuiItemText_setText(GuiItemText* self, const UNI* str)
 {
 	DbValue_setTextCopy(&self->text, str);
+}
+
+void GuiItemText_setColorBorder(GuiItemText* self, Rgba colorBorder)
+{
+	self->colorBorder = colorBorder;
 }
 
 double GuiItemText_getNumber(const GuiItemText* self)
@@ -156,8 +165,14 @@ void GuiItemText_draw(GuiItemText* self, Image4* img, Quad2i coord, Win* win)
 	BOOL isColored = !Rgba_isBlack(&self->colorBorder);
 	BOOL drawBorder = (num_lines > 1 || isColored || self->drawBorder);
 
+	if (!self->base.drawTable)
+		coord = Quad2i_addSpace(coord, 3);
+
 	if ((self->drawBackground || self->stayPressed) && (self->stayPressed || self->base.drawTable || self->drawWhiteBack))
-		Image4_drawBoxQuad(img, self->drawWhiteBack ? Quad2i_addSpace(coord, 2)  : coord, self->base.back_cd);
+		Image4_drawBoxQuad(img, self->drawWhiteBack ? Quad2i_addSpace(coord, 2) : coord, self->base.back_cd);
+
+	if (self->drawBackground_procentage_visualize)
+		GuiItemEdit_drawBackgroundVisualize(img, coord, v, self->drawBackground_procentage_visualize_mult100, Rgba_aprox(self->base.back_cd, g_theme.main, 0.5f));
 
 	if (drawBorder)
 	{
@@ -165,7 +180,7 @@ void GuiItemText_draw(GuiItemText* self, Image4* img, Quad2i coord, Win* win)
 
 		const int FAT = Rgba_isBlack(&self->colorBorder) ? 1 : 2;
 
-		if (self->drawBorder)
+		//if (self->drawBorder)
 		{
 			if (self->doubleBorder)
 			{
@@ -192,8 +207,8 @@ void GuiItemText_draw(GuiItemText* self, Image4* img, Quad2i coord, Win* win)
 	BOOL centerDesc = self->enableCentring ? OsFont_getTextSize(font, DbValue_result(&self->description), textH, 0, &extra_down).x < (size.x - textH) : FALSE;
 
 	Vec2i posDesc, posText;
-	posDesc.x = centerDesc ? size.x / 2 : (self->enableCentring ? textH / 2 : 0);
-	posText.x = centerText ? size.x / 2 : (self->enableCentring ? textH / 2 : 0);
+	posDesc.x = centerDesc ? size.x / 2 : textH / 2;
+	posText.x = centerText ? size.x / 2 : textH / 2;
 	if (num_lines == 1)
 	{
 		posDesc.y = posText.y = size.y / 2;
@@ -204,7 +219,7 @@ void GuiItemText_draw(GuiItemText* self, Image4* img, Quad2i coord, Win* win)
 		posText.y = size.y * 3 / 4;
 	}
 
-	Vec2i start = Vec2i_add(coord.start, Vec2i_init2(OsWinIO_shadows(), OsWinIO_shadows()));
+	Vec2i start = coord.start;//Vec2i_add(coord.start, Vec2i_init2(OsWinIO_shadows(), OsWinIO_shadows()));
 
 	if (num_lines == 2)
 		Image4_drawText(img, Vec2i_add(posDesc, start), centerDesc, font, DbValue_result(&self->description), textH, 0, self->base.front_cd);		//description
@@ -248,11 +263,7 @@ void GuiItemText_touch(GuiItemText* self, Quad2i coord, Win* win)
 		front_cd = g_theme.warning;	//blue ...
 
 	if (self->stayPressed)
-	{
-		Rgba tcd = back_cd;
-		back_cd = front_cd;
-		front_cd = tcd;
-	}
+		back_cd = Rgba_aprox(g_theme.background, g_theme.main, 0.5f);
 
 	if (self->enableSelect && self->base.touch && GuiItem_isEnable(&self->base) && OsWinIO_canActiveRenderItem(self))
 	{
@@ -280,7 +291,7 @@ void GuiItemText_touch(GuiItemText* self, Quad2i coord, Win* win)
 
 			GuiItem_callClick(&self->base);
 
-			GuiItem_clickUnderline(&self->text, self->formatURL, self->formatEmail);
+			GuiItem_clickUnderline(&self->base, &self->text, self->formatURL, self->formatEmail);
 		}
 
 		if (endTouch)

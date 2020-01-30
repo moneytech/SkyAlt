@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -94,29 +94,34 @@ void GuiImage_delete(GuiImage* self)
 	}
 }
 
+Vec2i GuiImage_getSize(const GuiImage* self)
+{
+	return Vec2i_max(self->imgResize1.size, self->imgResize4.size);
+}
+
 void GuiImage_draw(GuiImage* self, Image4* img, Quad2i coord, Rgba cd)
 {
-	Vec2i size1 = Vec2i_subRatio(coord.size, self->imgOrig1.size);
-	Vec2i size4 = Vec2i_subRatio(coord.size, self->imgOrig4.size);
+	//Vec2i size1 = Vec2i_subRatio(coord.size, self->imgOrig1.size);
+	//Vec2i size4 = Vec2i_subRatio(coord.size, self->imgOrig4.size);
 
-	if (self->channels == 1 && Vec2i_cmp(self->imgResize1.size, size1))
+	if (self->channels == 1)// && Vec2i_cmp(self->imgResize1.size, size1))
 	{
 		Image4_copyImage1(img, Quad2i_getSubStart(coord, self->imgResize1.size), cd, &self->imgResize1);
 	}
 	else
-		if (self->channels == 4 && Vec2i_cmp(self->imgResize4.size, size4))
+		if (self->channels == 4)// && Vec2i_cmp(self->imgResize4.size, size4))
 		{
 			Image4_copyImage4(img, Quad2i_getSubStart(coord, self->imgResize4.size), &self->imgResize4);
 		}
 }
 
-BOOL GuiImage_update(GuiImage* self, Quad2i coord)
+BOOL GuiImage_update(GuiImage* self, Vec2i sz)
 {
 	BOOL changed = FALSE;
 
 	if (self->channels == 1)
 	{
-		Vec2i size = Vec2i_subRatio(coord.size, self->imgOrig1.size);
+		Vec2i size = Vec2i_subRatio(sz, self->imgOrig1.size);
 		if (!Vec2i_cmp(size, self->imgResize1.size))
 		{
 			Image1_resize(&self->imgResize1, size);
@@ -128,7 +133,7 @@ BOOL GuiImage_update(GuiImage* self, Quad2i coord)
 	else
 		if (self->channels == 4)
 		{
-			Vec2i size = Vec2i_subRatio(coord.size, self->imgOrig4.size);
+			Vec2i size = Vec2i_subRatio(sz, self->imgOrig4.size);
 			if (!Vec2i_cmp(size, self->imgResize4.size))
 			{
 				Image4_resize(&self->imgResize4, size);
@@ -140,5 +145,3 @@ BOOL GuiImage_update(GuiImage* self, Quad2i coord)
 
 	return changed;
 }
-
-

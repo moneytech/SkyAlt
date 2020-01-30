@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -16,6 +16,8 @@ typedef enum
 	UiDialogSave_NONE,
 	UiDialogSave_NEW,
 	UiDialogSave_OPEN,
+	UiDialogSave_OPEN_EXAMPLE,
+	UiDialogSave_OPEN_RELOAD,
 	UiDialogSave_CLOSE,
 }UiDialogSaveTYPE;
 
@@ -28,12 +30,26 @@ void UiDialogSave_clickNotSave(GuiItem* item)
 	{
 		case UiDialogSave_NONE:
 		break;
+
 		case UiDialogSave_NEW:
+		UiScreen_setWelcome();
 		GuiItemRoot_addDialogLayout(UiDialogCreate_new());
 		break;
+
 		case UiDialogSave_OPEN:
+		UiScreen_setWelcome();
 		GuiItemRoot_addDialogLayout(UiDialogOpen_new(0));
 		break;
+
+		case UiDialogSave_OPEN_EXAMPLE:
+		UiScreen_setWelcome();
+		GuiItemRoot_addDialogLayout(UiDialogOpenExamples_new(0));
+		break;
+
+		case UiDialogSave_OPEN_RELOAD:
+		UiScreen_reloadProject();
+		break;
+
 		case UiDialogSave_CLOSE:
 		UiScreen_closeHard();
 		break;

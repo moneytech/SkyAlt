@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -93,13 +93,16 @@ void FileCache_clear(void)
 
 void FileCache_delete(void)
 {
-	UBIG oldN = g_FileCache->num_blocks;
-	FileCache_clear();
-	Os_free(g_FileCache->blocks, oldN * sizeof(void*));
+	if (g_FileCache)
+	{
+		UBIG oldN = g_FileCache->num_blocks;
+		FileCache_clear();
+		Os_free(g_FileCache->blocks, oldN * sizeof(void*));
 
-	OsLock_free(&g_FileCache->lock);
-	Os_free(g_FileCache, sizeof(FileCache));
-	g_FileCache = 0;
+		OsLock_free(&g_FileCache->lock);
+		Os_free(g_FileCache, sizeof(FileCache));
+		g_FileCache = 0;
+	}
 }
 
 BOOL FileCache_new(void)

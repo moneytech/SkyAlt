@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -18,6 +18,7 @@ typedef enum
 	GuiItemButton_WHITE,
 	GuiItemButton_ALPHA,
 	GuiItemButton_IMAGE,
+	GuiItemButton_COLOR,
 }GuiItemButton_TYPE;
 
 typedef struct GuiItemButton_s
@@ -31,7 +32,6 @@ typedef struct GuiItemButton_s
 	BOOL stayPressed;
 	BOOL stayPressedLeft;
 	BOOL stayPressedRight;
-	BOOL selectMode;
 
 	BOOL circle;
 	GuiItemButton_TYPE type;
@@ -39,7 +39,9 @@ typedef struct GuiItemButton_s
 	BOOL textCenter;
 
 	GuiImage* image;
-	int imageSpace;
+	BOOL imageIcon;
+
+	BOOL useBackCd;
 	Rgba back_cd;
 } GuiItemButton;
 
@@ -56,15 +58,16 @@ GuiItem* GuiItemButton_new(Quad2i grid, DbValue text)
 	self->stayPressedLeft = FALSE;
 	self->stayPressedRight = FALSE;
 
-	self->selectMode = FALSE;
-
 	self->circle = FALSE;
 	self->type = GuiItemButton_ALPHA;
 
 	self->textCenter = TRUE;
 
 	self->image = 0;
-	self->imageSpace = 0;
+	//self->imageSpace = 0;
+
+	self->useBackCd = FALSE;
+	self->back_cd = g_theme.main;
 
 	return(GuiItem*)self;
 }
@@ -118,11 +121,22 @@ GuiItem* GuiItemButton_newWhiteEx(Quad2i grid, DbValue text, GuiItemCallback* ca
 	return item;
 }
 
-GuiItem* GuiItemButton_newImage(Quad2i grid, GuiImage* image, GuiItemCallback* call)
+GuiItem* GuiItemButton_newImage(Quad2i grid, GuiImage* image, BOOL imageIcon, GuiItemCallback* call)
 {
 	GuiItem* item = GuiItemButton_new(grid, DbValue_initEmpty());
 	((GuiItemButton*)item)->type = GuiItemButton_IMAGE;
 	((GuiItemButton*)item)->image = image;
+	((GuiItemButton*)item)->imageIcon = imageIcon;
+
+	GuiItem_setCallClick(item, call);
+	return item;
+}
+
+GuiItem* GuiItemButton_newCd(Quad2i grid, Rgba cd, GuiItemCallback* call)
+{
+	GuiItem* item = GuiItemButton_new(grid, DbValue_initEmpty());
+	((GuiItemButton*)item)->type = GuiItemButton_COLOR;
+	((GuiItemButton*)item)->back_cd = cd;
 	GuiItem_setCallClick(item, call);
 	return item;
 }
@@ -154,6 +168,12 @@ void GuiItemButton_delete(GuiItemButton* self)
 	Os_free(self, sizeof(GuiItemButton));
 }
 
+void GuiItemButton_setWarningCd(GuiItemButton* self, BOOL active)
+{
+	self->useBackCd = active;
+	if (active)
+		self->back_cd = g_theme.warning;
+}
 
 void GuiItemButton_setDescription(GuiItemButton* self, DbValue description)
 {
@@ -161,14 +181,14 @@ void GuiItemButton_setDescription(GuiItemButton* self, DbValue description)
 	self->description = description;
 }
 
-Rgba GuiItemButton_getBackCd(const GuiItemButton* self)
-{
-	return self->back_cd;
-}
-
 DbValue GuiItemButton_getTextMsg(const GuiItemButton* self)
 {
 	return self->text;
+}
+
+const UNI* GuiItemButton_getText(const GuiItemButton* self)
+{
+	return DbValue_result(&self->text);
 }
 
 void GuiItemButton_setPressed(GuiItemButton* self, BOOL stayPressed)
@@ -190,13 +210,49 @@ void GuiItemButton_setPressedEx(GuiItemButton* self, BOOL stayPressed, BOOL stay
 	self->stayPressedRight = stayPressedRight;
 }
 
+static Quad2i _GuiItemButton_getImageCoord(const GuiItemButton* self, Quad2i coord)
+{
+	if (self->imageIcon)
+	{
+		Quad2i backup = coord;
+		coord = GuiItem_getIconCoord(&coord);
+
+		if (self->textCenter)
+			coord = Quad2i_initMid(Quad2i_getMiddle(backup), coord.size);
+	}
+	return coord;
+}
+
+Quad2i GuiItemButton_getCoordSpace(GuiItemButton* self, Quad2i coord)
+{
+	return Quad2i_addSpace(coord, 3);
+}
+
+void GuiItemButton_drawPress(Image4* img, Rgba cd, Quad2i coord, BOOL left, BOOL right)
+{
+	const int border_size = 4;
+	if (left)
+	{
+		Quad2i q = coord;
+		q.size.x = border_size;
+		Image4_drawBoxQuad(img, q, cd);
+	}
+	if (right)
+	{
+		Quad2i q = coord;
+		q.start.x += q.size.x - border_size;
+		q.size.x = border_size;
+		Image4_drawBoxQuad(img, q, cd);
+	}
+}
+
 void GuiItemButton_draw(GuiItemButton* self, Image4* img, Quad2i coord, Win* win)
 {
 	Rgba back_cd = self->base.back_cd;
 	Rgba front_cd = self->base.front_cd;
 
 	Quad2i origCoord = coord;
-	coord = Quad2i_addSpace(coord, 3);
+	coord = GuiItemButton_getCoordSpace(self, coord);
 
 	if (self->base.drawTable)
 		Image4_drawBoxQuad(img, origCoord, g_theme.white);
@@ -212,16 +268,11 @@ void GuiItemButton_draw(GuiItemButton* self, Image4* img, Quad2i coord, Win* win
 		if (self->type == GuiItemButton_IMAGE)
 		{
 			if (self->image)
-				GuiImage_draw(self->image, img, Quad2i_addSpace(coord, self->imageSpace), back_cd);
+				GuiImage_draw(self->image, img, _GuiItemButton_getImageCoord(self, coord), back_cd);
 		}
 		else
 			Image4_drawBoxQuad(img, coord, back_cd);
 	}
-
-
-	
-
-
 
 	//if (Std_sizeUNI(DbValue_result(&self->text)))
 	{
@@ -268,20 +319,7 @@ void GuiItemButton_draw(GuiItemButton* self, Image4* img, Quad2i coord, Win* win
 
 	if (self->stayPressed)
 	{
-		const int border_size = 4;
-		if (self->stayPressedLeft)
-		{
-			Quad2i q = coord;
-			q.size.x = border_size;
-			Image4_drawBoxQuad(img, q, front_cd);
-		}
-		if (self->stayPressedRight)
-		{
-			Quad2i q = coord;
-			q.start.x += q.size.x - border_size;
-			q.size.x = border_size;
-			Image4_drawBoxQuad(img, q, front_cd);
-		}
+		GuiItemButton_drawPress(img, self->base.front_cd, coord, (self->stayPressedLeft && !self->base.icon), self->stayPressedRight);
 	}
 
 	if (self->base.drawTable)
@@ -293,19 +331,19 @@ void GuiItemButton_draw(GuiItemButton* self, Image4* img, Quad2i coord, Win* win
 		Image4_drawBorder(img, q, 1, Rgba_aprox(g_theme.background, g_theme.black, 0.5f));
 	}
 	else
-	if (self->type == GuiItemButton_WHITE)
-		Image4_drawBorder(img, coord, 1, self->base.front_cd);
+		if (self->type == GuiItemButton_WHITE)
+			Image4_drawBorder(img, coord, 1, self->base.front_cd);
 }
 
 void GuiItemButton_update(GuiItemButton* self, Quad2i coord, Win* win)
 {
-	coord = Quad2i_addSpace(coord, 3);
+	coord = GuiItemButton_getCoordSpace(self, coord);
 
 	BOOL changed = FALSE;
 	if (self->image)
-		changed |= GuiImage_update(self->image, Quad2i_addSpace(coord, self->imageSpace));
+		changed |= GuiImage_update(self->image, _GuiItemButton_getImageCoord(self, coord).size);
 
-	GuiItem_setRedraw(&self->base, (changed || DbValue_hasChanged(&self->text) || DbValue_hasChanged(&self->description)));// || old_pressed != self->stayPressed));
+	GuiItem_setRedraw(&self->base, (changed || DbValue_hasChanged(&self->text) || DbValue_hasChanged(&self->description)));
 }
 
 void GuiItemButton_touch(GuiItemButton* self, Quad2i coord, Win* win)
@@ -319,41 +357,44 @@ void GuiItemButton_touch(GuiItemButton* self, Quad2i coord, Win* win)
 		front_cd = (self->base.shortKey_extra & Win_EXTRAKEY_ENTER) ? g_theme.black : g_theme.white;
 	}
 	else
-		if (self->type == GuiItemButton_IMAGE)
+		if (self->type == GuiItemButton_COLOR)
 		{
-			back_cd = g_theme.black;
+			back_cd = self->back_cd;
 			front_cd = g_theme.white;
 		}
 		else
-			if (self->type == GuiItemButton_BLACK)
+			if (self->type == GuiItemButton_IMAGE)
 			{
 				back_cd = g_theme.black;
 				front_cd = g_theme.white;
 			}
 			else
-				if (self->type == GuiItemButton_WHITE)
+				if (self->type == GuiItemButton_BLACK)
 				{
-					back_cd = g_theme.white;
-					front_cd = g_theme.black;
+					back_cd = g_theme.black;
+					front_cd = g_theme.white;
 				}
-			else
-				if (self->type == GuiItemButton_ALPHA)
-				{
-					if (self->stayPressed)
+				else
+					if (self->type == GuiItemButton_WHITE)
+					{
+						back_cd = g_theme.white;
 						front_cd = g_theme.black;
+					}
+					else
+						if (self->type == GuiItemButton_ALPHA)
+						{
+							if (self->stayPressed)
+								front_cd = g_theme.black;
 
-					back_cd = self->stayPressed ? g_theme.main : g_theme.background;
-					front_cd = g_theme.black;
-				}
+							back_cd = self->stayPressed ? g_theme.main : g_theme.background;
+							front_cd = g_theme.black;
+						}
 
 	if (self->base.drawTable)
 		back_cd = g_theme.white;
 
-	if (GuiItem_isEnable(&self->base) && self->selectMode)
-	{
-		back_cd = g_theme.selectFormula;
-		front_cd = g_theme.black;
-	}
+	if (self->useBackCd)
+		back_cd = self->back_cd;
 
 	if (self->base.touch && GuiItem_isEnable(&self->base) && OsWinIO_canActiveRenderItem(self))
 	{
@@ -366,14 +407,18 @@ void GuiItemButton_touch(GuiItemButton* self, Quad2i coord, Win* win)
 
 		if (inside && touch) //full touch
 		{
-			back_cd = g_theme.main;
-			front_cd = g_theme.black;
+			if (self->type != GuiItemButton_COLOR)
+			{
+				back_cd = g_theme.main;
+				front_cd = g_theme.black;
+			}
 			OsWinIO_setActiveRenderItem(self);
 		}
 		else
 			if ((inside && !touch) || (active && !inside)) //mid color
 			{
-				back_cd = Rgba_aprox(g_theme.main, g_theme.white, 0.5f);
+				if (self->type != GuiItemButton_COLOR)
+					back_cd = Rgba_aprox(g_theme.main, g_theme.white, 0.5f);
 			}
 
 		if (inside && active && endTouch) //end

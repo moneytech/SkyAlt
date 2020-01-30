@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -33,6 +33,9 @@ const DbColumnFormat g_column_formats[] = {
 	{ DbFormat_TAGS, DbColumn_N, "COLUMN_TAGS", "tags" },
 	{ DbFormat_LINK_1, DbColumn_1, "COLUMN_LINK_1", "link" },
 	{ DbFormat_LINK_N, DbColumn_N, "COLUMN_LINK_N", "link" },
+	{ DbFormat_LINK_MIRRORED, DbColumn_N, "COLUMN_LINK_MIRRORED", "link_mirror" },
+	{ DbFormat_LINK_JOINTED, DbColumn_N, "COLUMN_LINK_JOINTED", "link_gener" },
+	{ DbFormat_LINK_FILTERED, DbColumn_N, "COLUMN_LINK_FILTERED", "link_filter" },
 
 	{ DbFormat_FILE_1, DbColumn_1, "COLUMN_FILE_1", "file" },
 	{ DbFormat_FILE_N, DbColumn_N, "COLUMN_FILE_N", "file" },
@@ -44,6 +47,8 @@ const DbColumnFormat g_column_formats[] = {
 	{ DbFormat_LOCATION, DbColumn_STRING_32, "COLUMN_LOCATION", "location" },
 
 	{ DbFormat_DATE, DbColumn_1, "COLUMN_DATE", "date" },
+
+	{ DbFormat_SUMMARY, DbColumn_1, "COLUMN_SUMMARY", "summary" },
 };
 
 static UBIG _DbColumnFormat_numAll(void)

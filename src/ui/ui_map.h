@@ -4,217 +4,267 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
  * Public License.
  */
 
-
-
-
-void UiRootMap_clickRebuild(GuiItem* item)
+BOOL UiRootMapPanel_isShowPanel(BIG row)
 {
-	//resize/redraw only this ...
-	//GuiItemRoot_resizeAll();
+	return DbValue_getOptionNumber(row, "panel_settings_enable", 1);
 }
 
-
-
-
-void UiRootMap_clickPointsFocus(GuiItem* item)
+void UiRootMapPanel_setShowPanel(BIG row, BOOL show)
 {
-	GuiItemMap* map = GuiItem_findName(item, "map");
-	if(map)
+	DbValue_setOptionNumber(row, "panel_settings_enable", show);
+}
+
+void UiRootMapPanel_clickShowPanel(GuiItem* item)
+{
+	BIG row = GuiItem_findAttribute(item, "row");
+	UiRootMapPanel_setShowPanel(row, !UiRootMapPanel_isShowPanel(row));
+
+	//QFilter disable
+	UiRootQuickFilter_setShowPanel(row, FALSE);
+}
+
+BOOL GuiItem_enableColor(GuiItem* item)
+{
+	BIG row = GuiItem_findAttribute(item, "row");
+
+	//DbRows rws = DbRows_initRefLink(row, "color");
+	//DbColumn* columnCd = DbRoot_findColumn(DbRows_getRow(&rws, 0));
+	//DbRows_free(&rws);
+	DbColumn* columnCd = DbRoot_ref_column(DbRows_findOrCreateSubType(row, "color"));
+
+	return columnCd != 0;
+}
+
+static double UiRootMapPanel_getWidth(UBIG row)
+{
+	return DbValue_getOptionNumber(row, "panel_settings_width", 10);
+}
+
+GuiItem* UiRootMapPanel_buildButton(Quad2i grid, UBIG row)
+{
+	GuiItemButton* button = (GuiItemButton*)GuiItemButton_newAlphaEx(grid, DbValue_initLang("PROPERTIES"), &UiRootMapPanel_clickShowPanel);
+	GuiItemButton_setPressed(button, UiRootMapPanel_isShowPanel(row));
+	GuiItem_setAttribute((GuiItem*)button, "row", row);
+
+	return (GuiItem*)button;
+}
+
+GuiItemLayout* UiRootMapPanel_build(Quad2i grid, UBIG row, DbRows* filter, DbValue scroll)
+{
+	GuiItemLayout* layout = 0;
+
+	DbTable* table = DbRoot_findParentTable(row);
+
+	//BIG rowXRow = DbRows_findOrCreateSubType(row, "row_x");
+	//BIG titleXRow = DbRows_findOrCreateSubType(row, "title_x");
+
+	//selection panel
+	if (UiRootMapPanel_isShowPanel(row))
 	{
-		GuiItemMap_refocus(map);
-	}	
-}
+		layout = GuiItemLayout_new(grid);
+		GuiItemLayout_setScrollV(layout, scroll);
+		//GuiItemLayout_setDrawBackground(layout, TRUE);
+		GuiItemLayout_setBackgroundWhite(layout, TRUE);
+		//GuiItemLayout_setDrawBorder(layout, TRUE);
+		GuiItemLayout_addColumn(layout, 0, 99);
+		//GuiItemLayout_addRow(layout, 2, 99);
+		GuiItem_setChangeSize((GuiItem*)layout, TRUE, DbValue_initOption(row, "panel_settings_width", 0), TRUE);
+		GuiItem_setAttribute((GuiItem*)layout, "row", row);
 
+		//type
+		{
+			GuiItemLayout* layoutType = GuiItemLayout_newTitle(Quad2i_init4(0, 0, 1, 3), DbValue_initLang("MAP_TYPE"));
+			GuiItemLayout_addColumn(layoutType, 0, 20);
+			GuiItemLayout_addColumn(layoutType, 1, 20);
 
-void UiRootMap_clickColumnList(GuiItem* item)
-{
-	GuiItemComboDynamic* cb = (GuiItemComboDynamic*)item;
-	DbTable* table = GuiItemComboDynamic_getExtraTable(cb);
-	
-	GuiItemComboDynamic_setOptionsLinks(cb, GuiDbID_newArray(DbRoot_getTableInfo(), DbRoot_getColumnLinks(table)));
-}
+			GuiItemComboStatic* render = (GuiItemComboStatic*)GuiItem_addSubName((GuiItem*)layoutType, "render", GuiItemComboStatic_new(Quad2i_init4(0, 1, 1, 2), DbValue_initOption(row, "map_render", 0), 0, DbValue_initLang("MAP_RENDER")));
+			GuiItemComboStatic_addItemIcon(render, GuiImage_new1(UiIcons_init_map_icon()), DbValue_initLang("MAP_RENDER_ICON"));
+			GuiItemComboStatic_addItemIcon(render, GuiImage_new1(UiIcons_init_map_circle()), DbValue_initLang("MAP_RENDER_CIRCLE"));
+			GuiItemComboStatic_addItemIcon(render, GuiImage_new1(UiIcons_init_map_area()), DbValue_initLang("MAP_RENDER_AREA"));
 
+			GuiItemComboStatic* type = (GuiItemComboStatic*)GuiItem_addSubName((GuiItem*)layoutType, "type", GuiItemComboStatic_new(Quad2i_init4(1, 1, 1, 2), DbValue_initOption(row, "map_type", 0), 0, DbValue_initLang("MAP_TILE")));
+			GuiItemComboStatic_addItem(type, DbValue_initLang("MAP_TILE_STANDARD"));
 
+			GuiItem_addSubName((GuiItem*)layout, "layoutType", (GuiItem*)layoutType);
+		}
 
-static GuiItemLayout* _UiRootMap_buildTitlesList(UBIG row)
-{
-	AppGui* appGui = App_getGui();
-	DbTable* table = AppGui_getTable(appGui, row);
+		//address column
+		{
+			GuiItemLayout* layoutAddr = GuiItemLayout_newTitle(Quad2i_init4(0, 4, 1, 2), DbValue_initLang("MAP_LOCATION"));
+			GuiItemLayout_addColumn(layoutAddr, 0, 20);
 
+			GuiItem_addSubName((GuiItem*)layoutAddr, "location", GuiItemComboDynamic_new(Quad2i_init4(0, 1, 1, 1), TRUE, DbRows_initRefLink(row, "location"), DbValue_initOption(-1, "name", 0), DbRows_initSubs(table, "columns", FALSE), DbValue_initEmpty()));
 
-	UBIG propRow = AppGui_getPropTitles(appGui, row);
+			GuiItem_addSubName((GuiItem*)layout, "layoutAddr", (GuiItem*)layoutAddr);
+		}
 
-	GuiItemLayout* layout = GuiItemLayout_new(Quad2i_init());
-	GuiItemLayout_addColumn(layout, 0, 10);
-	GuiItemLayout_addRow(layout, 2, 10);	//list
+		//labels
+		{
+			GuiItemLayout* layoutLabels = GuiItemLayout_newTitle(Quad2i_init4(0, 7, 1, 7), DbValue_initLang("MAP_LABELS"));
+			GuiItemLayout_addColumn(layoutLabels, 0, 20);
 
+			//GuiItem_addSubName((GuiItem*)layoutLabels, "label_location", GuiItemCheck_new(Quad2i_init4(0, 1, 1, 1), DbValue_initOption(row, "label_location", _UNI32("1")), DbValue_initLang("MAP_LABEL_LOCATION")));
 
-	//enable all
-	GuiItem_addSub((GuiItem*)layout, GuiItemCheck_new(Quad2i_init4(0, 0, 1, 1), AppGui_connectEnable(appGui, propRow), DbValue_initLang(GUI_ENABLE)));
+			GuiItemLayout* colLayout = UiRootTable_buildShortingList(row, "label_columns", "LABELS_ENABLE", FALSE, FALSE, DbRows_initEmpty(), FALSE);
+			GuiItem_setGrid((GuiItem*)colLayout, Quad2i_init4(0, 1, 1, 5));
+			GuiItem_addSubName((GuiItem*)layoutLabels, "columnsLayout", (GuiItem*)colLayout);
 
+			GuiItem_addSubName((GuiItem*)layoutLabels, "label_center", GuiItemCheck_new(Quad2i_init4(0, 6, 1, 1), DbValue_initOption(row, "label_center", _UNI32("1")), DbValue_initLang("MAP_LABEL_CENTER")));
 
-	//add
-	GuiItemButton* add = (GuiItemButton*)GuiItem_addSub((GuiItem*)layout, GuiItemButton_newClassicEx(Quad2i_init4(0, 1, 1, 1), DbValue_initStaticCopy(_UNI32("+")), &UiRoot_clickAddSubLine));
-	GuiItem_setAttribute((GuiItem*)add, "row", propRow);
+			GuiItem_addSubName((GuiItem*)layout, "layoutLabels", (GuiItem*)layoutLabels);
+		}
 
-	//skin for list
-	GuiItemLayout* skin = GuiItemLayout_new(Quad2i_init4(0, 0, 1, 1));
-	GuiItemLayout_addColumn(skin, 2, 10);
-	//GuiItemLayout_addColumn(skin, 3, 10);
+		//colors
+		{
+			GuiItemLayout* layoutColor = GuiItemLayout_newTitle(Quad2i_init4(0, 15, 1, 3), DbValue_initLang("MAP_COLORS"));
+			GuiItemLayout_addColumn(layoutColor, 0, 20);
+			GuiItemLayout_addColumn(layoutColor, 2, 20);
 
-	GuiItem* drag = GuiItem_addSub((GuiItem*)skin, GuiItemBox_newEmpty(Quad2i_init4(0, 0, 1, 1)));
-	GuiItem_setIcon(drag, GuiImage_new1(UiIcons_init_reoder()));
-	GuiItem_setDrop(drag, "title", "title", FALSE, AppGui_connectLinkSub(appGui, propRow), -1);
+			GuiItem_addSubName((GuiItem*)layoutColor, "cd1", (GuiItem*)GuiItemColor_new(Quad2i_init4(0, 1, 1, 2), DbRows_getSubOption(row, "color", "cd1", 0), FALSE));
 
-	GuiItem_addSub((GuiItem*)skin, GuiItemCheck_new(Quad2i_init4(1, 0, 1, 1), AppGui_connectEnable(appGui, -1), DbValue_initEmpty()));
+			GuiItem_addSubName((GuiItem*)layoutColor, "cd_arrow", (GuiItem*)GuiItemText_new(Quad2i_init4(1, 1, 1, 2), TRUE, DbValue_initStaticCopyCHAR("->"), DbValue_initEmpty()));
 
-	GuiItemComboDynamic* cbb = (GuiItemComboDynamic*)GuiItem_addSub((GuiItem*)skin, GuiItemComboDynamic_new(Quad2i_init4(2, 0, 1, 1), FALSE, AppGui_connectLinkTable(appGui, -1), DbValue_initGET((DbColumn*)DbRoot_getColumnInfoName(), -1), GuiDbID_newEmpty(), DbValue_initEmpty()));
-	GuiItemComboDynamic_setOpenCall(cbb, &UiRoot_clickColumnList);
-	GuiItemComboDynamic_setExtraInfo(cbb, table, propRow);
-	//GuiItem* order = GuiItem_addSub((GuiItem*)skin, GuiItemComboStatic_new(Quad2i_init4(3, 0, 1, 1), AppGui_connectAscending(appGui, -1), DbValue_initStatic(Lang_getColumnOrder()), DbValue_initEmpty()));
+			GuiItem_addSubName((GuiItem*)layoutColor, "column", GuiItemComboDynamic_new(Quad2i_init4(2, 1, 1, 1), FALSE, DbRows_initRefLink(row, "color"), DbValue_initOption(-1, "name", 0), DbRows_initSubsEx(table, "columns", FALSE, TRUE, FALSE, FALSE), DbValue_initEmpty()));
+			GuiItem* cd2 = GuiItem_addSubName((GuiItem*)layoutColor, "cd2", (GuiItem*)GuiItemColor_new(Quad2i_init4(2, 2, 1, 1), DbRows_getSubOption(row, "color", "cd2", 0), FALSE));
+			GuiItem_setEnableCallback(cd2, &GuiItem_enableColor);
 
-	GuiItem_setEnableMsg((GuiItem*)cbb, AppGui_connectEnable(appGui, -1), FALSE);
-	//GuiItem_setEnableMsg(order, AppGui_connectEnable(appGui, -1), FALSE);
+			GuiItem_addSubName((GuiItem*)layout, "layoutColor", (GuiItem*)layoutColor);
+		}
 
+		//radius
+		{
+			GuiItemLayout* layoutRadius = GuiItemLayout_newTitle(Quad2i_init4(0, 19, 1, 3), DbValue_initLang("MAP_RADIUS"));
+			GuiItemLayout_addColumn(layoutRadius, 0, 20);
+			GuiItemLayout_addColumn(layoutRadius, 1, 20);
 
-	//list
-	GuiItemList* list = (GuiItemList*)GuiItem_addSub((GuiItem*)layout, GuiItemList_new(Quad2i_init4(0, 2, 1, 1), AppGui_connectLinkSub(appGui, propRow), (GuiItem*)skin, DbValue_initEmpty(), DbValue_initEmpty()));
-	GuiItemList_setShowRemove(list, TRUE);
-	GuiItemList_setShowBorder(list, FALSE);
-	GuiItem_setCallClick((GuiItem*)list, &UiRootTable_clickRebuild);	//nová položka v shorting list
+			DbValue multV = DbRows_getSubOption(row, "radius", "multiplier", 0);
+			multV.staticPost = Std_newUNI_char("x");
+			GuiItem_addSubName((GuiItem*)layoutRadius, "radius_mult", GuiItemEdit_new(Quad2i_init4(0, 1, 1, 2), multV, DbValue_initLang("MAP_RADIUS_MULT")));
+			GuiItem_addSubName((GuiItem*)layoutRadius, "radius", GuiItemComboDynamic_new(Quad2i_init4(1, 1, 1, 2), FALSE, DbRows_initRefLink(row, "radius"), DbValue_initOption(-1, "name", 0), DbRows_initSubs(table, "columns", FALSE), DbValue_initLang("COLUMN")));
 
-
-	GuiItem_setEnableMsg((GuiItem*)add, AppGui_connectEnable(appGui, propRow), FALSE);
-	GuiItem_setEnableMsg((GuiItem*)list, AppGui_connectEnable(appGui, propRow), FALSE);
-
+			GuiItem_addSubName((GuiItem*)layout, "layoutRadius", (GuiItem*)layoutRadius);
+		}
+	}
 
 	return layout;
 }
 
-
-
-static GuiItem* UiRootMap_build(GuiItemLayout* layout, UBIG row)
+void UiRootMap_clickFocusItems(GuiItem* item)
 {
-	AppGui* appGui = App_getGui();
-	
-	BIG parent = AppGui_getParent(appGui, row);
-	DbFilter* exeFilter = UiRoot_loadTableAndFilter(parent);
-	
+	GuiItemMap* map = GuiItem_findName(item, "map");
+	if (map)
+		GuiItemMap_focusItems(map);
+}
+void UiRootMap_clickFocusSearch(GuiItem* item)
+{
+	GuiItemMap* map = GuiItem_findName(item, "map");
+	if (map)
+		GuiItemMap_focusSearch(map);
+}
 
-	//AppGui_checkCopyPropTable(appGui, row, AppGui_getParent(appGui, row));	//for titles
-	
-	
-	DbTable* table = AppGui_getTable(appGui, AppGui_getParent(appGui, row));
-	
-	UBIG tableRow = DbTable_getRow(table);
-	
-	//GuiItemLayout* layout = GuiItemLayout_new(grid);
-	GuiItemLayout_addColumn(layout, 0, 99);
+static GuiItem* UiRootMap_build(GuiItemLayout* layout, UBIG row, DbValue cam_lat, DbValue cam_long, DbValue cam_zoom, DbValue search, DbValue qfilterScroll, DbValue propertiesScroll)
+{
+	BIG thisRow = row;
+	//if (DbRoot_isTypeViewReference(row))
+	//	row = DbRoot_getOrigReference(row);
+
+	if (UiRootQuickFilter_isShowPanel(row))
+		UiRootMapPanel_setShowPanel(row, FALSE);
+
+	const int width = UiRootQuickFilter_isShowPanel(row) ? UiRootQuickFilter_getWidth(row) : UiRootMapPanel_getWidth(row);
+
+	GuiItemLayout_addColumn(layout, 0, Std_max(2, width));
+	GuiItemLayout_addColumn(layout, 1, 99);
 	GuiItemLayout_addRow(layout, 1, 99);
 
-
-	UBIG propTitlesRow = AppGui_getPropTitles(appGui, row);
-
-	//BIG columnFirst = AppGui_addPropGroupColumnFirst(appGui, row);
-	
-	
-	//header
+	//top header
 	{
-	GuiItemLayout* layoutMenu = GuiItemLayout_new(Quad2i_init4(0, 0, 1, 1));
-	GuiItemLayout_addColumn(layoutMenu, 0, 6);
-	GuiItemLayout_addColumn(layoutMenu, 2, 6);
-	GuiItemLayout_addColumn(layoutMenu, 4, 6);
-	GuiItemLayout_addColumn(layoutMenu, 6, 6);
-	GuiItemLayout_addColumn(layoutMenu, 7, 99);	//space
-	GuiItemLayout_addColumn(layoutMenu, 8, 6);
-	GuiItem_addSub((GuiItem*)layout, (GuiItem*)layoutMenu);
+		GuiItemLayout* layoutMenu = GuiItemLayout_new(Quad2i_init4(0, 0, 2, 1));
+		GuiItemLayout_setDrawBackground(layoutMenu, FALSE);
+		GuiItemLayout_addColumn(layoutMenu, 0, 6);
+		GuiItemLayout_addColumn(layoutMenu, 2, 4);
+		GuiItemLayout_addColumn(layoutMenu, 4, 4);
+		GuiItemLayout_addColumn(layoutMenu, 5, 99);
+		GuiItemLayout_addColumn(layoutMenu, 6, 6);
+		GuiItem_addSubName((GuiItem*)layout, "header_top", (GuiItem*)layoutMenu);
 
-	//name
-	GuiItem* name = GuiItem_addSub((GuiItem*)layoutMenu, GuiItemEdit_newEx(Quad2i_init4(0, 0, 1, 1), AppGui_connectName(appGui, row), DbValue_initLang(GUI_NAME), &UiRootMap_clickRebuild));
-	GuiItem_setIcon(name, GuiImage_new1(UiIcons_init_name()));
+		//name
+		GuiItem_addSubName((GuiItem*)layoutMenu, "header", UiRoot_createMenuNameHeader(Quad2i_init4(0, 0, 1, 1), thisRow));
 
-	//address
-	GuiItem_addSub((GuiItem*)layoutMenu, GuiItemComboDynamic_newEx(Quad2i_init4(2, 0, 1, 1), TRUE, AppGui_connectLinkTableA(appGui, row), DbValue_initGET((DbColumn*)DbRoot_getColumnInfoName(), tableRow), GuiDbID_newArray(DbRoot_getTableInfo(), DbRoot_getColumnLinks(table)), DbValue_initLang(GUI_ADDRESS), &UiRootMap_clickPointsFocus));
+		if (!DbRoot_isReference(row))
+		{
+			//Panel Settings activate
+			GuiItem_addSubName((GuiItem*)layoutMenu, "panel_settings", UiRootMapPanel_buildButton(Quad2i_init4(2, 0, 1, 1), row));
 
+			//Quick Filter activate
+			GuiItem_addSubName((GuiItem*)layoutMenu, "quick_filter", UiRootQuickFilter_buildButton(Quad2i_init4(4, 0, 1, 1), row));
 
-	//titles
-	//GuiItem_addSub((GuiItem*)layoutMenu, GuiItemComboDynamic_newEx(Quad2i_init4(4, 0, 1, 1), AppGui_connectLinkTableA(appGui, row), DbValue_initGET((DbColumn*)DbRoot_getColumnInfoName(), tableRow), GuiDbID_newArray(DbRoot_getTableInfo(), DbRoot_getColumnLinks(table)), DbValue_initLang(GUI_COLUMNS), &UiRootMap_clickPointsFocus));
-	/*GuiItemMenu* hidden = (GuiItemMenu*)GuiItem_addSub((GuiItem*)layoutMenu, GuiItemMenu_new(Quad2i_init4(4, 0, 1, 1), DbValue_initLang(GUI_TITLES), FALSE));
-	GuiItemMenu_setContext(hidden, UiRootCard_buildListOff(row));
-	GuiItemMenu_setHighligthBackground(hidden, AppGui_hasShowedSub(appGui, row, TRUE));
-	//GuiItem_setIcon((GuiItem*)hidden, GuiImage_new1(UiIcons_init_table_hide()));*/
-
-	//titles
-	GuiItemMenu* titles = (GuiItemMenu*)GuiItem_addSub((GuiItem*)layoutMenu, GuiItemMenu_new(Quad2i_init4(4, 0, 1, 1), DbValue_initLang(GUI_TITLES), FALSE));
-	GuiItemMenu_setContext(titles, _UiRootMap_buildTitlesList(row));
-	GuiItemMenu_setHighligthBackground(titles, AppGui_hasLine(appGui, propTitlesRow));
-	GuiItemMenu_setCenter(titles, FALSE);
-
-
-	
-	
-	//advanced
-/*	{
-	GuiItemLayout* layoutAdv = GuiItemLayout_new(Quad2i_init());
-	GuiItemLayout_addColumn(layoutAdv, 0, 3);
-	GuiItemLayout_addColumn(layoutAdv, 1, 4);
-	GuiItemLayout_addColumn(layoutAdv, 2, 1);
-	GuiItemLayout_addColumn(layoutAdv, 3, 4);
-	
-	
-	//type(icon or point)
-	GuiItem_addSub((GuiItem*)layoutAdv, GuiItemText_new(Quad2i_init4(0, 0, 1, 1), FALSE, DbValue_initLang(GUI_TYPE), DbValue_initEmpty()));
-	GuiItem_addSub((GuiItem*)layoutAdv, GuiItemComboStatic_newEx(Quad2i_init4(1, 0, 3, 1), AppGui_connectType2(appGui, row), DbValue_initLang(GUI_MAP_TYPE_OPTIONS), DbValue_initEmpty(), 0));
-	
-	//radius
-	GuiItem_addSub((GuiItem*)layoutAdv, GuiItemText_new(Quad2i_init4(0, 2, 1, 3), FALSE, DbValue_initLang(GUI_RADIUS), DbValue_initEmpty()));
-	GuiItem_addSub((GuiItem*)layoutAdv, GuiItemComboDynamic_newEx(Quad2i_init4(1, 2, 3, 1), FALSE, AppGui_connectLinkTableB(appGui, row), DbValue_initGET((DbColumn*)DbRoot_getColumnInfoName(), tableRow), GuiDbID_newArray(DbRoot_getTableInfo(), DbRoot_getColumnLinks(table)), DbValue_initLang(GUI_COLUMNS), &UiRootMap_clickPointsFocus));
-	GuiItem_addSub((GuiItem*)layoutAdv, GuiItemEdit_newEx(Quad2i_init4(1, 3, 3, 2), AppGui_connectRadius(appGui, row), DbValue_initLang(GUI_MULTIPLIER), &UiRootMap_clickRebuild));
-		
-	
-	//color
-	GuiItem_addSub((GuiItem*)layoutAdv, GuiItemText_new(Quad2i_init4(0, 6, 1, 4), FALSE, DbValue_initLang(GUI_COLOR), DbValue_initEmpty()));
-	GuiItem_addSub((GuiItem*)layoutAdv, (GuiItem*)GuiItemColor_new(Quad2i_init4(1, 6, 1, 1), AppGui_connectColorCdStart(appGui, row), FALSE));
-	GuiItem_addSub((GuiItem*)layoutAdv, GuiItemText_new(Quad2i_init4(2, 6, 1, 1), TRUE, DbValue_initStaticCopy(_UNI32("=>")), DbValue_initEmpty()));
-	GuiItem_addSub((GuiItem*)layoutAdv, (GuiItem*)GuiItemColor_new(Quad2i_init4(3, 6, 1, 1), AppGui_connectColorCdEnd(appGui, row), FALSE));
-	
-	GuiItem_addSub((GuiItem*)layoutAdv, GuiItemComboDynamic_newEx(Quad2i_init4(1, 7, 3, 1), FALSE, AppGui_connectLinkTableC(appGui, row), DbValue_initGET((DbColumn*)DbRoot_getColumnInfoName(), tableRow), GuiDbID_newArray(DbRoot_getTableInfo(), DbRoot_getColumnLinks(table)), DbValue_initLang(GUI_COLUMNS), &UiRootMap_clickPointsFocus));	
-	
-	GuiItem_addSub((GuiItem*)layoutAdv, GuiItemEdit_newEx(Quad2i_init4(1, 8, 1, 2), AppGui_connectColorValueStart(appGui, row), DbValue_initLang(GUI_START), &UiRootMap_clickRebuild));
-	GuiItem_addSub((GuiItem*)layoutAdv, GuiItemEdit_newEx(Quad2i_init4(3, 8, 1, 2), AppGui_connectColorValueEnd(appGui, row), DbValue_initLang(GUI_END), &UiRootMap_clickRebuild));
-	
-
-	
-	GuiItemMenu* advanced = (GuiItemMenu*)GuiItem_addSub((GuiItem*)layoutMenu, GuiItemMenu_new(Quad2i_init4(6, 0, 1, 1), DbValue_initLang(GUI_ADVANCED), FALSE));
-	GuiItemMenu_setContext(advanced, layoutAdv);
-	GuiItemMenu_setCenter(advanced, FALSE);
-	}*/
-	
-
-	
-	GuiItem_addSub((GuiItem*)layoutMenu, GuiItemButton_newClassicEx(Quad2i_init4(8, 0, 1, 1), DbValue_initLang(GUI_MAP_FOCUS), &UiRootMap_clickPointsFocus));
-	
-	
+			//search
+			GuiItemEdit* searchEdit = GuiItem_addSubName((GuiItem*)layoutMenu, "search", GuiItemEdit_newEx(Quad2i_init4(6, 0, 1, 1), search, DbValue_initLang("SEARCH"), &UiRootMap_clickFocusSearch));
+			GuiItem_setIcon((GuiItem*)searchEdit, GuiImage_new1(UiIcons_init_search()));
+			GuiItem_setShortcutKey((GuiItem*)searchEdit, FALSE, Win_EXTRAKEY_CTRL | Win_EXTRAKEY_SEARCH, 0, &GuiItemEdit_clickActivate);
+		}
 	}
 
+	//bottom header
+	if (!DbRoot_isReference(row))
+	{
+		GuiItemLayout* layoutMenu = GuiItemLayout_new(Quad2i_init4(0, 2, 2, 1));
+		GuiItemLayout_setDrawBackground(layoutMenu, FALSE);
+		GuiItemLayout_addColumn(layoutMenu, 0, 2);
+		GuiItemLayout_addColumn(layoutMenu, 1, 4);
+		GuiItemLayout_addColumn(layoutMenu, 2, 2);
+		GuiItemLayout_addColumn(layoutMenu, 3, 4);
+		GuiItemLayout_addColumn(layoutMenu, 4, 2);
+		GuiItemLayout_addColumn(layoutMenu, 5, 2);
+		GuiItemLayout_addColumn(layoutMenu, 6, 6);
+		GuiItemLayout_addColumn(layoutMenu, 7, 6);
+		GuiItem_addSubName((GuiItem*)layout, "header_bottom", (GuiItem*)layoutMenu);
 
-//přidat ostatní connect ...
-	
-	GuiDbID* ids = (exeFilter && !DbFilter_isEmpty(exeFilter)) ? GuiDbID_newArray(table, StdBigs_initCopy(DbFilter_getRows(exeFilter))) : GuiDbID_newTable(table);
-	GuiItem_addSubName((GuiItem*)layout, "map", GuiItemMap_new(Quad2i_init4(0, 1, 1, 1), ids,	AppGui_connectLinkTableA(appGui, row),
-													AppGui_connectLatitude(appGui, row), AppGui_connectLongitude(appGui, row), AppGui_connectZoom(appGui, row),
-													AppGui_connectType2(appGui, row), AppGui_connectWidth(App_getGui(), row), AppGui_connectLinkSub(App_getGui(), propTitlesRow), AppGui_connectEnable(App_getGui(), row)));
-	
+		GuiItem_addSubName((GuiItem*)layoutMenu, "cam_longL", GuiItemText_new(Quad2i_init4(0, 0, 1, 1), FALSE, DbValue_initLang("MAP_CAM_LONG"), DbValue_initEmpty()));
+		GuiItem_addSubName((GuiItem*)layoutMenu, "cam_long", GuiItemEdit_new(Quad2i_init4(1, 0, 1, 1), DbValue_initCopy(&cam_long), DbValue_initLang("MAP_CAM_LONG")));
 
-	
-	DbFilter_delete(exeFilter);	
-		
+		GuiItem_addSubName((GuiItem*)layoutMenu, "cam_latL", GuiItemText_new(Quad2i_init4(2, 0, 1, 1), FALSE, DbValue_initLang("MAP_CAM_LAT"), DbValue_initEmpty()));
+		GuiItem_addSubName((GuiItem*)layoutMenu, "cam_lat", GuiItemEdit_new(Quad2i_init4(3, 0, 1, 1), DbValue_initCopy(&cam_lat), DbValue_initLang("MAP_CAM_LAT")));
+
+		GuiItem_addSubName((GuiItem*)layoutMenu, "cam_zoomL", GuiItemText_new(Quad2i_init4(4, 0, 1, 1), FALSE, DbValue_initLang("MAP_CAM_ZOOM"), DbValue_initEmpty()));
+		GuiItem_addSubName((GuiItem*)layoutMenu, "cam_zoom", GuiItemEdit_new(Quad2i_init4(5, 0, 1, 1), DbValue_initCopy(&cam_zoom), DbValue_initLang("MAP_CAM_ZOOM")));
+
+		GuiItem_addSubName((GuiItem*)layoutMenu, "refocus", GuiItemButton_newClassicEx(Quad2i_init4(7, 0, 1, 1), DbValue_initLang("MAP_REFOCUS"), &UiRootMap_clickFocusItems));
+	}
+
+	BOOL hasPanel = FALSE;
+
+	//Quick Filter
+	DbRows filter = DbRows_initFilter(thisRow);
+	//DbRows_forceEmptyFilter(&filter);
+
+	if (!DbRoot_isReference(row))
+	{
+		GuiItemLayout* layoutQuick = UiRootQuickFilter_buildPanel(Quad2i_init4(0, 1, 1, 1), row, &filter, qfilterScroll);
+		if (layoutQuick)
+		{
+			GuiItem_addSubName((GuiItem*)layout, "layout_quick_filter", (GuiItem*)layoutQuick);
+			hasPanel = TRUE;
+		}
+
+		GuiItemLayout* layoutSettings = UiRootMapPanel_build(Quad2i_init4(0, 1, 1, 1), row, &filter, propertiesScroll);
+		if (layoutSettings)
+		{
+			GuiItem_addSubName((GuiItem*)layout, "layout_panel_settings", (GuiItem*)layoutSettings);
+			hasPanel = TRUE;
+		}
+	}
+
+	//Map
+	GuiItem_addSubName((GuiItem*)layout, "map", GuiItemMap_new(Quad2i_init4(hasPanel ? 1 : 0, 1, hasPanel ? 1 : 2, 1), row, filter, cam_lat, cam_long, cam_zoom, search));
+
 	return (GuiItem*)layout;
 }

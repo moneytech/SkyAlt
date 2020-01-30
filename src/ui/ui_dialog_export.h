@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -31,6 +31,7 @@ void UiDialogExport_clickExport(GuiItem* item)
 	const UNI* pathUNI = GuiItemEdit_getText(GuiItem_findName(item, "path"));
 
 	DbRows filter = DbRows_initFilter(row);
+	DbRows_hasChanged(&filter);
 	DbValues columns = DbRows_getSubs(row, "columns", TRUE, -1);
 
 	char* path = Std_newCHAR_uni(pathUNI);
@@ -39,16 +40,16 @@ void UiDialogExport_clickExport(GuiItem* item)
 	{
 		BOOL firstRowColumnNames = GuiItemCheck_isActive((GuiItemCheck*)GuiItem_findName(item, "rowColumnNames"));
 		if (type == UI_EXPORT_CSV)
-			IOCsv_write(path, firstRowColumnNames, &filter, &columns, DbRoot_getProgress());
+			IOCsv_write(path, firstRowColumnNames, &filter, &columns);
 		else
-			IOTsv_write(path, firstRowColumnNames, &filter, &columns, DbRoot_getProgress());
+			IOTsv_write(path, firstRowColumnNames, &filter, &columns);
 	}
 	else
-	if (type == UI_EXPORT_HTML)
-	{
-		BOOL renderImages = GuiItemCheck_isActive((GuiItemCheck*)GuiItem_findName(item, "renderImages"));
-		IOHtml_write(path, renderImages, &filter, &columns, DbRoot_getProgress());
-	}
+		if (type == UI_EXPORT_HTML)
+		{
+			BOOL renderImages = GuiItemCheck_isActive((GuiItemCheck*)GuiItem_findName(item, "renderImages"));
+			IOHtml_write(path, renderImages, &filter, &columns);
+		}
 
 	Std_deleteCHAR(path);
 	DbRows_free(&filter);

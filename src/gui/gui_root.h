@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2024-11-01
+ * Change Date: 2025-02-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -15,7 +15,6 @@ typedef struct GuiItemRoot_s
 {
 	GuiItemLayout* particles;
 	StdArr levels;	//<GuiItem*>
-	GuiItem* contentFuture;
 
 	OsThread thread;
 	OsLockEvent syncEventStart;
@@ -34,11 +33,10 @@ typedef struct GuiItemRoot_s
 	const UNI* pickerExts;
 
 	Quad2i drawRectOver;	//change column size, etc.
+	Quad2i drawRectOver2;
 
 	UBIG numChanges;
 	Quad2i redrawRect;
-
-
 } GuiItemRoot;
 
 GuiItemRoot* g_GuiItemRoot = 0;
@@ -64,21 +62,24 @@ static void _GuiItemRoot_deleteLevels(void)
 
 void GuiItemRoot_delete(void)
 {
-	OsThread_setGameOver(&g_GuiItemRoot->thread);
-	OsLockEvent_trigger(&g_GuiItemRoot->syncEventStart);
-	//OsLockEvent_trigger(&g_GuiItemRoot->syncEventEnd);
-	OsThread_free(&g_GuiItemRoot->thread, TRUE);
+	if (g_GuiItemRoot)
+	{
+		OsThread_setGameOver(&g_GuiItemRoot->thread);
+		OsLockEvent_trigger(&g_GuiItemRoot->syncEventStart);
+		//OsLockEvent_trigger(&g_GuiItemRoot->syncEventEnd);
+		OsThread_free(&g_GuiItemRoot->thread, TRUE);
 
-	OsLockEvent_free(&g_GuiItemRoot->syncEventStart);
-	OsLockEvent_free(&g_GuiItemRoot->syncEventEnd);
+		OsLockEvent_free(&g_GuiItemRoot->syncEventStart);
+		OsLockEvent_free(&g_GuiItemRoot->syncEventEnd);
 
-	if (g_GuiItemRoot->particles)
-		GuiItem_delete(&g_GuiItemRoot->particles->base);
+		if (g_GuiItemRoot->particles)
+			GuiItem_delete(&g_GuiItemRoot->particles->base);
 
-	_GuiItemRoot_deleteLevels();
+		_GuiItemRoot_deleteLevels();
 
-	Os_free(g_GuiItemRoot, sizeof(GuiItemRoot));
-	g_GuiItemRoot = 0;
+		Os_free(g_GuiItemRoot, sizeof(GuiItemRoot));
+		g_GuiItemRoot = 0;
+	}
 }
 
 BOOL GuiItemRoot_new(void)
@@ -90,7 +91,6 @@ BOOL GuiItemRoot_new(void)
 
 	g_GuiItemRoot->particles = 0;
 	g_GuiItemRoot->levels = StdArr_init();
-	g_GuiItemRoot->contentFuture = 0;
 
 	g_GuiItemRoot->showPicker = FALSE;
 	g_GuiItemRoot->pickerOpen = FALSE;
@@ -103,6 +103,7 @@ BOOL GuiItemRoot_new(void)
 	g_GuiItemRoot->run = 0;
 
 	g_GuiItemRoot->drawRectOver = Quad2i_init();
+	g_GuiItemRoot->drawRectOver2 = Quad2i_init();
 
 	g_GuiItemRoot->numChanges = 0;
 
@@ -116,11 +117,16 @@ BOOL GuiItemRoot_new(void)
 	return TRUE;
 }
 
+void UiStartup_clickInterrupt(GuiItem* item)
+{
+	StdProgress_run(FALSE);
+}
+
 static GuiItemLayout* _GuiItemRoot_createParticles(Win* win)
 {
 	//Particles Logo
 	Image1 logo = UiLogo_init();
-	GuiItemParticles* particles = GuiItemParticles_new(Quad2i_init4(1, 1, 1, 1), logo);
+	GuiItemParticles* particles = GuiItemParticles_new(Quad2i_init4(1, 1, 1, 1), logo, TRUE);
 	Image1_free(&logo);
 
 	//Layout
@@ -129,16 +135,16 @@ static GuiItemLayout* _GuiItemRoot_createParticles(Win* win)
 	GuiItemLayout_addColumn(particlesLayout, 1, 6);
 	GuiItemLayout_addColumn(particlesLayout, 2, 100);
 	GuiItemLayout_addRow(particlesLayout, 0, 100);
-	GuiItemLayout_addRow(particlesLayout, 1, 3);
+	GuiItemLayout_addRow(particlesLayout, 1, 4);
 	GuiItemLayout_addRow(particlesLayout, 4, 100);
 
 	Image4 back = Win_getImage(win);
 
 	particlesLayout->imgBackground = Image4_initCopy(&back);
-	Image4_mulVSubQ(&particlesLayout->imgBackground, Quad2i_init2(Vec2i_init(), Win_getImage(win).size), 0.7f);	//0.6f
+	Image4_mulVSubQ(&particlesLayout->imgBackground, Quad2i_init2(Vec2i_init(), Win_getImage(win).size), 180);	//0.6f
 
 	GuiItem_addSubName((GuiItem*)particlesLayout, "particles", (GuiItem*)particles);
-	GuiItem_addSubName((GuiItem*)particlesLayout, "interrupt", GuiItemText_new(Quad2i_init4(1, 3, 1, 1), TRUE, DbValue_initLang("INTERUPT"), DbValue_initEmpty()));
+	GuiItem_addSubName((GuiItem*)particlesLayout, "interrupt", GuiItemButton_newBlackEx(Quad2i_init4(1, 3, 1, 1), DbValue_initLang("INTERUPT"), &UiStartup_clickInterrupt));
 
 	return particlesLayout;
 }
@@ -170,9 +176,10 @@ void GuiItemRoot_resizeAll(void)
 
 void GuiItemRoot_setContent(GuiItem* content)
 {
-	if (g_GuiItemRoot->contentFuture)
-		GuiItem_delete(g_GuiItemRoot->contentFuture);
-	g_GuiItemRoot->contentFuture = content;
+	BIG i;
+	for (i = 0; i < GuiItemRoot_numLevels(); i++)
+		GuiItemRoot_getLevel(i)->remove = TRUE;
+	StdArr_insert(&g_GuiItemRoot->levels, 0, content);
 }
 void GuiItemRoot_setContentLayout(GuiItemLayout* layout)
 {
@@ -202,6 +209,8 @@ void GuiItemRoot_addDialog(GuiItem* item)
 	GuiItem_addSubName((GuiItem*)layout, "level_center", level);
 
 	StdArr_add(&g_GuiItemRoot->levels, &layout->base);
+
+	GuiItem_setFirstCursor(&layout->base);
 }
 void GuiItemRoot_addDialogLayout(GuiItemLayout* layout)
 {
@@ -214,8 +223,8 @@ void GuiItemRoot_addDialogRel(GuiItem* item, GuiItem* parent, Quad2i parentCoord
 	GuiItem_createBackChain(parent, &origPath);
 	GuiItem* level = GuiItemLevel_newRelative(closeAfter, item, parentCoord, origPath);
 
-	if (parent)
-		GuiItem_copyAttributes(level, parent);
+	//if (parent)
+	//	GuiItem_copyAttributes(level, parent);
 
 	GuiItemLayout* layout = GuiItemLayout_new(Quad2i_init4(0, 0, 1, 1));
 	layout->drawBackground = FALSE;
@@ -224,6 +233,8 @@ void GuiItemRoot_addDialogRel(GuiItem* item, GuiItem* parent, Quad2i parentCoord
 	GuiItem_addSubName((GuiItem*)layout, "level_rel", level);
 
 	StdArr_add(&g_GuiItemRoot->levels, &layout->base);
+
+	GuiItem_setFirstCursor(&layout->base);
 }
 void GuiItemRoot_addDialogRelLayout(GuiItemLayout* layout, GuiItem* parent, Quad2i parentCoord, BOOL closeAfter)
 {
@@ -265,12 +276,26 @@ void GuiItemRoot_setDrawRectOver(Quad2i drawRectOver)
 {
 	g_GuiItemRoot->drawRectOver = drawRectOver;
 }
+void GuiItemRoot_setDrawRectOver2(Quad2i drawRectOver)
+{
+	g_GuiItemRoot->drawRectOver2 = drawRectOver;
+}
+
+void GuiItemRoot_closeLevels(void)
+{
+	BIG i;
+	for (i = 1; i < GuiItemRoot_numLevels(); i++)
+		GuiItemRoot_getLevel(i)->remove = TRUE;
+}
 
 void GuiItemRoot_key(Win* win)
 {
 	if (OsWinIO_getKeyExtra() & Win_EXTRAKEY_ESCAPE)
 	{
-		DbRoot_getProgress()->running = FALSE;
+		StdProgress_run(FALSE);
+
+		if (OsWinIO_getKeyExtra() & Win_EXTRAKEY_SHIFT)	//SHIFT + ESC
+			GuiItemRoot_closeLevels();
 	}
 
 	if (OsWinIO_getKeyExtra() & Win_EXTRAKEY_TAB)
@@ -299,7 +324,7 @@ static Quad2i _GuiItemRoot_getScreenRect(Win* win)
 static void _GuiItemRoot_callResize(GuiItem* content, Win* win)
 {
 	//GuiItem_tryRemove(content);
-	GuiItem_setTouch(content, content == GuiItemRoot_getLevelTop());
+	GuiItem_setTouch(content, (content == GuiItemRoot_getLevelTop() || content == &g_GuiItemRoot->particles->base));
 	GuiItem_setCoord(content, Quad2i_init2(Vec2i_init(), Win_getImage(win).size));
 
 	if (content->type == GuiItem_LAYOUT)
@@ -312,8 +337,6 @@ static void _GuiItemRoot_guiTouchUpdate(GuiItem* content, BOOL doUpdate, Win* wi
 {
 	if (!content)
 		return;
-
-	_GuiItemRoot_callResize(content, win);	//ex.: prepare for first touch/key(coord, etc.)
 
 	//touch & key
 	GuiItem_touchPrior(content, win);
@@ -340,22 +363,34 @@ static void _GuiItemRoot_guiTouchUpdateLevels(BOOL doUpdate, Win* win)
 	Win_resetCursor(win);
 
 	//remove old
-	for (i = GuiItemRoot_numLevels() - 1; i >= 0; i--)
+	for (i = 0; i < GuiItemRoot_numLevels(); i++)
 	{
+		_GuiItemRoot_callResize(GuiItemRoot_getLevel(i), win);	//ex.: prepare for first touch/key(coord, etc.)
+
 		GuiItem* it = GuiItemRoot_getLevel(i);
 
-		GuiItem* level = GuiItem_findChildType(it, GuiItem_LEVEL);
-		if (level && (level->remove || !GuiItemLevel_isBackChainValid((GuiItemLevel*)level)))
+		GuiItemLevel* level = (GuiItemLevel*)GuiItem_findChildType(it, GuiItem_LEVEL);
+		if (level && !GuiItemLevel_isBackChainValid(level))	//don't have parent
+			it->remove = TRUE;
+
+		if (it->remove)
 		{
 			GuiItem_delete(it);
 			StdArr_remove(&g_GuiItemRoot->levels, i);
 			GuiItemRoot_redrawAll();
+			i--;
 		}
 	}
 
 	//update
 	for (i = GuiItemRoot_numLevels() - 1; i >= 0; i--)
+	{
 		_GuiItemRoot_guiTouchUpdate(GuiItemRoot_getLevel(i), doUpdate, win);
+		OsWinIO_resetTouch();	//don't click through level
+
+		if (GuiItemRoot_hasChanges())	//for eg.: Removed Table is in active panel
+			break;
+	}
 }
 
 static void _GuiItemRoot_guiDraw(GuiItem* content, Win* win)
@@ -364,9 +399,21 @@ static void _GuiItemRoot_guiDraw(GuiItem* content, Win* win)
 		return;
 
 	Image4 img = Win_getImage(win);
-	img.rect = g_GuiItemRoot->redrawRect;
+	Image4_setRect(&img, g_GuiItemRoot->redrawRect);
 	GuiItem_draw(content, win, &img);
 }
+
+static void _GuiItemRoot_guiDrawRect(Quad2i rect, Win* win)
+{
+	Image4 img = Win_getImage(win);
+
+	Image4_setRect(&img, rect);
+	Rgba cd = g_theme.edit;
+	cd.a = 150;
+	Image4_drawBoxQuadAlpha(&img, img.rect, cd);
+	GuiItemRoot_addBufferRect(img.rect);
+}
+
 Quad2i _GuiItemRoot_guiDrawLayers(Win* win)
 {
 	BIG i;
@@ -383,16 +430,14 @@ Quad2i _GuiItemRoot_guiDrawLayers(Win* win)
 	//extra draw(resize, change order, etc.)
 	if (!Quad2i_isZero(g_GuiItemRoot->drawRectOver))
 	{
-		Image4 img = Win_getImage(win);
-
-		img.rect = g_GuiItemRoot->drawRectOver;
-		Rgba cd = g_theme.selectEdit;
-		cd.a = 150;
-		Image4_drawBoxQuadAlpha(&img, img.rect, cd);
-		GuiItemRoot_addBufferRect(img.rect);
-
+		_GuiItemRoot_guiDrawRect(g_GuiItemRoot->drawRectOver, win);
 		g_GuiItemRoot->drawRectOver = Quad2i_init();
-
+		GuiItemRoot_redrawAll();
+	}
+	if (!Quad2i_isZero(g_GuiItemRoot->drawRectOver2))
+	{
+		_GuiItemRoot_guiDrawRect(g_GuiItemRoot->drawRectOver2, win);
+		g_GuiItemRoot->drawRectOver2 = Quad2i_init();
 		GuiItemRoot_redrawAll();
 	}
 
@@ -402,14 +447,16 @@ Quad2i _GuiItemRoot_guiDrawLayers(Win* win)
 
 	if (!OsWinIO_existActiveRenderItem() && DbRoot_is()) 	//not during mouse pressed moved
 	{
-		if (GuiItemRoot_hasChanges())
+		if (GuiItemRoot_numLevels())
 		{
-			if (GuiItemRoot_numLevels())
+			if (DbRoot_tryRefreshRemote() || GuiItemRoot_hasChanges())
 			{
 				DbRoot_updateTables();
 				GuiItemRoot_resizeAll();
 				g_GuiItemRoot->numChanges = DbRoot_numInfoChanges();
 			}
+
+			DbRoot_refresh();
 		}
 	}
 
@@ -421,7 +468,7 @@ Quad2i _GuiItemRoot_guiDrawLayers(Win* win)
 void GuiItemRoot_tick(BOOL doUpdate, BOOL doDraw, Win* win, Quad2i* redrawRect)
 {
 	if (OsWinIO_isExit() && g_GuiItemRoot->particles)	//exit
-		DbRoot_getProgress()->running = FALSE;
+		StdProgress_run(FALSE);
 
 	if (g_GuiItemRoot->showPicker)
 	{
@@ -452,23 +499,14 @@ void GuiItemRoot_tick(BOOL doUpdate, BOOL doDraw, Win* win, Quad2i* redrawRect)
 			GuiItemRoot_redrawAll();	//back to content
 		}
 
-		//switch
-		if (g_GuiItemRoot->contentFuture)
-		{
-			_GuiItemRoot_deleteLevels();
-			StdArr_add(&g_GuiItemRoot->levels, g_GuiItemRoot->contentFuture);
-			g_GuiItemRoot->contentFuture = 0;
-		}
-
 		//run it in 2nd thread
 		g_GuiItemRoot->doUpdate = doUpdate;
 		g_GuiItemRoot->win = win;
-
 		g_GuiItemRoot->run = Os_time();
 		OsLockEvent_trigger(&g_GuiItemRoot->syncEventStart);
 
 		//wait on 2nd thread with timeout
-		if (OsLockEvent_wait(&g_GuiItemRoot->syncEventEnd, MAX_COMPUTING_WAIT))
+		if (OsLockEvent_wait(&g_GuiItemRoot->syncEventEnd, MAX_COMPUTING_WAIT))   //0, MAX_COMPUTING_WAIT
 		{
 			*redrawRect = _GuiItemRoot_guiDrawLayers(win);
 			g_GuiItemRoot->run = 0;	//try it
@@ -480,6 +518,7 @@ void GuiItemRoot_tick(BOOL doUpdate, BOOL doDraw, Win* win, Quad2i* redrawRect)
 			if (!g_GuiItemRoot->particles)
 			{
 				g_GuiItemRoot->particles = _GuiItemRoot_createParticles(win);
+				OsWinIO_resetActiveRenderItem();
 			}
 
 			_GuiItemRoot_guiTouchUpdate(&g_GuiItemRoot->particles->base, doUpdate, win);
@@ -497,14 +536,14 @@ THREAD_FUNC(GuiItemRoot_loop, param)
 	{
 		OsLockEvent_wait(&g_GuiItemRoot->syncEventStart, 0);
 
-		{
-			_GuiItemRoot_guiTouchUpdateLevels(g_GuiItemRoot->doUpdate, g_GuiItemRoot->win);
+		_GuiItemRoot_guiTouchUpdateLevels(g_GuiItemRoot->doUpdate, g_GuiItemRoot->win);
+		StdProgress_run(TRUE);
 
-			StdProgress_reset(DbRoot_getProgress());
+		//OsThread_sleep(2000);
 
-			//deactivate
-			g_GuiItemRoot->run = -1;
-		}
+		//printf("done---\n");
+
+		g_GuiItemRoot->run = -1; //deactivate
 
 		OsLockEvent_trigger(&g_GuiItemRoot->syncEventEnd);
 	}
