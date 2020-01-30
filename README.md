@@ -2,6 +2,7 @@
 Accessible database and analytics
 
 ![table example image](https://skyalt.com/screens/table.png)
+
 ![chart example image](https://skyalt.com/screens/chart.png)
 
 
