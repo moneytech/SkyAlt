@@ -30,5 +30,5 @@ Build.2 (30/Jan/2020)
 		Link - Mirrored column
 		Link - Jointed column
 		Link - Filtered column
-		Remote data sources(ODBC)	
+		Remote data sources(ODBC)
 	Ported: Linux
