@@ -1,7 +1,8 @@
 # SkyAlt
 Accessible database and analytics
 
-![alt text](https://skyalt.com/screens/table.png)
+![table example image](https://skyalt.com/screens/table.png)
+![chart example image](https://skyalt.com/screens/chart.png)
 
 
 ## Installing
