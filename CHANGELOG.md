@@ -1,11 +1,15 @@
 Build.1 (14/Nov/2019)
+
 	First public release
+
 
 Build.2 (30/Jan/2020)
 	Fixed: Tons
+
 	Changed:
 		Few icons
 		QuickShort() for shorting
+
 	Added:
 		Menu - Report Problem
 		Expand/Hide items in side panel Tree view
@@ -31,4 +35,5 @@ Build.2 (30/Jan/2020)
 		Link - Jointed column
 		Link - Filtered column
 		Remote data sources(ODBC)
+
 	Ported: Linux
