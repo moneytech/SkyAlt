@@ -39,6 +39,6 @@ Feel free to file any issues in this repository. Before you file an issue, pleas
 ## E-mail
 milan@skyalt.com
 
-##License
+## License
 Bussiness Source License(https://mariadb.com/bsl11/)
 More in LICENSE file.
