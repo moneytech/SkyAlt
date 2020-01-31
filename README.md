@@ -40,5 +40,6 @@ Feel free to file any issues in this repository. Before you file an issue, pleas
 milan@skyalt.com
 
 ## License
-Bussiness Source License(https://mariadb.com/bsl11/)
+Bussiness Source License(https://mariadb.com/bsl11/).
+
 More in LICENSE file.
