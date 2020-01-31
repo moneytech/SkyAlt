@@ -432,29 +432,28 @@ void GuiItemMap_draw(GuiItemMap* self, Image4* img, Quad2i coord, Win* win)
 
 			BOOL draw = FALSE;
 			BOOL inLibrary = FALSE;
-			Quad2i q;
+			Quad2i q = _GuiItemMap_getTileCoord(x, y, coord, bbox);
+
 			char url[64];
-			if (Map_getTileUrl(x, y, zoom, url))
+			Map_getTileUrl(x, y, zoom, url);
+			inLibrary = draw = MediaLibrary_hasImageBuffer(url, "png", q.size);
+			if (!draw)
 			{
-				q = _GuiItemMap_getTileCoord(x, y, coord, bbox);
-
-				inLibrary = draw = MediaLibrary_hasImageBuffer(url, "png", q.size);
-				if (!draw)
+				UCHAR* buff;
+				BIG bytes = Map_findTile(x, y, zoom, &buff);
+				if (bytes < 0)
 				{
-					UCHAR* buff;
-					BIG bytes = Map_findTile(x, y, zoom, &buff);
-					if (bytes < 0)
-					{
-						bytes = MediaNetwork_download(url, 1 - (Vec2i_len(Vec2i_sub(mid, Vec2i_init2(x, y))) / maxDistance), &buff);
-						if (bytes > 0)
-							Map_addImage(x, y, zoom, buff, bytes);
-					}
-
-					draw = (bytes > 0);
-					if (draw)
-						inLibrary = MediaLibrary_addImageBuffer(url, "png", buff, bytes, q.size);
+					bytes = MediaNetwork_download(url, 1 - (Vec2i_len(Vec2i_sub(mid, Vec2i_init2(x, y))) / maxDistance), &buff);
+					if (bytes > 0)
+						Map_addImage(x, y, zoom, buff, bytes);
 				}
+
+				draw = (bytes > 0);
+				if (draw)
+					inLibrary = MediaLibrary_addImageBuffer(url, "png", buff, bytes, q.size);
 			}
+
+
 
 			if (draw)
 				draw = MediaLibrary_imageBufferDraw(url, "png", img, q);

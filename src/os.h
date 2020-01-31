@@ -88,7 +88,7 @@ typedef long long BIG;
 #define STD_UPDATE_SERVER "https://www.skyalt.com/updates"
 #define STD_INI_PATH "SkyAlt.ini"
 #define STD_INI_MAP_PATH "map.ini"
-#define STD_INI_MAP_URL "https://www.skyalt.com/map.ini"
+#define STD_INI_MAP_URL "https://raw.githubusercontent.com/MilanSuk/SkyAlt_web/master/map.ini"	//https://www.skyalt.com/map.ini doesn't work! Some redirect.
 
 UCHAR* Os_getUpdatePublicKey(void);
 

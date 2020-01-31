@@ -116,8 +116,7 @@ BOOL Map_downloadPos(const UNI* name, Vec2f* out_pos)
 BOOL Map_getTileUrl(int x, int y, int zoom, char url[64])
 {
 	BOOL ok = MapIni_tryDownload(g_Map->ini);
-	if (ok)
-		snprintf(url, 64, MapIni_get_tile_url(g_Map->ini), zoom, x, y);
+	snprintf(url, 64, (ok ? MapIni_get_tile_url(g_Map->ini) : "tile_offline/%d/%d/%d.png"), zoom, x, y);
 	return ok;
 }
 
