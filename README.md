@@ -14,18 +14,20 @@ Linux users: *Right-click on skyalt file. Select "Properties". Go into "Permissi
 ## Compilation
 
 ### Linux
-cd linux
-sh install_libs
-sh build_release
-Add "languages" and "eula" folders to same folder with binary file
+1. cd linux
+2. sh install_libs
+3. sh build_release
+4. Add "languages" and "eula" folders to same folder with binary file
+
 
 ### Windows
-Visual studio project is in "windows/SkyAlt.sln".
-Goto project properties
-Change paths in: C/C++ -> General -> Additional Include Directories
-Change paths in: Linker -> General -> Additional Library Directories
-Add "languages" and "eula" folders to same folder with binary file
-All libraries can be download with Microsoft vcpkg.
+1. Visual studio project is in "windows/SkyAlt.sln".
+2. Goto project properties
+3. Change paths in: C/C++ -> General -> Additional Include Directories
+4. Change paths in: Linker -> General -> Additional Library Directories
+5. Add "languages" and "eula" folders to same folder with binary file
+6. All libraries can be download with Microsoft vcpkg.
+
 
 ## Website
 https://www.skyalt.com/
