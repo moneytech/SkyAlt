@@ -12,6 +12,6 @@ add_definitions (${GTK3_CFLAGS_OTHER})
 
 target_include_directories(skyalt PRIVATE /usr/include/freetype2 /usr/include/freetype2/freetype /usr/include/opus /usr/include/ffmpeg)
 
-target_link_libraries(skyalt z png curl ssl crypto X11 m freetype pthread asound swscale avformat avcodec avutil odbc ${GTK3_LIBRARIES})
+target_link_libraries(skyalt z png curl ssl crypto X11 m freetype pthread asound swscale avformat avcodec avutil odbc xml2 ${GTK3_LIBRARIES})
 
 install(TARGETS skyalt RUNTIME DESTINATION bin)

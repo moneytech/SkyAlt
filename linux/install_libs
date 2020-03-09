@@ -1,1 +1,1 @@
-sudo apt-get install gcc build-essential zlib1g-dev libssl-dev libfreetype6-dev libasound2-dev libgtk-3-dev libpoppler-glib-dev libavcodec-dev libavformat-dev libswscale-dev libcurl4-openssl-dev unixodbc-dev
+sudo apt-get install gcc build-essential zlib1g-dev libssl-dev libfreetype6-dev libasound2-dev libgtk-3-dev libpoppler-glib-dev libavcodec-dev libavformat-dev libswscale-dev libcurl4-openssl-dev unixodbc-dev libxml2-dev

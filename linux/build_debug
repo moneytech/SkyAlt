@@ -2,14 +2,14 @@ clear
 clear
 echo "\e[43m-- Compiling DEBUG version --\e[m"
 
-INCS=" -I/usr/include/freetype2 -I/usr/include/freetype2/freetype -I/usr/include/opus -I/usr/include/ffmpeg "
+INCS=" -I/usr/include/freetype2 -I/usr/include/freetype2/freetype -I/usr/include/opus -I/usr/include/ffmpeg -I/usr/include/libxml2 "
 GTK=" `pkg-config --cflags gtk+-3.0` `pkg-config --libs gtk+-3.0` "
 PDF=" `pkg-config --cflags poppler-glib` `pkg-config --libs poppler-glib` "
 DEFS=" -Wl,--allow-multiple-definition "
 
 FILES=" ../src/main.c ../src/os.c ../src/std.c ../src/ui.c ../src/gui.c ../src/io.c ../src/db.c ../src/media.c ../src/map.c ../src/file.c ../src/log.c ../src/language.c ../src/license.c "
 
-LIBS=" -lz -lpng -lcurl -lssl -lcrypto -lX11 -lm -lfreetype -lpthread -lasound -lswscale -lavformat -lavcodec -lavutil -lodbc "
+LIBS=" -lz -lpng -lcurl -lssl -lcrypto -lX11 -lm -lfreetype -lpthread -lasound -lswscale -lavformat -lavcodec -lavutil -lodbc -lxml2 "
 
 #debug
 #OPTS=" -Og -g -Wall "
