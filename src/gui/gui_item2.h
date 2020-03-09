@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -388,6 +388,14 @@ void GuiItem_resize(GuiItem* self, GuiItemLayout* layout, Win* win)
 		layout = GuiItemTags_resize((GuiItemTags*)self, layout, win);
 		break;
 
+		case GuiItem_MAP:
+		layout = GuiItemMap_resize((GuiItemMap*)self, layout, win);
+		break;
+		
+		case GuiItem_FILE:
+		layout = GuiItemFile_resize((GuiItemFile*)self, layout, win);
+		break;
+	
 		default:
 		break;
 	}
@@ -592,8 +600,8 @@ void GuiItem_updateCoord(GuiItem* self, Vec2i layoutMove, Quad2i parentRect, Win
 
 	if (self->type == GuiItem_LAYOUT)
 	{
-		layoutMove.x -= ((GuiItemLayout*)self)->scrollH.wheel;
-		layoutMove.y -= ((GuiItemLayout*)self)->scrollV.wheel;
+		layoutMove.x -= GuiScroll_getWheel(&((GuiItemLayout*)self)->scrollH);
+		layoutMove.y -= GuiScroll_getWheel(&((GuiItemLayout*)self)->scrollV);
 	}
 
 	int i;
@@ -611,7 +619,7 @@ BOOL g_changeSizeActive = FALSE;
 
 BIG GuiItem_getDropRow(GuiItem* self)
 {
-	BIG dstRow = GuiItem_findAttribute(self, "dropRow");
+	BIG dstRow = GuiItem_findAttributeNoWarning(self, "dropRow");
 	if (dstRow < 0)
 		dstRow = GuiItem_getRow(self);
 	return dstRow;
@@ -773,17 +781,18 @@ void GuiItem_touchPrior(GuiItem* self, Win* win)
 				{
 					GuiItemEdit_saveCache();
 
-					if (!g_drag_dontRemove)
+					if (!g_drag_dontRemove && !find->dropDontRemove)
 						DbRows_removeRow(&g_drag_rows, g_drag_movingRow);
 
-					if (self->dropCallback)
-						self->dropCallback(dstRow, g_drag_movingRow, findIn);
+					if (find->dropCallback)
+						find->dropCallback(find, dstRow, g_drag_movingRow, findIn);
 
 					if (findIn)
 					{
 						DbRows_addLinkRow(&find->dropMoveIn, g_drag_movingRow);
 					}
 					else
+					if(dstRow >= 0)
 					{
 						if (GuiItem_isDropBefore(find, OsWinIO_getTouchPos()))
 							DbRows_insertIDbefore(&find->dropMove, g_drag_movingRow, dstRow);
@@ -830,14 +839,14 @@ void GuiItem_touch(GuiItem* self, Win* win)
 	}
 
 	//avoid clicking through button to underline dialog/list with scroll!
-	/*if (self->touch && self->type != GuiItem_LEVEL)
+	if (self->touch && self->type != GuiItem_LEVEL)
 	{
 		if (self->parent)
 			self->touch = self->parent->touch;
 
 		if (self->touch)
 			self->touch = Quad2i_inside(coord, OsWinIO_getTouchPos());
-	}*/
+	}
 
 	int i;
 	for (i = 0; i < self->subs.num; i++)
@@ -991,7 +1000,11 @@ void GuiItem_draw(GuiItem* self, Win* win, Image4* img)
 			GuiImage_draw(self->icon, img, GuiItem_getIconCoord(&coord), iconCd);
 
 			if (self->type == GuiItem_BUTTON)
+			{
 				GuiItemButton_drawPress(img, self->front_cd, coordBack, ((GuiItemButton*)self)->stayPressedLeft, FALSE);
+				GuiItemButton_drawSeparLine((GuiItemButton*)self, img, coordBack);
+			}
+				
 
 			Image4_setRect(img, Quad2i_getIntersect(img->rect, coord));
 		}
@@ -1090,6 +1103,22 @@ void GuiItem_draw(GuiItem* self, Win* win, Image4* img)
 
 		if (self->border)
 			Image4_drawBorder(img, coord, 1, Rgba_initBlack());
+
+
+		if (self->changeSizeDraw && DbValue_getRow(&self->changeSizeValue) >= 0)
+		{
+			const int FAT = 3;
+			Quad2i q;
+			if(self->changeSizeVertical)
+				q = Quad2i_init4(coord.start.x + coord.size.x - FAT, coord.start.y, FAT*2, coord.size.y);
+			else
+				q = Quad2i_init4(coord.start.x, coord.start.y + coord.size.y - FAT, coord.size.x, FAT*2);
+
+			img->rect.size.x += FAT;
+			img->rect.size.y += FAT;
+			Image4_drawBoxQuad(img, q, self->changeSizeDrawColor);
+		}
+
 	}
 
 	Image4_setRect(img, img_rect_backup);

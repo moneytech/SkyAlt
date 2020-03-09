@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -29,7 +29,7 @@ typedef struct GuiItemEdit_s
 	BOOL cursorShow;
 	UINT numClickIn;
 
-	BOOL drawHighlightIfContent;
+	BOOL drawHighlightIfContent;	//remove, do it through callbackHighlight ...
 	GuiItemCallbackEnable* callbackHighlight;
 
 	Rgba colorBorder;
@@ -53,6 +53,10 @@ typedef struct GuiItemEdit_s
 
 	BOOL drawBackground_procentage_visualize;
 	BOOL drawBackground_procentage_visualize_mult100;
+
+
+	DbValue highlightFind;
+
 } GuiItemEdit;
 
 GuiItem* GuiItemEdit_newEx(Quad2i grid, DbValue text, DbValue description, GuiItemCallback* callFinish)
@@ -102,6 +106,8 @@ GuiItem* GuiItemEdit_newEx(Quad2i grid, DbValue text, DbValue description, GuiIt
 
 	self->base.icon_draw_back = FALSE;
 
+	self->highlightFind = DbValue_initEmpty();
+
 	return &self->base;
 }
 
@@ -118,6 +124,8 @@ GuiItem* GuiItemEdit_newCopy(GuiItemEdit* src, BOOL copySub)
 
 	self->text = DbValue_initCopy(&src->text);
 	self->description = DbValue_initCopy(&src->description);
+
+	self->highlightFind = DbValue_initCopy(&src->highlightFind);
 
 	self->str = Std_newUNI(src->str);
 
@@ -179,7 +187,8 @@ void GuiItemEdit_delete(GuiItemEdit* self)
 	Std_deleteUNI(self->str);
 	DbValue_free(&self->text);
 	DbValue_free(&self->description);
-
+	DbValue_free(&self->highlightFind);
+	
 	GuiItem_free(&self->base);
 	Os_free(self, sizeof(GuiItemEdit));
 }
@@ -232,6 +241,13 @@ void GuiItemEdit_setHighlightCallback(GuiItemEdit* self, GuiItemCallbackEnable* 
 {
 	self->callbackHighlight = callbackHighlight;
 }
+
+void GuiItemEdit_setHighlightFind(GuiItemEdit* self, DbValue highlightFind)
+{
+	DbValue_free(&self->highlightFind);
+	self->highlightFind = highlightFind;
+}
+
 
 void GuiItemEdit_setFnChanged(GuiItemEdit* self, GuiItemCallback* clickChanged)
 {
@@ -300,6 +316,23 @@ void GuiItemEdit_drawBackgroundVisualize(Image4* img, Quad2i coord, double value
 
 	Image4_drawBoxQuad(img, q, cd);
 }
+
+
+/*static void GuiItemEdit_drawHighlight(GuiItemEdit* self, Image4* img, Quad2i coord, int posTextY, int pxs, int pxe)
+{
+	int textH = _GuiItem_textSize(self->text_level, coord.size.y);
+	OsFont* font = OsWinIO_getFontDefault();
+
+	int h = textH * 1.2f;
+	int py = posTextY - h / 2;
+
+	if (pxs > pxe)
+		Std_flip(&pxs, &pxe);
+	if (pxs == pxe)
+		Image4_drawBoxStartEnd(img, Vec2i_add(Vec2i_add(coord.start, Vec2i_init2(pxe, py)), currMove), Vec2i_add(Vec2i_add(coord.start, Vec2i_init2(pxe + 2, py + h)), currMove), Rgba_aprox(self->base.back_cd, self->base.front_cd, OsWinIO_getEditboxAnim(self))); //cursor
+	else
+		Image4_drawBoxStartEnd(img, Vec2i_add(Vec2i_add(coord.start, Vec2i_init2(pxs, py)), currMove), Vec2i_add(Vec2i_add(coord.start, Vec2i_init2(pxe, py + h)), currMove), Rgba_aprox(self->base.back_cd, self->base.front_cd, 0.5f)); //selection
+}*/
 
 void GuiItemEdit_draw(GuiItemEdit* self, Image4* img, Quad2i coord, Win* win)
 {
@@ -387,12 +420,33 @@ void GuiItemEdit_draw(GuiItemEdit* self, Image4* img, Quad2i coord, Win* win)
 	if (num_lines == 1 && Std_sizeUNI(text) == 0)
 		Image4_drawText(img, Vec2i_add(posDesc, coord.start), centerDesc, font, DbValue_result(&self->description), textH, 0, Rgba_aprox(self->base.front_cd, self->base.back_cd, 0.5f)); //ghost(one-line description)
 
+
+	//hightlight find string
+	if(!cursorActive)
+	{
+		const UNI* find = self->highlightFind.result.str;
+		const UBIG findSize = Std_sizeUNI(find);
+		if (findSize)
+		{
+			BIG startPos = Std_subUNI(text, find);
+			if (startPos >= 0)
+			{
+				int h = textH * 1.2f;
+				int py = posText.y - h / 2;
+
+				int pxs, pxe;
+				pxs = OsFont_getCharPixelPos(font, textH, text, startPos) + textH / 2;
+				pxe = OsFont_getCharPixelPos(font, textH, text, startPos+findSize) + textH / 2;
+
+				Image4_drawBoxStartEnd(img, Vec2i_add(coord.start, Vec2i_init2(pxs, py)), Vec2i_add(coord.start, Vec2i_init2(pxe, py + h)), g_theme.main);
+			}
+		}
+	}
+
 	//cursor
 	if (cursorActive)
 	{
 		int h = textH * 1.2f;
-		//int py = (num_lines == 1) ? (size.y - h) / 2 : (size.y / 2) + (size.y / 2 - h) / 2;
-		//int py = (num_lines == 1) ? (size.y - h) / 2 : (size.y / 2) + (size.y / 2 - h) / 2;
 		int py = posText.y - h / 2;
 
 		int pxs, pxe;
@@ -401,7 +455,6 @@ void GuiItemEdit_draw(GuiItemEdit* self, Image4* img, Quad2i coord, Win* win)
 
 		if (pxs > pxe)
 			Std_flip(&pxs, &pxe);
-
 		if (pxs == pxe)
 			Image4_drawBoxStartEnd(img, Vec2i_add(Vec2i_add(coord.start, Vec2i_init2(pxe, py)), currMove), Vec2i_add(Vec2i_add(coord.start, Vec2i_init2(pxe + 2, py + h)), currMove), Rgba_aprox(self->base.back_cd, self->base.front_cd, OsWinIO_getEditboxAnim(self))); //cursor
 		else
@@ -425,7 +478,7 @@ static void _GuiItemEdit_updateStr(GuiItemEdit* self)
 
 void GuiItemEdit_update(GuiItemEdit* self, Quad2i coord, Win* win)
 {
-	BOOL changed = (DbValue_hasChanged(&self->text) || DbValue_hasChanged(&self->description));
+	BOOL changed = (DbValue_hasChanged(&self->text) || DbValue_hasChanged(&self->description) || DbValue_hasChanged(&self->highlightFind));
 
 	_GuiItemEdit_updateStr(self);
 
@@ -449,7 +502,7 @@ void _GuiItemEdit_addDropPath(GuiItemEdit* self)
 		//clean
 		Std_deleteUNI(path);
 	}
-
+	
 	OsWinIO_setCursorRenderItemCache(p);
 	OsWinIO_resetDrop();
 	GuiItemEdit_saveCache();
@@ -536,27 +589,30 @@ void GuiItemEdit_touch(GuiItemEdit* self, Quad2i coord, Win* win)
 		else
 			if (inside && touch) //full touch
 			{
-				if (OsWinIO_getTouchNum() >= 1 + self->numClickIn)	//double-click
+				const BOOL dclick = (OsWinIO_getTouchNum() >= 1 + self->numClickIn);
+				
+
+				BOOL isActive = !GuiItemEdit_setCursor(self, dclick);
+				_GuiItemEdit_updateStr(self);
+
+				int pc = _GuiItemEdit_getCursorPos(self, coord, win);
+				if (active || OsWinIO_getKeyExtra() & Win_EXTRAKEY_SHIFT)
+					OsWinIO_setCursorRenderItemPosY(pc); //continue
+				else
+				{
+					//first time
+					OsWinIO_setCursorRenderItemPosX(pc);
+					OsWinIO_setCursorRenderItemPosY(pc);
+				}
+
+				if (dclick && isActive)
 				{
 					_GuiItemEdit_updateStr(self);
 					OsWinIO_setCursorRenderItemPosX(0);
 					OsWinIO_setCursorRenderItemPosY(Std_sizeUNI(self->str));
 				}
-				else
-				{
-					GuiItemEdit_setCursor(self, FALSE);
-					_GuiItemEdit_updateStr(self);
 
-					int pc = _GuiItemEdit_getCursorPos(self, coord, win);
-					if (active || OsWinIO_getKeyExtra() & Win_EXTRAKEY_SHIFT)
-						OsWinIO_setCursorRenderItemPosY(pc); //continue
-					else
-					{
-						//first time
-						OsWinIO_setCursorRenderItemPosX(pc);
-						OsWinIO_setCursorRenderItemPosY(pc);
-					}
-				}
+
 				back_cd = Rgba_aprox(front_cd, back_cd, 0.6f);
 				OsWinIO_setActiveRenderItem(self);
 			}
@@ -650,6 +706,7 @@ void GuiItemEdit_key(GuiItemEdit* self, Quad2i coord, Win* win)
 		GuiItemEdit_saveCache();
 		GuiItem_setRedraw(&self->base, TRUE);
 		OsWinIO_resetActiveRenderItem();
+		OsWinIO_resetKey();
 		return;
 	}
 	else

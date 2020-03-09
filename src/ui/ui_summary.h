@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -33,7 +33,7 @@ GuiItem* UiRootSummary_build(GuiItemLayout* layout, UBIG row, DbValue scrollV, D
 	GuiItemLayout_addColumn(layoutMenu, 6, 6);
 	GuiItemLayout_addColumn(layoutMenu, 8, 99);	//big space
 	GuiItemLayout_addColumn(layoutMenu, 9, 4);
-	//GuiItemLayout_addColumn(layoutMenu, 10, 4);
+	GuiItemLayout_addColumn(layoutMenu, 10, 4);
 	GuiItem_addSubName((GuiItem*)layout, "menu", (GuiItem*)layoutMenu);
 
 	//name
@@ -43,8 +43,8 @@ GuiItem* UiRootSummary_build(GuiItemLayout* layout, UBIG row, DbValue scrollV, D
 	{
 		//Hidden
 		GuiItemMenu* columns = (GuiItemMenu*)GuiItem_addSubName((GuiItem*)layoutMenu, "columns", GuiItemMenu_new(Quad2i_init4(2, 0, 1, 1), DbValue_initLang("COLUMNS"), FALSE));
-		GuiItemMenu_setContext(columns, GuiItemTable_buildShowedList(row));
-		GuiItemMenu_setHighligthBackground(columns, DbRows_hasColumnsSubDeactive(row, "columns"));
+		GuiItemMenu_setContext(columns, GuiItemTable_buildShowedList(Quad2i_init(), row));
+		GuiItemMenu_setHighligthBackground(columns, DbRows_hasColumnsSubDeactive(row, "columns"), 0.5f);
 		GuiItemMenu_setTransparent(columns, FALSE);
 		GuiItem_setIcon((GuiItem*)columns, GuiImage_new1(UiIcons_init_table_hide()));
 		GuiItemMenu_setCenter(columns, FALSE);
@@ -52,9 +52,9 @@ GuiItem* UiRootSummary_build(GuiItemLayout* layout, UBIG row, DbValue scrollV, D
 		//Short
 		BOOL hasShort = DbRows_hasFilterSubActive(row, "short");
 		GuiItemMenu* shortt = (GuiItemMenu*)GuiItem_addSubName((GuiItem*)layoutMenu, "short", GuiItemMenu_new(Quad2i_init4(4, 0, 1, 1), DbValue_initLang("SHORT"), FALSE));
-		GuiItemMenu_setContext(shortt, UiRootTable_buildShortingList(row, "short", "SHORT_ENABLE", TRUE, FALSE, DbRows_initEmpty(), FALSE));
+		GuiItemMenu_setContext(shortt, UiRootTable_buildShortingLayout(Quad2i_init(), row));
 		GuiItemMenu_setTransparent(shortt, FALSE);
-		GuiItemMenu_setHighligthBackground(shortt, hasShort);
+		GuiItemMenu_setHighligthBackground(shortt, hasShort, 0.5f);
 		GuiItem_setIcon((GuiItem*)shortt, GuiImage_new1(UiIcons_init_table_short()));
 		GuiItemMenu_setCenter(shortt, FALSE);
 
@@ -113,7 +113,7 @@ GuiItem* UiRootSummary_build(GuiItemLayout* layout, UBIG row, DbValue scrollV, D
 		//if (Std_sizeUNI(searchStr))
 		//	DbRows_addSearchFilter(&finalFilter, newTable, searchStr);
 
-		GuiItemTable* tableG = GuiItemTable_new(Quad2i_init4(0, 1, 1, 1), row, finalFilter, TRUE, TRUE, scrollV, scrollH, selectGrid);
+		GuiItemTable* tableG = GuiItemTable_new(Quad2i_init4(0, 1, 1, 1), row, finalFilter, TRUE, TRUE, scrollV, scrollH, selectGrid, search);
 		//GuiItemTable_setModeSummary(tableG, TRUE);
 		GuiItem_addSubName((GuiItem*)layout, "table", (GuiItem*)tableG);
 	}

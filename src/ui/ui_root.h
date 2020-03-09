@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -477,14 +477,14 @@ static void _UiRoot_buildListItem(BIG viewLeft, BIG viewRight, GuiItemLayout* pa
 
 static void _UiRoot_buildMenuTable(GuiItemMenu* menu, UBIG row)
 {
-	GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_table_filter()), DbValue_initLang("VIEW_FILTER"), &UiRoot_clickAddSub, FALSE, UI_ADD_VIEW_FILTER);
-	GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_cards()), DbValue_initLang("VIEW_CARDS"), &UiRoot_clickAddSub, FALSE, UI_ADD_VIEW_CARDS);
-	GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_group()), DbValue_initLang("VIEW_GROUP"), &UiRoot_clickAddSub, FALSE, UI_ADD_VIEW_GROUP);
-	GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_map()), DbValue_initLang("VIEW_MAP"), &UiRoot_clickAddSub, FALSE, UI_ADD_VIEW_MAP);
-	//GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_kanban()), DbValue_initLang("VIEW_KANBAN"), &UiRoot_clickAddSub, FALSE, UI_ADD_VIEW_KANBAN);
-	GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_graph()), DbValue_initLang("VIEW_CHART"), &UiRoot_clickAddSub, FALSE, UI_ADD_VIEW_CHART);
+	GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_table_filter()), DbValue_initLang("VIEW_FILTER"), &UiRoot_clickAddSub, FALSE, FALSE, UI_ADD_VIEW_FILTER);
+	GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_cards()), DbValue_initLang("VIEW_CARDS"), &UiRoot_clickAddSub, FALSE, FALSE, UI_ADD_VIEW_CARDS);
+	GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_group()), DbValue_initLang("VIEW_GROUP"), &UiRoot_clickAddSub, FALSE, FALSE, UI_ADD_VIEW_GROUP);
+	GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_map()), DbValue_initLang("VIEW_MAP"), &UiRoot_clickAddSub, FALSE, FALSE, UI_ADD_VIEW_MAP);
+	//GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_kanban()), DbValue_initLang("VIEW_KANBAN"), &UiRoot_clickAddSub, FALSE, FALSE, UI_ADD_VIEW_KANBAN);
+	GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_graph()), DbValue_initLang("VIEW_CHART"), &UiRoot_clickAddSub, FALSE, FALSE, UI_ADD_VIEW_CHART);
 
-	GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_column_insight()), DbValue_initLang("VIEW_SUMMARY"), &UiRoot_clickAddSub, FALSE, UI_ADD_VIEW_SUMMARY);
+	GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_column_insight()), DbValue_initLang("VIEW_SUMMARY"), &UiRoot_clickAddSub, FALSE, FALSE, UI_ADD_VIEW_SUMMARY);
 
 	//GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_calendar()), DbValue_initLang("VIEW_CALENDAR), &UiRoot_clickAddSub, FALSE, Gui_VIEW_CALENDAR);
 	//GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_timeline()), DbValue_initLang("VIEW_TIMELINE), &UiRoot_clickAddSub, FALSE, Gui_VIEW_TIMELINE);
@@ -577,9 +577,9 @@ GuiItem* UiRoot_createMenu(Quad2i grid, BIG row)
 
 	if (DbRoot_isType_folder(row))
 	{
-		GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_table()), DbValue_initLang("ADD_TABLE"), &UiRoot_clickAddSub, FALSE, UI_ADD_TABLE);
+		GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_table()), DbValue_initLang("ADD_TABLE"), &UiRoot_clickAddSub, FALSE, TRUE, UI_ADD_TABLE);
 		//GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_page()), DbValue_initLang("ADD_PAGE), &UiRoot_clickAddSub, FALSE, UI_ADD_PAGE);
-		GuiItemMenu_addItemEmpty(menu);
+		//GuiItemMenu_addItemEmpty(menu);
 	}
 
 	if (DbRoot_isType_remote(row))
@@ -590,56 +590,56 @@ GuiItem* UiRoot_createMenu(Quad2i grid, BIG row)
 
 	if (DbRoot_isTypeView_chart(row))
 	{
-		GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_image()), DbValue_initLang("EXPORT_GRAPH_IMAGE"), &UiRoot_clickExportGraphImage, FALSE, 0);
-		GuiItemMenu_addItemEmpty(menu);
+		GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_image()), DbValue_initLang("EXPORT_GRAPH_IMAGE"), &UiRoot_clickExportGraphImage, FALSE, TRUE, 0);
+		//GuiItemMenu_addItemEmpty(menu);
 	}
 
 	if (DbRoot_isTypeView_group(row))
 	{
-		GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_table_filter()), DbValue_initLang("EXPORT_GROUP_MAKE_FILTER"), &UiRoot_clickCreateFilter, FALSE, 0);
-		GuiItemMenu_addItemEmpty(menu);
+		GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_table_filter()), DbValue_initLang("EXPORT_GROUP_MAKE_FILTER"), &UiRoot_clickCreateFilter, FALSE, TRUE, 0);
+		//GuiItemMenu_addItemEmpty(menu);
 	}
 
 	if (DbRoot_isType_folder(row))
 	{
-		GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_import()), DbValue_initLang("IMPORT_CSV"), &UiRoot_clickImport, FALSE, UI_IMPORT_CSV);
-		GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_import()), DbValue_initLang("IMPORT_TSV"), &UiRoot_clickImport, FALSE, UI_IMPORT_TSV);
-		GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_import()), DbValue_initLang("IMPORT_FILES"), &UiRoot_clickImport, FALSE, UI_IMPORT_FILES);
-		GuiItemMenu_addItemEmpty(menu);
+		GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_import()), DbValue_initLang("IMPORT_CSV"), &UiRoot_clickImport, FALSE, FALSE, UI_IMPORT_CSV);
+		GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_import()), DbValue_initLang("IMPORT_TSV"), &UiRoot_clickImport, FALSE, FALSE, UI_IMPORT_TSV);
+		GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_import()), DbValue_initLang("IMPORT_FILES"), &UiRoot_clickImport, FALSE, TRUE, UI_IMPORT_FILES);
+		//GuiItemMenu_addItemEmpty(menu);
 	}
 
 	if (!DbRoot_isType_folder(row) && (DbRoot_isType_table(row) || DbRoot_isTypeView_filter(row) || DbRoot_isTypeView_summary(row)))
 	{
-		GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_export()), DbValue_initLang("EXPORT_CSV"), &UiRoot_clickExport, FALSE, UI_EXPORT_CSV);
-		GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_export()), DbValue_initLang("EXPORT_TSV"), &UiRoot_clickExport, FALSE, UI_EXPORT_TSV);
-		GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_export()), DbValue_initLang("EXPORT_HTML"), &UiRoot_clickExport, FALSE, UI_EXPORT_HTML);
+		GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_export()), DbValue_initLang("EXPORT_CSV"), &UiRoot_clickExport, FALSE, FALSE, UI_EXPORT_CSV);
+		GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_export()), DbValue_initLang("EXPORT_TSV"), &UiRoot_clickExport, FALSE, FALSE, UI_EXPORT_TSV);
+		GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_export()), DbValue_initLang("EXPORT_HTML"), &UiRoot_clickExport, FALSE, TRUE, UI_EXPORT_HTML);
 		//GuiItemMenu_addItem(menu, DbValue_initLang("EXPORT_SQL"), GuiItemCall_newRow(&UiRoot_clickExportSql, self, row), FALSE);
-		GuiItemMenu_addItemEmpty(menu);
+		//GuiItemMenu_addItemEmpty(menu);
 	}
 
 	if (DbRoot_isReference(row))
 	{
-		GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_reference()), DbValue_initLang("OPEN_REFERENCE_SOURCE"), &UiRoot_clickOpenReferenceSource, FALSE, -1);
-		GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_reference()), DbValue_initLang("CONVERT_REFERENCE_PERNAMENT"), &UiRoot_clickReferenceToPernament, FALSE, -1);
-		GuiItemMenu_addItemEmpty(menu);
+		GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_reference()), DbValue_initLang("OPEN_REFERENCE_SOURCE"), &UiRoot_clickOpenReferenceSource, FALSE, FALSE, -1);
+		GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_reference()), DbValue_initLang("CONVERT_REFERENCE_PERNAMENT"), &UiRoot_clickReferenceToPernament, FALSE, TRUE, -1);
+		//GuiItemMenu_addItemEmpty(menu);
 	}
 	else
 		if (DbRoot_isTypeView(row))
 		{
-			GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_reference()), DbValue_initLang("MAKE_REFERENCE"), &UiRoot_clickCreateReference, FALSE, -1);
-			GuiItemMenu_addItemEmpty(menu);
+			GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_reference()), DbValue_initLang("MAKE_REFERENCE"), &UiRoot_clickCreateReference, FALSE, TRUE, -1);
+			//GuiItemMenu_addItemEmpty(menu);
 		}
 
-	GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_duplicate()), DbValue_initLang("DUPLICATE"), &UiRoot_clickDuplicate, FALSE, -1);
+	GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_duplicate()), DbValue_initLang("DUPLICATE"), &UiRoot_clickDuplicate, FALSE, FALSE, -1);
 
 	if (DbRoot_isTypeView_filter(row) || DbRoot_isTypeView_summary(row))
 	{
 		const BIG numViews = DbColumnN_sizeActive(DbRoot_subs(), DbRoot_findChildType(row, "views"));
 		if (numViews)
-			GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_trash()), DbValue_initLang("REMOVE_KEEP_SUB_VIEWS"), &UiRoot_clickRemoveKeepSubViews, TRUE, -1);
+			GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_trash()), DbValue_initLang("REMOVE_KEEP_SUB_VIEWS"), &UiRoot_clickRemoveKeepSubViews, TRUE, FALSE, -1);
 	}
 
-	GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_trash()), DbValue_initLang("REMOVE"), &UiRoot_clickRemove, TRUE, -1);
+	GuiItemMenu_addItemIcon(menu, GuiImage_new1(UiIcons_init_trash()), DbValue_initLang("REMOVE"), &UiRoot_clickRemove, TRUE, FALSE, -1);
 
 	return (GuiItem*)menu;
 }
@@ -917,7 +917,7 @@ void UiRoot_rebuildBase(GuiItem* item)
 		GuiItemLayout_setResize(panelLayout, &UiRoot_rebuildPanelLeft);
 
 		if (viewRight >= 0)
-			GuiItem_setChangeSize((GuiItem*)panelLayout, TRUE, _UiRoot_getSplitValue(), TRUE);
+			GuiItem_setChangeSize((GuiItem*)panelLayout, TRUE, _UiRoot_getSplitValue(), TRUE, TRUE, GuiItemTheme_getWhite());
 	}
 
 	//Right panel
@@ -1070,7 +1070,7 @@ GuiItemLayout* UiRoot_new(void)
 	GuiItemLayout* sideLayout = GuiItemLayout_new(Quad2i_init4(0, 0, 1, 1));
 	GuiItem_addSubName((GuiItem*)layout, "side", (GuiItem*)sideLayout);
 	GuiItemLayout_setResize(sideLayout, &UiRoot_rebuildSide);
-	GuiItem_setChangeSize((GuiItem*)sideLayout, TRUE, _UiRoot_getSideValue(), TRUE);
+	GuiItem_setChangeSize((GuiItem*)sideLayout, TRUE, _UiRoot_getSideValue(), TRUE, TRUE, GuiItemTheme_getWhite());
 
 	return layout;
 }

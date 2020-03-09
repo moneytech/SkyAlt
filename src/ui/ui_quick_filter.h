@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -83,12 +83,12 @@ GuiItemLayout* UiRootQuickFilter_buildPanel(Quad2i grid, UBIG row, DbRows* filte
 	if (showPanel)
 	{
 		layout = GuiItemLayout_new(grid);
-		GuiItemLayout_setScrollV(layout, scroll);
+		//GuiItemLayout_setScrollV(layout, scroll);
 		GuiItemLayout_setDrawBackground(layout, FALSE);
 		GuiItemLayout_setDrawBorder(layout, TRUE);
 		GuiItemLayout_addColumn(layout, 0, 99);
 		GuiItemLayout_addRow(layout, 2, 99);
-		GuiItem_setChangeSize((GuiItem*)layout, TRUE, DbValue_initOption(groupRow, "width", 0), TRUE);
+		GuiItem_setChangeSize((GuiItem*)layout, TRUE, DbValue_initOption(groupRow, "width", 0), TRUE, TRUE, GuiItemTheme_getWhite());
 		GuiItem_setAttribute((GuiItem*)layout, "row", row);
 
 		//column
@@ -111,7 +111,7 @@ GuiItemLayout* UiRootQuickFilter_buildPanel(Quad2i grid, UBIG row, DbRows* filte
 			if (DbRows_getSize(filter) > 0)
 			{
 				BIG selectRow = 0;
-				GuiItem_addSubName((GuiItem*)layout, "list", (GuiItem*)GuiItemGroup_getLaneList(Quad2i_init4(0, 2, 2, 1), groupColumn, filter->filter, &selectRow, selectPos, &UiRootQuickFilter_clickSelectionPos, 0));
+				GuiItem_addSubName((GuiItem*)layout, "list", (GuiItem*)GuiItemGroup_getLaneList(Quad2i_init4(0, 2, 2, 1), groupColumn, filter->filter, &selectRow, selectPos, scroll, &UiRootQuickFilter_clickSelectionPos, 0));
 
 				if (selectRow >= 0 && selectPos >= 0)
 				{

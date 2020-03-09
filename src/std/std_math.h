@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -347,6 +347,15 @@ double Vec2f_distance(Vec2f a, Vec2f b)
 {
 	return Vec2f_len(Vec2f_sub(a, b));
 }
+Vec2f Vec2f_perpendicularX(Vec2f a)
+{
+	return Vec2f_init2(-a.y, a.x);
+}
+Vec2f Vec2f_perpendicularY(Vec2f a)
+{
+	return Vec2f_init2(a.y, -a.x);
+}
+
 
 Vec3f Vec3f_init(void)
 {
@@ -376,6 +385,15 @@ Vec3f Vec3f_mulV(Vec3f p, float t)
 	p.z *= t;
 	return p;
 }
+Vec3f Vec3f_aprox(Vec3f a, Vec3f b, float t)
+{
+	return Vec3f_init3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t);
+}
+BOOL Vec3f_cmp(Vec3f a, Vec3f b)
+{
+	return a.x == b.x && a.y == b.y && a.z == b.z;
+}
+
 
 Quad2i Quad2i_init(void)
 {
@@ -637,18 +655,23 @@ Quad2f Quad2f_getIntersect(const Quad2f qA, const Quad2f qB)
 	return Quad2f_init();
 }
 
+Vec2f Quad2f_getMiddle(const Quad2f q)
+{
+	return Vec2f_add(q.start, Vec2f_mulV(q.size, 0.5f));
+}
+
 void Quad2f_print(Quad2f q, const char* name)
 {
 	printf("%s: %f %f %f %f\n", name, q.start.x, q.start.y, q.size.x, q.size.y);
 }
 
-double StdMap_getMetersPerPixel(double lat, int z)
+double StdMap_getMetersPerPixel(double lat, double z)
 {
 	//resolution = 156543.03 meters/pixel * cos(latitude) / (2 ^ zoomlevel)
 	return 156543.034 * Os_cos(lat / 180 * M_PI) / Os_pow(2, z);
 }
 
-Vec2f StdMap_getTile(double lon, double lat, int z)
+Vec2f StdMap_getTile(double lon, double lat, double z)
 {
 	Vec2f pos;
 	pos.x = (lon + 180.0) / 360.0 * Os_pow(2.0, z);
@@ -656,7 +679,7 @@ Vec2f StdMap_getTile(double lon, double lat, int z)
 	return pos;
 }
 
-Vec2f StdMap_getLonLat(double tileX, double tileY, int z)
+Vec2f StdMap_getLonLat(double tileX, double tileY, double z)
 {
 	Vec2f pos;
 	pos.x = tileX / Os_pow(2.0, z) * 360.0 - 180;	//long
@@ -667,7 +690,7 @@ Vec2f StdMap_getLonLat(double tileX, double tileY, int z)
 	return pos;
 }
 
-Quad2f StdMap_lonLatToTileBbox(Vec2i res, const int tilePx, double lon, double lat, int z)
+Quad2f StdMap_lonLatToTileBbox(Vec2i res, const int tilePx, double lon, double lat, double z)
 {
 	Vec2f tile = StdMap_getTile(lon, lat, z);
 

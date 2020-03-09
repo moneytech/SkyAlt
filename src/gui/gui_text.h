@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -17,6 +17,7 @@ typedef struct GuiItemText_s
 
 	DbValue text;
 	DbValue description;
+	DbValue back_cd_value;
 	int text_level;
 
 	BOOL enableCentring;
@@ -36,6 +37,7 @@ typedef struct GuiItemText_s
 
 	BOOL cursorNone;
 
+	Rgba back_cd;
 	Rgba colorBorder;
 
 	BOOL formatURL;
@@ -49,6 +51,7 @@ GuiItem* GuiItemText_new(Quad2i grid, BOOL enableCentring, DbValue text, DbValue
 	self->enableCentring = enableCentring;
 	self->text = text;
 	self->description = description;
+	self->back_cd_value = DbValue_initEmpty();
 
 	self->text_level = 1;
 	self->doubleBorder = FALSE;
@@ -88,7 +91,9 @@ GuiItem* GuiItemText_newCopy(GuiItemText* src, BOOL copySub)
 
 	self->text = DbValue_initCopy(&src->text);
 	self->description = DbValue_initCopy(&src->description);
+	self->back_cd_value = DbValue_initCopy(&src->back_cd_value);
 
+	
 	return (GuiItem*)self;
 }
 
@@ -96,6 +101,7 @@ void GuiItemText_delete(GuiItemText* self)
 {
 	DbValue_free(&self->text);
 	DbValue_free(&self->description);
+	DbValue_free(&self->back_cd_value);
 
 	GuiItem_free(&self->base);
 	Os_free(self, sizeof(GuiItemText));
@@ -118,6 +124,12 @@ void GuiItemText_setText(GuiItemText* self, const UNI* str)
 void GuiItemText_setColorBorder(GuiItemText* self, Rgba colorBorder)
 {
 	self->colorBorder = colorBorder;
+}
+
+void GuiItemText_setBackgroundCdValue(GuiItemText* self, DbValue back_cd_value)
+{
+	self->back_cd_value = back_cd_value;
+	self->drawBackground = (back_cd_value.column != 0);
 }
 
 double GuiItemText_getNumber(const GuiItemText* self)
@@ -168,7 +180,7 @@ void GuiItemText_draw(GuiItemText* self, Image4* img, Quad2i coord, Win* win)
 	if (!self->base.drawTable)
 		coord = Quad2i_addSpace(coord, 3);
 
-	if ((self->drawBackground || self->stayPressed) && (self->stayPressed || self->base.drawTable || self->drawWhiteBack))
+	if ((self->drawBackground || self->stayPressed) && (self->stayPressed || self->base.drawTable || self->drawWhiteBack || DbValue_is(&self->back_cd_value)))
 		Image4_drawBoxQuad(img, self->drawWhiteBack ? Quad2i_addSpace(coord, 2) : coord, self->base.back_cd);
 
 	if (self->drawBackground_procentage_visualize)
@@ -243,6 +255,10 @@ void GuiItemText_draw(GuiItemText* self, Image4* img, Quad2i coord, Win* win)
 
 void GuiItemText_update(GuiItemText* self, Quad2i coord, Win* win)
 {
+	DbValue_setRow(&self->back_cd_value, GuiItem_getRow(&self->base), 0);
+	if (DbValue_is(&self->back_cd_value))
+		self->back_cd = DbValue_getCd(&self->back_cd_value);
+
 	GuiItem_setRedraw(&self->base, (DbValue_hasChanged(&self->text) || DbValue_hasChanged(&self->description)));
 }
 
@@ -255,15 +271,17 @@ void GuiItemText_touch(GuiItemText* self, Quad2i coord, Win* win)
 		back_cd = g_theme.white;
 
 	if (self->base.drawTable)
-	{
 		back_cd = g_theme.white;
-	}
+
+	if (DbValue_is(&self->back_cd_value))
+		back_cd = self->back_cd;
 
 	if (GuiItemText_isUnderline(self))
 		front_cd = g_theme.warning;	//blue ...
 
 	if (self->stayPressed)
 		back_cd = Rgba_aprox(g_theme.background, g_theme.main, 0.5f);
+
 
 	if (self->enableSelect && self->base.touch && GuiItem_isEnable(&self->base) && OsWinIO_canActiveRenderItem(self))
 	{

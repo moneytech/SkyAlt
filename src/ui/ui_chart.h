@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -74,7 +74,7 @@ GuiItemLayout* UiRootChartPanel_build(Quad2i grid, UBIG row, DbRows* filter, DbV
 
 		GuiItemLayout_addColumn(layout, 0, 99);
 		//GuiItemLayout_addRow(layout, 2, 99);
-		GuiItem_setChangeSize((GuiItem*)layout, TRUE, DbValue_initOption(row, "panel_settings_width", 0), TRUE);
+		GuiItem_setChangeSize((GuiItem*)layout, TRUE, DbValue_initOption(row, "panel_settings_width", 0), TRUE, TRUE, GuiItemTheme_getWhite());
 		GuiItem_setAttribute((GuiItem*)layout, "row", row);
 
 		//type

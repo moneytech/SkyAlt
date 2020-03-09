@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -75,7 +75,7 @@ GuiItemLayout* UiRootMapPanel_build(Quad2i grid, UBIG row, DbRows* filter, DbVal
 		//GuiItemLayout_setDrawBorder(layout, TRUE);
 		GuiItemLayout_addColumn(layout, 0, 99);
 		//GuiItemLayout_addRow(layout, 2, 99);
-		GuiItem_setChangeSize((GuiItem*)layout, TRUE, DbValue_initOption(row, "panel_settings_width", 0), TRUE);
+		GuiItem_setChangeSize((GuiItem*)layout, TRUE, DbValue_initOption(row, "panel_settings_width", 0), TRUE, TRUE, GuiItemTheme_getWhite());
 		GuiItem_setAttribute((GuiItem*)layout, "row", row);
 
 		//type
@@ -156,12 +156,12 @@ GuiItemLayout* UiRootMapPanel_build(Quad2i grid, UBIG row, DbRows* filter, DbVal
 	return layout;
 }
 
-void UiRootMap_clickFocusItems(GuiItem* item)
+/*void UiRootMap_clickFocusItems(GuiItem* item)
 {
 	GuiItemMap* map = GuiItem_findName(item, "map");
 	if (map)
 		GuiItemMap_focusItems(map);
-}
+}*/
 void UiRootMap_clickFocusSearch(GuiItem* item)
 {
 	GuiItemMap* map = GuiItem_findName(item, "map");
@@ -214,7 +214,7 @@ static GuiItem* UiRootMap_build(GuiItemLayout* layout, UBIG row, DbValue cam_lat
 	}
 
 	//bottom header
-	if (!DbRoot_isReference(row))
+	/*if (!DbRoot_isReference(row))
 	{
 		GuiItemLayout* layoutMenu = GuiItemLayout_new(Quad2i_init4(0, 2, 2, 1));
 		GuiItemLayout_setDrawBackground(layoutMenu, FALSE);
@@ -238,7 +238,7 @@ static GuiItem* UiRootMap_build(GuiItemLayout* layout, UBIG row, DbValue cam_lat
 		GuiItem_addSubName((GuiItem*)layoutMenu, "cam_zoom", GuiItemEdit_new(Quad2i_init4(5, 0, 1, 1), DbValue_initCopy(&cam_zoom), DbValue_initLang("MAP_CAM_ZOOM")));
 
 		GuiItem_addSubName((GuiItem*)layoutMenu, "refocus", GuiItemButton_newClassicEx(Quad2i_init4(7, 0, 1, 1), DbValue_initLang("MAP_REFOCUS"), &UiRootMap_clickFocusItems));
-	}
+	}*/
 
 	BOOL hasPanel = FALSE;
 

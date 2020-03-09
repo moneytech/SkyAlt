@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -37,6 +37,8 @@ typedef struct GuiItemRoot_s
 
 	UBIG numChanges;
 	Quad2i redrawRect;
+
+	InterRoot* interpreter;
 } GuiItemRoot;
 
 GuiItemRoot* g_GuiItemRoot = 0;
@@ -77,6 +79,8 @@ void GuiItemRoot_delete(void)
 
 		_GuiItemRoot_deleteLevels();
 
+		InterRoot_delete(g_GuiItemRoot->interpreter);
+
 		Os_free(g_GuiItemRoot, sizeof(GuiItemRoot));
 		g_GuiItemRoot = 0;
 	}
@@ -113,6 +117,8 @@ BOOL GuiItemRoot_new(void)
 
 	OsLockEvent_init(&g_GuiItemRoot->syncEventStart);
 	OsLockEvent_init(&g_GuiItemRoot->syncEventEnd);
+
+	g_GuiItemRoot->interpreter = InterRoot_new("code.txt");
 
 	return TRUE;
 }
@@ -223,6 +229,8 @@ void GuiItemRoot_addDialogRel(GuiItem* item, GuiItem* parent, Quad2i parentCoord
 	GuiItem_createBackChain(parent, &origPath);
 	GuiItem* level = GuiItemLevel_newRelative(closeAfter, item, parentCoord, origPath);
 
+//GuiItemLevel_printPath((GuiItemLevel*)level);
+
 	//if (parent)
 	//	GuiItem_copyAttributes(level, parent);
 
@@ -286,6 +294,13 @@ void GuiItemRoot_closeLevels(void)
 	BIG i;
 	for (i = 1; i < GuiItemRoot_numLevels(); i++)
 		GuiItemRoot_getLevel(i)->remove = TRUE;
+}
+
+void GuiItemRoot_closeLevelTop(void)
+{
+	UBIG N = GuiItemRoot_numLevels();
+	if(N > 1)
+		GuiItemRoot_getLevel(N-1)->remove = TRUE;
 }
 
 void GuiItemRoot_key(Win* win)
@@ -370,6 +385,10 @@ static void _GuiItemRoot_guiTouchUpdateLevels(BOOL doUpdate, Win* win)
 		GuiItem* it = GuiItemRoot_getLevel(i);
 
 		GuiItemLevel* level = (GuiItemLevel*)GuiItem_findChildType(it, GuiItem_LEVEL);
+
+//if (level && i == 1)
+//	GuiItemLevel_printPath(level);
+
 		if (level && !GuiItemLevel_isBackChainValid(level))	//don't have parent
 			it->remove = TRUE;
 
@@ -460,8 +479,15 @@ Quad2i _GuiItemRoot_guiDrawLayers(Win* win)
 		}
 	}
 
-	Win_updateCursorReal(win);
+	
 
+
+Image4 img = Win_getImage(g_GuiItemRoot->win);
+InterRoot_render(g_GuiItemRoot->interpreter, &img, win);
+rect = img.rect;
+//note: povoli _GuiItemRoot_guiTouchUpdateLevels()
+
+	Win_updateCursorReal(win);
 	return rect;
 }
 
@@ -536,11 +562,12 @@ THREAD_FUNC(GuiItemRoot_loop, param)
 	{
 		OsLockEvent_wait(&g_GuiItemRoot->syncEventStart, 0);
 
-		_GuiItemRoot_guiTouchUpdateLevels(g_GuiItemRoot->doUpdate, g_GuiItemRoot->win);
+InterRoot_update(g_GuiItemRoot->interpreter, Win_getImage(g_GuiItemRoot->win).size, g_GuiItemRoot->win);
+
+//		_GuiItemRoot_guiTouchUpdateLevels(g_GuiItemRoot->doUpdate, g_GuiItemRoot->win);
 		StdProgress_run(TRUE);
 
 		//OsThread_sleep(2000);
-
 		//printf("done---\n");
 
 		g_GuiItemRoot->run = -1; //deactivate

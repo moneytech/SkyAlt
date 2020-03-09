@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -255,7 +255,7 @@ DbRows DbRows_getSubsArray(BIG row, const char* subType)
 	return DbRows_initLinkN(DbRoot_subs(), columnsRow);
 }
 
-BIG DbRows_getAddSubsLine(BIG row, const char* subType)
+BIG DbRows_addSubsLine(BIG row, const char* subType)
 {
 	DbRows rows = DbRows_getSubsArray(row, subType);
 
@@ -436,14 +436,12 @@ UBIG DbRows_getSubsNum(BIG row, const char* subType, BOOL onlyEnable)
 	return _DbRows_getSubsIndex(row, subType, onlyEnable, -1, &column, &row2);
 }
 
-DbValues DbRows_getOptions(BIG row, const char* subType, const char* valueType, BOOL onlyEnable)
+DbValues DbRows_getOptions(BIG propRow, const char* valueType, BOOL onlyEnable)
 {
 	DbValues values = DbValues_init();
 
-	//DbColumnN* subs = DbRoot_getColumnSubs();
-
-	BIG propRow = DbRows_findSubType(row, subType);
-	DbTable* table = DbRoot_findParentTable(row);
+	//BIG propRow = DbRows_findSubType(row, subType);
+	DbTable* table = DbRoot_findParentTable(propRow);
 
 	if (table && propRow >= 0)
 	{
@@ -466,7 +464,7 @@ BOOL DbRows_isEnable(BIG row)
 }
 void DbRows_setEnable(BIG row, BOOL enable)
 {
-	_DbRoot_setEnable(row, enable);
+	DbRoot_setEnable(row, enable);
 }
 
 DbRows DbRows_initTables(void)
@@ -505,6 +503,9 @@ BOOL DbRows_hasFilterSubActive(BIG row, const char* subName)
 			if (!_DbRoot_isEnable(subRow))
 				return FALSE;
 
+			if (Std_cmpCHAR(subName, "select") && _DbRoot_getOptionNumber(subRow, "maxRecords", 0) > 0)
+				return TRUE;
+
 			UBIG i = 0;
 			BIG it;
 			while ((it = DbColumnN_jump(DbRoot_subs(), subRow, &i, 1)) >= 0)
@@ -523,9 +524,6 @@ BOOL DbRows_hasFilterSubActive(BIG row, const char* subName)
 				}
 				i++;
 			}
-
-			if (Std_cmpCHAR(subName, "select") && _DbRoot_getOptionNumber(subRow, "maxRecords", 0) > 0)
-				return TRUE;
 		}
 	}
 
@@ -693,3 +691,79 @@ BOOL DbRows_getColumnsMinMax(DbRows* self, DbColumn** columns, double* mn, doubl
 
 	return (N > 0);
 }
+
+BIG DbRows_findRowScroll(DbRows* self, BIG findRow)
+{
+	if (self->arrayStatic)	//must be first!
+	{
+		UBIG pos = 0;
+		BIG i;
+		for (i = 0; i < self->array.num; i++)
+		{
+			BIG r = self->array.ptrs[i];
+			if (DbTable_isRowActive(self->table, r))
+			{
+				if (FileRow_isRow(DbTable_getFileRow(self->table, r), findRow))
+					return pos;
+				pos++;	//only for valid rows
+			}
+		}
+	}
+	else
+		if (self->filter)
+		{
+			UBIG pos = 0;
+			BIG i;
+			for (i = 0; i < self->filter->rows.num; i++)
+			{
+				BIG r = self->filter->rows.ptrs[i];
+				if (DbTable_isRowActive(self->table, r))
+				{
+					if (FileRow_isRow(DbTable_getFileRow(self->table, r), findRow))
+						return pos;
+					pos++;	//only for valid rows
+				}
+			}
+		}
+		else
+			if (self->table)
+			{
+				return DbTable_findRowScroll(self->table, findRow);
+			}
+			else
+				if (DbRows_isColumnValid(self))
+				{
+					const UBIG N = DbRows_getSize(self);
+					UBIG pos = 0;
+					BIG i;
+					for (i = 0; i < N; i++)
+					{
+						BIG r = DbRows_getRow(self, i);
+						if (DbTable_isRowActive(self->table, r))
+						{
+							if (FileRow_isRow(DbTable_getFileRow(self->table, r), findRow))
+								return pos;
+							pos++;	//only for valid rows
+						}
+					}
+				}
+					
+	return -1;
+}
+
+
+/*const UBIG NUM_ROWS = DbColumn_numRows(&self->base);
+UBIG pos = 0;
+UBIG i;
+for (i = 0; i < NUM_ROWS; i++)
+{
+	FileRow row = DbColumn1_getFileId(self, i);
+	if (FileRow_is(row))	//only valid
+	{
+		if (FileRow_isRow(row, r))
+			return pos;
+		pos++;
+	}
+}
+return -1;*/
+

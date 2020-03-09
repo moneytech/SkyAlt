@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -23,6 +23,8 @@
 #include "map.h"
 #include "license.h"
 
+
+
 const char* __asan_default_options() { return "malloc_context_size=100";/*divide by ':'*/ }	//fsanitize will print longer scope
 
 int main(int argc, char** argv)
@@ -38,6 +40,8 @@ int main(int argc, char** argv)
 	OsCrypto_initGlobal();
 	OsNet_init();
 	OsHTTPS_initGlobal();
+	OsXml_initGlobal();
+
 	GuiItemTheme_init();
 	if (!OsWinIO_new())
 		return -1;
@@ -53,6 +57,7 @@ int main(int argc, char** argv)
 	//UiLogo_convertZlib();
 	//MapTiles_createCache();
 	//MapPoly_createCache();
+	//OsXml_testGpx("D:/social_data/nike/2010-11-16 102541-Nike-Activity.gpx");
 
 	//License_makeFile(_UNI32("SkyAlt inc."), 36, 12);
 
@@ -98,9 +103,8 @@ int main(int argc, char** argv)
 	}
 	else
 	{
-		//show console + err
-		printf("Error: Missing Language(Translation)\n");
 		Os_showConsole(TRUE);
+		Os_consoleWaitForKey();
 	}
 
 	License_free();
@@ -112,6 +116,7 @@ int main(int argc, char** argv)
 
 	//DbRoot_freeProgress();
 
+	OsXml_freeGlobal();
 	OsHTTPS_freeGlobal();
 	OsNet_free();
 	OsCrypto_freeGlobal();

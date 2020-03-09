@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -164,6 +164,11 @@ BOOL DbValue_isRowEnable(const DbValue* self)
 	return (self->row >= 0) ? _DbRoot_isEnable(self->row) : FALSE;
 }
 
+BOOL DbValue_is(const DbValue* self)
+{
+	return (self->column && self->row >= 0);
+}
+
 BOOL DbValue_isType1(const DbValue* self)
 {
 	return self->row >= 0 && self->column && self->column->type == DbColumn_1;
@@ -251,7 +256,7 @@ static void _DbValue_updateResult(DbValue* self)
 BOOL DbValue_hasChanged(DbValue* self)
 {
 	if (self->insight)
-		return DbInsight_execute(self->insight);
+		DbInsight_execute(self->insight);
 
 	_DbValue_updateResult(self);
 
@@ -522,4 +527,11 @@ void DbValues_updateText(DbValues* self)
 	BIG i;
 	for (i = 0; i < self->num; i++)
 		_DbValue_updateResult(&self->values[i]);
+}
+
+void DbValues_setRow(DbValues* self, BIG row)
+{
+	BIG i;
+	for (i = 0; i < self->num; i++)
+		self->values[i].row = row;
 }

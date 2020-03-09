@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -22,6 +22,8 @@
 #include "media.h"
 #include "io.h"
 #include "ui.h"	//icons
+#include "interpreter.h"
+
 
 //header
 #include "gui.h"
@@ -55,7 +57,7 @@ void GuiItem_delete(GuiItem* self);
 
 GuiItem* GuiItemLevel_getBackChain(const GuiItemLevel* self);
 
-GuiItemLayout* GuiItemTags_dialogFileAdd(DbColumn* column);
+GuiItemLayout* GuiItemTags_dialogFileAdd(GuiItemTags* self, DbColumn* column);
 
 Image1 GuiItemChart_getIcon(BIG row);
 
@@ -85,16 +87,20 @@ Image1 GuiItemChart_getIcon(BIG row);
 #include "gui/gui_list.h"
 #include "gui/gui_struct.h"
 //#include "gui/gui_todo.h"
-#include "gui/gui_file.h"
-#include "gui/gui_tags.h"
+#include "gui/gui_audio.h"
+#include "gui/gui_gallery.h"
+
 #include "gui/gui_calendarSmall.h"
 #include "gui/gui_calendarBig.h"
+#include "gui/gui_map.h"
+#include "gui/gui_file.h"
+#include "gui/gui_tags.h"
+//#include "gui/gui_timeline.h"
+
 #include "gui/gui_table.h"
 #include "gui/gui_group.h"
 //#include "gui/gui_kanban.h"
 #include "gui/gui_chart.h"
-#include "gui/gui_map.h"
-//#include "gui/gui_timeline.h"
 
 #include "gui/gui_color.h"
 #include "gui/gui_switch.h"

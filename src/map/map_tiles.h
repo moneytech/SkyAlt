@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -60,7 +60,7 @@ static void _MapTiles_resize(MapTiles* self, UBIG n)
 	self->items = Os_realloc(self->items, self->num_items * sizeof(MapTilesIndex));
 }
 
-MapTiles* MapTiles_new(const char* path)
+MapTiles* MapTiles_new(const char* path, BOOL printWarning)
 {
 	MapTiles* self = Os_calloc(1, sizeof(MapTiles));
 	self->path = Std_newCHAR(path);
@@ -94,6 +94,9 @@ MapTiles* MapTiles_new(const char* path)
 
 		OsFile_free(&file);
 	}
+	else
+		if (printWarning)
+			printf("Warning: MapTiles cache file(%s) is missing\n", path);
 
 	//alloc down
 	_MapTiles_resize(self, p);
@@ -236,7 +239,7 @@ void MapTiles_createCache(void)
 	const int startZoom = 0;
 	const int endZoom = 6;
 
-	MapTiles* Map = MapTiles_new("map_std.tiles");
+	MapTiles* Map = MapTiles_new("map_std.tiles", FALSE);
 
 	int x, y, z;
 

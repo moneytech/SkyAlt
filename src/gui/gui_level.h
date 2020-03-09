@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -69,6 +69,14 @@ void GuiItemLevel_delete(GuiItemLevel* self)
 	GuiItem_free(&self->base);
 	Os_free(self, sizeof(GuiItemLevel));
 }
+
+/*void GuiItemLevel_printPath(const GuiItemLevel* self)
+{
+	int i;
+	for (i = 0; i < self->origPath.num; i++)
+		if(self->origPath.ptrs[i])
+			printf("%s\n", (char*)self->origPath.ptrs[i]);
+}*/
 
 GuiItem* GuiItemLevel_getBackChain(const GuiItemLevel* self)
 {

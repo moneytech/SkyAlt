@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -32,8 +32,12 @@ typedef struct GuiItemTagsItem_s
 	BOOL isImage;
 	BOOL isAudio;
 	BOOL isText;
+	BOOL isMap;
 
 	BOOL showClose;
+
+	DbValue cd;
+	Rgba cdBackOption;
 }GuiItemTagsItem;
 
 void GuiItemTagsItem_resetTouch(GuiItemTagsItem* self)
@@ -62,8 +66,12 @@ GuiItemTagsItem* GuiItemTagsItem_new(DbValues columns)
 	self->isImage = FALSE;
 	self->isAudio = FALSE;
 	self->isText = FALSE;
+	self->isMap = FALSE;
 
 	self->showClose = TRUE;
+
+	self->cd = DbValue_initOption(-1, "cd", 0);
+	self->cdBackOption = g_theme.main;
 
 	GuiItemTagsItem_resetTouch(self);
 	return self;
@@ -71,7 +79,7 @@ GuiItemTagsItem* GuiItemTagsItem_new(DbValues columns)
 
 GuiItemTagsItem* GuiItemTagsItem_newCopy(const GuiItemTagsItem* src)
 {
-	GuiItemTagsItem* self = GuiItemTagsItem_new(DbValues_initCopy(&src->columns));
+	GuiItemTagsItem* self = GuiItemTagsItem_new(DbValues_initCopy(&src->columns));// , DbValue_initCopy(&src->cd));
 	self->coord = src->coord;
 	self->text = Std_newUNI(src->text);
 	return self;
@@ -80,11 +88,12 @@ GuiItemTagsItem* GuiItemTagsItem_newCopy(const GuiItemTagsItem* src)
 void GuiItemTagsItem_delete(GuiItemTagsItem* self)
 {
 	DbValues_free(&self->columns);
+	DbValue_free(&self->cd);
 	Std_deleteUNI(self->text);
 	Os_free(self, sizeof(GuiItemTagsItem));
 }
 
-static BOOL _GuiItemTagsItem_hasChanged(GuiItemTagsItem* self, BIG row, UBIG index)
+static BOOL _GuiItemTagsItem_hasChanged(GuiItemTagsItem* self, BIG row, UBIG index, BOOL hasColors)
 {
 	BOOL changed = FALSE;
 
@@ -97,12 +106,18 @@ static BOOL _GuiItemTagsItem_hasChanged(GuiItemTagsItem* self, BIG row, UBIG ind
 		DbValue_setRow(column, row, index);
 		changed |= DbValue_hasChanged(column);
 	}
+
+	if (hasColors)
+	{
+		DbValue_setRow(&self->cd, row, 0);
+		changed |= DbValue_hasChanged(&self->cd);
+	}
 	return changed;
 }
 
-BOOL GuiItemTagsItem_updateText(GuiItemTagsItem* self, BIG row, UBIG index)
+BOOL GuiItemTagsItem_update(GuiItemTagsItem* self, BIG row, UBIG index, BOOL hasColors)
 {
-	BOOL changed = _GuiItemTagsItem_hasChanged(self, row, index);
+	BOOL changed = _GuiItemTagsItem_hasChanged(self, row, index, hasColors);
 	if (changed)
 	{
 		Std_deleteUNI(self->text);
@@ -119,6 +134,17 @@ BOOL GuiItemTagsItem_updateText(GuiItemTagsItem* self, BIG row, UBIG index)
 
 			if (i + 1 < self->columns.num)
 				self->text = Std_addAfterUNI(self->text, _UNI32(" "));
+		}
+
+		if (hasColors)
+		{
+			self->cdBackOption = g_theme.main;
+			//if (DbValue_is(&self->cd))
+			{
+				DbValue_setRow(&self->cd, row, 0);
+				changed |= DbValue_hasChanged(&self->cd);
+				self->cdBack = self->cdBackOption = DbValue_getCd(&self->cd);
+			}
 		}
 	}
 	return changed;
@@ -146,7 +172,7 @@ BOOL GuiItemTagsItem_updateCoordFile(GuiItemTagsItem* self, Quad2i coord, FileRo
 
 	if (changed && FileRow_is(self->file))
 	{
-		MediaLibrary_add(self->file, _GuiItemTagsItem_getImageCoord(coord).size, &self->isImage, &self->isAudio, &self->isText);
+		MediaLibrary_add(self->file, _GuiItemTagsItem_getImageCoord(coord).size, &self->isImage, &self->isAudio, &self->isText, &self->isMap);
 	}
 	else
 	{
@@ -179,8 +205,9 @@ BOOL GuiItemTagsItem_isActive(const GuiItemTagsItem* self)
 
 BOOL GuiItemTagsItem_updateColors(GuiItemTagsItem* self)
 {
-	Rgba cdBack = g_theme.main;
-	if (self->touchPress != self->touchInside)	cdBack = Rgba_aprox(g_theme.white, g_theme.main, 0.5);
+	Rgba cdBack = self->cdBackOption;
+
+	if (self->touchPress != self->touchInside)	cdBack = Rgba_aprox(g_theme.white, cdBack, 0.5);
 	if (self->touchPress && self->touchInside)	cdBack = g_theme.white;
 
 	Rgba cdClose = g_theme.black;
@@ -270,8 +297,9 @@ typedef struct GuiItemTags_s
 	GuiItem base;
 
 	DbRows source;
+	DbValues columns;
 
-	DbValues columns;	//<DbConnectValue*>
+	DbValue hasColors;
 
 	GuiItemTagsCallback* callbackAdd;
 	GuiItemTagsCallback* callbackItem;
@@ -290,13 +318,15 @@ typedef struct GuiItemTags_s
 	DbValue imagePreview;
 }GuiItemTags;
 
-GuiItem* GuiItemTags_new(Quad2i grid, DbRows source, DbValues columns, GuiItemTagsCallback* callbackAdd, GuiItemTagsCallback* callbackItem, BOOL relativeAdd, BOOL relativeItem, BOOL setRowAdd, BOOL setRowItem, DbValue imagePreview)
+GuiItem* GuiItemTags_new(Quad2i grid, DbRows source, DbValues columns, DbValue hasColors, GuiItemTagsCallback* callbackAdd, GuiItemTagsCallback* callbackItem, BOOL relativeAdd, BOOL relativeItem, BOOL setRowAdd, BOOL setRowItem, DbValue imagePreview)
 {
 	GuiItemTags* self = Os_malloc(sizeof(GuiItemTags));
 	self->base = GuiItem_init(GuiItem_TAGS, grid);
 
 	self->source = source;
 	self->columns = columns;
+	self->hasColors = hasColors;
+
 	self->callbackAdd = callbackAdd;
 	self->callbackItem = callbackItem;
 
@@ -321,7 +351,10 @@ GuiItem* GuiItemTags_newCopy(GuiItemTags* src, BOOL copySub)
 
 	self->source = DbRows_initCopy(&src->source);
 	self->columns = DbValues_initCopy(&src->columns);
+	self->source = DbRows_initCopy(&src->source);
 	self->imagePreview = DbValue_initCopy(&src->imagePreview);
+	self->hasColors = DbValue_initCopy(&src->hasColors);
+	
 
 	self->items = StdArr_initCopyFn(&src->items, (StdArrCOPY)&GuiItemTagsItem_newCopy);
 
@@ -341,7 +374,8 @@ void GuiItemTags_delete(GuiItemTags* self)
 	DbRows_free(&self->source);
 	DbValues_free(&self->columns);
 	DbValue_free(&self->imagePreview);
-
+	DbValue_free(&self->hasColors);
+	
 	GuiItem_free(&self->base);
 	Os_free(self, sizeof(GuiItemTags));
 }
@@ -373,6 +407,13 @@ DbColumn* GuiItemTags_getColumn(const GuiItemTags* self)
 {
 	return self->source.column;
 }
+
+BOOL GuiItemTags_hasColors(const GuiItemTags* self)
+{
+	return DbValue_getNumber(&self->hasColors);
+}
+
+
 
 void GuiItemTags_draw(GuiItemTags* self, Image4* img, Quad2i coord, Win* win)
 {
@@ -430,6 +471,8 @@ void GuiItemTags_update(GuiItemTags* self, Quad2i coord, Win* win)
 		changed = TRUE;
 	}
 
+	changed |= DbValue_hasChanged(&self->hasColors);
+
 	UBIG i;
 	for (i = 0; i < N; i++)
 	{
@@ -443,7 +486,7 @@ void GuiItemTags_update(GuiItemTags* self, Quad2i coord, Win* win)
 			StdArr_add(&self->items, item);
 		}
 
-		changed |= GuiItemTagsItem_updateText(item, DbRows_getRow(&self->source, i), i);
+		changed |= GuiItemTagsItem_update(item, DbRows_getRow(&self->source, i), i, GuiItemTags_hasColors(self));
 
 		Quad2i coordItem = Quad2i_init();
 
@@ -465,7 +508,7 @@ void GuiItemTags_update(GuiItemTags* self, Quad2i coord, Win* win)
 		//	textSize += textH / 2;
 
 		int add_start = textSize + textH / 2;
-		if (start.x + add_start > end.x)	//new line
+		if (i > 0 && start.x + add_start > end.x)	//new line
 		{
 			start.y += lineY;
 			start.x = coord.start.x + textH / 2;
@@ -499,7 +542,7 @@ void GuiItemTags_clickShowAdd(GuiItem* self)
 	GuiItemTags* tags = GuiItem_findParentType(self, GuiItem_TAGS);
 	if (tags)
 	{
-		GuiItemLayout* layoutAdd = tags->callbackAdd(tags->source.column);
+		GuiItemLayout* layoutAdd = tags->callbackAdd(tags, tags->source.column);
 
 		if (tags->setRowAdd)
 			GuiItem_setRow(&layoutAdd->base, DbRows_getBaseRow(&tags->source), 0);
@@ -511,7 +554,7 @@ void GuiItemTags_clickShowAdd(GuiItem* self)
 
 void GuiItemTags_clickShowItem(GuiItemTags* self, UBIG index)
 {
-	GuiItemLayout* layoutDetails = self->callbackItem(self->source.column);
+	GuiItemLayout* layoutDetails = self->callbackItem(self, self->source.column);
 	if (self->setRowItem)
 	{
 		if (GuiItemTags_isTypeFile(self) || GuiItemTags_isTypeTag(self))
@@ -601,7 +644,7 @@ GuiItemLayout* GuiItemTags_resize(GuiItemTags* self, GuiItemLayout* layout, Win*
 	return layout;
 }
 
-GuiItemLayout* GuiItemTags_dialogTagsAdd(DbColumn* column)
+GuiItemLayout* GuiItemTags_dialogTagsAdd(GuiItemTags* self, DbColumn* column)
 {
 	BIG crowT = DbColumn_getRow(column);
 	BIG optionsRow = DbRows_findSubType(crowT, "options");
@@ -611,12 +654,16 @@ GuiItemLayout* GuiItemTags_dialogTagsAdd(DbColumn* column)
 	GuiItemLayout_addColumn(layAdd, 0, 10);
 	GuiItemLayout_addRow(layAdd, 0, 10);
 	GuiItem* skin = GuiItemButton_newClassicEx(Quad2i_init4(0, 0, 1, 1), DbValue_initOption(-1, "name", 0), &GuiItemTags_clickAddItem);
+
+	if(GuiItemTags_hasColors(self))
+		GuiItemButton_setBackgroundCdValue((GuiItemButton*)skin, TRUE, DbValue_initOption(-1, "cd", 0));
+
 	GuiItem_addSubName((GuiItem*)layAdd, "list", GuiItemList_new(Quad2i_init4(0, 0, 1, 1), DbRows_initLinkN(DbRoot_subs(), optionsRow), skin, DbValue_initEmpty()));
 
 	return layAdd;
 }
 
-GuiItemLayout* GuiItemTags_dialogTagsDetails(DbColumn* column)
+GuiItemLayout* GuiItemTags_dialogTagsDetails(GuiItemTags* self, DbColumn* column)
 {
 	GuiItemLayout* layDetails = GuiItemLayout_new(Quad2i_init());
 
@@ -625,12 +672,16 @@ GuiItemLayout* GuiItemTags_dialogTagsDetails(DbColumn* column)
 
 	GuiItemLayout* skin = GuiItemLayout_new(Quad2i_init4(0, 0, 1, 1));
 	GuiItemLayout_addColumn(skin, 1, 100);
+	if (GuiItemTags_hasColors(self))
+		GuiItemLayout_setBackgroundCdValue(skin, DbValue_initOption(-1, "cd", 0));
 
 	GuiItem* drag = GuiItem_addSubName((GuiItem*)skin, "drag", GuiItemBox_newEmpty(Quad2i_init4(0, 0, 1, 1)));
 	GuiItem_setIcon(drag, GuiImage_new1(UiIcons_init_reoder()));
 	GuiItem_setDrop(drag, "option", "option", FALSE, DbRows_initLinkN((DbColumnN*)column, -1), -1);
 
-	GuiItem_addSubName((GuiItem*)skin, "name", GuiItemText_new(Quad2i_init4(1, 0, 1, 1), FALSE, DbValue_initOption(-1, "name", 0), DbValue_initEmpty()));
+	/*GuiItemText* text = (GuiItemText*)*/GuiItem_addSubName((GuiItem*)skin, "name", GuiItemText_new(Quad2i_init4(1, 0, 1, 1), FALSE, DbValue_initOption(-1, "name", 0), DbValue_initEmpty()));
+	//if (self->cd.column)
+	//	GuiItemText_setBackgroundCdValue(text, DbValue_initOption(-1, "cd", 0));
 
 	//list
 	GuiItemList* list = (GuiItemList*)GuiItem_addSubName((GuiItem*)layDetails, "list", GuiItemList_new(Quad2i_init4(0, 0, 1, 1), DbRows_initLinkN((DbColumnN*)column, -1), (GuiItem*)skin, DbValue_initEmpty()));
@@ -639,13 +690,13 @@ GuiItemLayout* GuiItemTags_dialogTagsDetails(DbColumn* column)
 	return layDetails;
 }
 
-GuiItemLayout* GuiItemTags_dialogLinksAdd(DbColumn* column)
+GuiItemLayout* GuiItemTags_dialogLinksAdd(GuiItemTags* self, DbColumn* column)
 {
 	GuiItemLayout* layAdd = GuiItemTable_buildDialogLinks(column);
 	return layAdd;
 }
 
-GuiItemLayout* GuiItemTags_dialogLinksDetails(DbColumn* column)
+GuiItemLayout* GuiItemTags_dialogLinksDetails(GuiItemTags* self, DbColumn* column)
 {
 	GuiItemLayout* layDetails = 0;
 
@@ -655,7 +706,7 @@ GuiItemLayout* GuiItemTags_dialogLinksDetails(DbColumn* column)
 	return layDetails;
 }
 
-GuiItemLayout* GuiItemTags_dialogFileAdd(DbColumn* column)
+GuiItemLayout* GuiItemTags_dialogFileAdd(GuiItemTags* self, DbColumn* column)
 {
 	GuiItemLayout* layAdd = GuiItemLayout_new(Quad2i_init4(0, 0, 1, 1));
 
@@ -674,7 +725,7 @@ GuiItemLayout* GuiItemTags_dialogFileAdd(DbColumn* column)
 	return layAdd;
 }
 
-GuiItemLayout* GuiItemTags_dialogFileDetails(DbColumn* column)
+GuiItemLayout* GuiItemTags_dialogFileDetails(GuiItemTags* self, DbColumn* column)
 {
 	GuiItemLayout* layDetails = GuiItemLayout_new(Quad2i_init());
 

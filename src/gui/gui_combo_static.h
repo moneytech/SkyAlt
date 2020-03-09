@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -149,7 +149,9 @@ UBIG GuiItemComboStatic_getValue(const GuiItemComboStatic* self)
 
 void GuiItemComboStatic_setValue(GuiItemComboStatic* self, double pos)
 {
+	self->oldValue = DbValue_getNumber(&self->value);
 	DbValue_setNumber(&self->value, pos);
+	GuiItem_callClick(&self->base);
 }
 
 const UNI* GuiItemComboStatic_getValueName(GuiItemComboStatic* self, int i)
@@ -163,12 +165,7 @@ void GuiItemComboStatic_clickSelect(GuiItem* self)
 	GuiItemComboStatic* combo = GuiItem_findParentType(self->parent, GuiItem_COMBO_STATIC);
 
 	if (combo && pos >= 0)
-	{
-		combo->oldValue = DbValue_getNumber(&combo->value);
-
 		GuiItemComboStatic_setValue(combo, pos);
-		GuiItem_callClick(&combo->base);
-	}
 }
 
 static GuiItemLayout* _GuiItemComboStatic_createDialog(GuiItemComboStatic* self)
@@ -314,7 +311,19 @@ void GuiItemComboStatic_touch(GuiItemComboStatic* self, Quad2i coord, Win* win)
 		if (inside && active && endTouch)	//end
 		{
 			GuiItemEdit_saveCache();
-			GuiItemRoot_addDialogRelLayout(_GuiItemComboStatic_createDialog(self), &self->base, self->base.coordMove, TRUE);
+
+			if (OsWinIO_getKeyExtra() & Win_EXTRAKEY_CTRL)
+			{
+				if (self->items.num > 1)
+				{
+					UBIG pos = GuiItemComboStatic_getValue(self) + 1;
+					if (pos >= self->items.num)
+						pos = 0;
+					GuiItemComboStatic_setValue(self, pos);
+				}	
+			}
+			else
+				GuiItemRoot_addDialogRelLayout(_GuiItemComboStatic_createDialog(self), &self->base, self->base.coordMove, TRUE);
 		}
 
 		if (endTouch)

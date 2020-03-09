@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -19,6 +19,10 @@ void GuiItemTheme_goOcean(void);
 void GuiItemTheme_goGrey(void);
 Rgba GuiItemTheme_getWarningColor(void);
 
+Rgba GuiItemTheme_getWhite(void);
+Rgba GuiItemTheme_getBlack(void);
+Rgba GuiItemTheme_getMain(void);
+
 typedef struct Win_s Win;
 typedef struct Image1_s Image1;
 
@@ -28,7 +32,7 @@ GuiImage* GuiImage_new4(Image4 image);
 
 typedef struct GuiItem_s GuiItem;
 typedef void GuiItemCallback(GuiItem* self);			//callback
-typedef void GuiItemCallbackMove(BIG dstRow, BIG srcRow, BOOL findIn);	//callback drag & drop
+typedef void GuiItemCallbackMove(GuiItem* dstItem, BIG dstRow, BIG srcRow, BOOL findIn);	//callback drag & drop
 typedef BOOL GuiItemCallbackEnable(GuiItem* self);	//callback enable
 
 typedef struct GuiItemLayout_s GuiItemLayout;
@@ -38,13 +42,14 @@ GuiItemLayout* GuiItemLayout_newTitle(Quad2i grid, DbValue title);
 UBIG GuiItemLayout_getWheelV(GuiItemLayout* self);
 void GuiItemLayout_setWheelV(GuiItemLayout* self, UBIG wheel);
 void GuiItemLayout_setDrawBorder(GuiItemLayout* self, BOOL drawBorder);
-void GuiItemLayout_setScrollVPos(GuiItemLayout* self, BIG pos);
 void GuiItemLayout_addColumn(GuiItemLayout* self, UINT pos, int value);
 void GuiItemLayout_addRow(GuiItemLayout* self, UINT pos, int value);
 void GuiItemLayout_setDrop(GuiItemLayout* self, GuiItemCallback* drop);
 void GuiItemLayout_setResize(GuiItemLayout* self, GuiItemCallback* resize);
+void GuiItemLayout_setBackgroundCdValue(GuiItemLayout* self, DbValue back_cd_value);
 void GuiItemLayout_setBackgroundWhite(GuiItemLayout* self, BOOL drawBackgroundWhite);
 void GuiItemLayout_setBackgroundBlack(GuiItemLayout* self, BOOL drawBackgroundBlack);
+void GuiItemLayout_setBackgroundGrey(GuiItemLayout* self, BOOL drawBackgroundGrey);
 void GuiItemLayout_setBackgroundMain(GuiItemLayout* self, BOOL drawBackgroundMain);
 void GuiItemLayout_setBackgroundError(GuiItemLayout* self, BOOL drawBackgroundError);
 void GuiItemLayout_setDrawBackground(GuiItemLayout* self, BOOL drawBackground);
@@ -67,6 +72,7 @@ void GuiItem_setEnable(GuiItem* self, BOOL enable);
 
 //BOOL GuiItem_enableEnable(GuiItem* self);
 BOOL GuiItem_enableEnableAttr(GuiItem* self);
+BOOL GuiItem_enableEnableParentAttr(GuiItem* self);
 void GuiItem_setEnableCallback(GuiItem* self, GuiItemCallbackEnable* enableCallback);
 //void GuiItem_setEnableMsg(GuiItem* self, DbValue msg, BOOL reverse);
 //void* GuiItem_addSub(GuiItem* self, GuiItem* sub);
@@ -102,7 +108,7 @@ void GuiItem_closeParentLevel(GuiItem* self);
 BIG GuiItem_getRow(GuiItem* self);
 void GuiItem_setRow(GuiItem* self, BIG row, UBIG index);
 
-void GuiItem_setChangeSize(GuiItem* self, UINT changeSizeVertical, DbValue changeSizeValue, BOOL changeSizeMoveOut);
+void GuiItem_setChangeSize(GuiItem* self, UINT changeSizeVertical, DbValue changeSizeValue, BOOL changeSizeMoveOut, BOOL changeSizeDraw, Rgba changeSizeDrawColor);
 void GuiItem_setDrop(GuiItem* self, const char* nameSrc, const char* nameDst, BOOL dropVertival, DbRows dropMove, BIG dropRow);
 void GuiItem_setDropIN(GuiItem* self, const char* name, DbRows dropMoveIn);
 void GuiItem_setDropCallback(GuiItem* self, GuiItemCallbackMove* dropCallback);
@@ -120,6 +126,7 @@ Image1 GuiItem_getColumnIcon(DbFormatTYPE format);
 void GuiItem_setAlternativeIconCd(GuiItem* self, BOOL alternativeIconCd);
 
 typedef struct GuiItemText_s GuiItemText;
+typedef struct GuiItemTextMulti_s GuiItemTextMulti;
 typedef struct GuiItemEdit_s GuiItemEdit;
 typedef struct GuiItemButton_s GuiItemButton;
 typedef struct GuiItemSlider_s GuiItemSlider;
@@ -134,6 +141,7 @@ typedef struct GuiItemSwitch_s GuiItemSwitch;
 typedef struct GuiItemTags_s GuiItemTags;
 typedef struct GuiItemChart_s GuiItemChart;
 
+
 GuiItemList* GuiItem_findParentTypeLIST(GuiItem* self);
 
 GuiItem* GuiItemButton_new(Quad2i grid, DbValue text);
@@ -144,6 +152,8 @@ GuiItem* GuiItemButton_newBlackEx(Quad2i grid, DbValue text, GuiItemCallback* ca
 GuiItem* GuiItemButton_newWhiteEx(Quad2i grid, DbValue text, GuiItemCallback* call);
 GuiItem* GuiItemButton_newImage(Quad2i grid, GuiImage* image, BOOL imageIcon, GuiItemCallback* call);
 GuiItem* GuiItemButton_newCd(Quad2i grid, Rgba cd, GuiItemCallback* call);
+void GuiItemButton_setBackgroundCd(GuiItemButton* self, BOOL active, Rgba back_cd);
+void GuiItemButton_setBackgroundCdValue(GuiItemButton* self, BOOL active, DbValue back_cd_value);
 void GuiItemButton_setWarningCd(GuiItemButton* self, BOOL active);
 void GuiItemButton_setDescription(GuiItemButton* self, DbValue description);
 void GuiItemButton_setCircle(GuiItemButton* self, BOOL circle);
@@ -156,6 +166,7 @@ GuiItem* GuiItemEdit_newEx(Quad2i grid, DbValue text, DbValue description, GuiIt
 GuiItem* GuiItemEdit_new(Quad2i grid, DbValue text, DbValue description);
 void GuiItemEdit_setHighlightIfContent(GuiItemEdit* self, BOOL drawHighlightIfContent);
 void GuiItemEdit_setHighlightCallback(GuiItemEdit* self, GuiItemCallbackEnable* callbackHighlight);
+void GuiItemEdit_setHighlightFind(GuiItemEdit* self, DbValue highlightFind);
 void GuiItemEdit_setPasswordStars(GuiItemEdit* self, BOOL stars);
 void GuiItemEdit_setFnChanged(GuiItemEdit* self, GuiItemCallback* clickChanged);
 void GuiItemEdit_setFnActivate(GuiItemEdit* self, GuiItemCallback* clickActivate);
@@ -181,8 +192,10 @@ double GuiItemText_getNumber(const GuiItemText* self);
 void GuiItemText_setNumber(GuiItemText* self, double value);
 void GuiItemText_setPressed(GuiItemText* self, BOOL stayPressed);
 void GuiItemText_setColorBorder(GuiItemText* self, Rgba colorBorder);
+void GuiItemText_setBackgroundCdValue(GuiItemText* self, DbValue back_cd_value);
 
 GuiItem* GuiItemTextMulti_new(Quad2i grid, DbValue text);
+void GuiItemTextMulti_scroll(GuiItemTextMulti* self, UBIG line);
 
 GuiItem* GuiItemComboStatic_new(Quad2i grid, DbValue value, const UNI* options, DbValue description);
 GuiItem* GuiItemComboStatic_newEx(Quad2i grid, DbValue value, const UNI* options, DbValue description, GuiItemCallback* call);
@@ -198,7 +211,8 @@ GuiItem* GuiItemComboDynamic_newEx(Quad2i grid, BOOL warningBackground, DbRows v
 void GuiItemComboDynamic_setFirstOptionToValue(GuiItemComboDynamic* self);
 void GuiItemComboDynamic_resetValue(GuiItemComboDynamic* self);
 BIG GuiItemComboDynamic_getValueRow(const GuiItemComboDynamic* self);
-void GuiItemComboDynamic_setOpenCall(GuiItemComboDynamic* self, GuiItemCallback* openCall);
+//void GuiItemComboDynamic_setOpenCall(GuiItemComboDynamic* self, GuiItemCallback* openCall);
+void GuiItemComboDynamic_setColor(GuiItemComboDynamic* self, DbValue cd, DbValue hasColors);
 void GuiItemComboDynamic_setOptionsLinks(GuiItemComboDynamic* self, DbRows optionsLinks);
 void GuiItemComboDynamic_setExtraInfo(GuiItemComboDynamic* self, DbTable* extra_table, BIG extra_row);
 DbTable* GuiItemComboDynamic_getExtraTable(const GuiItemComboDynamic* self);
@@ -215,9 +229,10 @@ void GuiItemParticles_startAnim(GuiItemParticles* self, double time_sec);
 
 GuiItem* GuiItemMenu_new(Quad2i grid, DbValue value, BOOL circle);
 GuiItem* GuiItemMenu_newImage(Quad2i grid, GuiImage* image, BOOL imageIcon);
+void GuiItemMenu_setHasColors(GuiItemMenu* self, DbValue hasColors);
 void GuiItemMenu_addItem(GuiItemMenu* self, DbValue text, GuiItemCallback* click);
-void GuiItemMenu_addItemEx(GuiItemMenu* self, DbValue text, GuiItemCallback* click, BOOL confirm, BIG attr_type);
-void GuiItemMenu_addItemIcon(GuiItemMenu* self, GuiImage* icon, DbValue text, GuiItemCallback* click, BOOL confirm, BIG attr_type);
+void GuiItemMenu_addItemEx(GuiItemMenu* self, DbValue text, GuiItemCallback* click, BOOL confirm, BOOL separ_line, BIG attr_type);
+void GuiItemMenu_addItemIcon(GuiItemMenu* self, GuiImage* icon, DbValue text, GuiItemCallback* click, BOOL confirm, BOOL separ_line, BIG attr_type);
 void GuiItemMenu_addItemEmpty(GuiItemMenu* self);
 void GuiItemMenu_clearItems(GuiItemMenu* self);
 DbValue* _GuiItemMenu_findItem(GuiItemMenu* self, const UNI* name);
@@ -225,7 +240,7 @@ void GuiItemMenu_setUnderline(GuiItemMenu* self, BOOL underline);
 void GuiItemMenu_setContext(GuiItemMenu* self, GuiItemLayout* context);
 void GuiItemMenu_setCenter(GuiItemMenu* self, BOOL textCenter);
 void GuiItemMenu_setTransparent(GuiItemMenu* self, BOOL transparent);
-void GuiItemMenu_setHighligthBackground(GuiItemMenu* self, BOOL highligthBackground);
+void GuiItemMenu_setHighligthBackground(GuiItemMenu* self, BOOL highligthBackground, float highligthAlpha);
 
 GuiItem* GuiItemBox_newEmpty(Quad2i coord);
 GuiItem* GuiItemBox_newCd(Quad2i coord, Rgba cd);
@@ -234,16 +249,23 @@ GuiItem* GuiItemBox_newShortcut(Quad2i coord, UBIG shortKey_extra, UNI shortKey_
 
 GuiItem* GuiItemCheck_newEx(Quad2i grid, DbValue value, DbValue description, GuiItemCallback* click);
 GuiItem* GuiItemCheck_new(Quad2i grid, DbValue value, DbValue description);
-BOOL GuiItemCheck_isActive(GuiItemCheck* self);
+BOOL GuiItemCheck_isActive(const GuiItemCheck* self);
+void GuiItemCheck_setColors(GuiItemCheck* self, DbValue hasColors, DbValue on_color, DbValue off_color);
 
-GuiItemTable* GuiItemTable_new(Quad2i grid, BIG tableRow, DbRows filter, BOOL showHeader, BOOL showAddRecord, DbValue scrollV, DbValue scrollH, DbValue selectGrid);
+GuiItemTable* GuiItemTable_new(Quad2i grid, BIG viewRow, DbRows filter, BOOL showHeader, BOOL showAddRecord, DbValue scrollV, DbValue scrollH, DbValue selectGrid, DbValue searchHighlight);
 void GuiItemTable_setModeSummary(GuiItemTable* self, BOOL mode_summary);
 GuiItemLayout* GuiItemTable_buildPage(BIG viewRow, BIG row, BOOL showRowID, BOOL showHidden);// , BOOL onlyRead);
 void GuiItemTable_setRowSize(GuiItemTable* self, UINT rowSize);
 void GuiItemTable_clickSelectCalendar(GuiItem* self);
-GuiItemLayout* GuiItemTable_buildShowedList(BIG row);
+GuiItemLayout* GuiItemTable_buildShowedList(Quad2i grid, BIG row);
 void GuiItemTable_callListIcon(GuiItem* item);
 
+void GuiItemTable_clickFindForward(GuiItem* item);
+void GuiItemTable_clickFindBackward(GuiItem* item);
+void GuiItemTable_clickFindReplaceOne(GuiItem* item);
+void GuiItemTable_clickFindReplaceAll(GuiItem* item);
+
+void GuiItemTable_clickSelectRemove(GuiItem* item);
 void GuiItemTable_clickAddSubLine(GuiItem* item);
 GuiItemLayout* GuiItemTable_buildSelectList(Quad2i grid, UBIG row, DbTable* table);
 
@@ -256,7 +278,7 @@ void GuiItemList_setShowScroll(GuiItemList* self, BOOL showScroll);
 void GuiItemList_setShowRemove(GuiItemList* self, BOOL showRemove);
 void GuiItemList_setShowBorder(GuiItemList* self, BOOL showBorder);
 void GuiItemList_setShowWarningIfEmpty(GuiItemList* self, BOOL warningIfEmpty);
-void GuiItemList_disableScrollSend(GuiItemList* self);
+//void GuiItemList_disableScrollSend(GuiItemList* self);
 void GuiItemList_setAsGrid(GuiItemList* self, UINT numColumns);
 DbRows GuiItemList_getInfo(const GuiItemList* self);
 void GuiItemList_setClickRemove(GuiItemList* self, GuiItemCallback* clickRemove);
@@ -267,8 +289,8 @@ GuiItem* GuiItemSwitch_addItem(GuiItemSwitch* self, int pos, GuiItem* item);
 double GuiItemSwitch_getNumber(const GuiItemSwitch* self);
 void GuiItemSwitch_setNumber(GuiItemSwitch* self, double value);
 
-typedef GuiItemLayout* GuiItemTagsCallback(DbColumn* column);
-GuiItem* GuiItemTags_new(Quad2i grid, DbRows source, DbValues columns, GuiItemTagsCallback* callbackAdd, GuiItemTagsCallback* callbackItem, BOOL relativeAdd, BOOL relativeItem, BOOL setRowAdd, BOOL setRowItem, DbValue imagePreview);
+typedef GuiItemLayout* GuiItemTagsCallback(GuiItemTags* self, DbColumn* column);
+GuiItem* GuiItemTags_new(Quad2i grid, DbRows source, DbValues columns, DbValue hasColors, GuiItemTagsCallback* callbackAdd, GuiItemTagsCallback* callbackItem, BOOL relativeAdd, BOOL relativeItem, BOOL setRowAdd, BOOL setRowItem, DbValue imagePreview);
 
 typedef struct Win_s Win;
 
@@ -286,6 +308,7 @@ void GuiItemRoot_center(GuiItemLayout* layout, Win* win);
 void GuiItemRoot_resizeAll(void);
 void GuiItemRoot_key(Win* win);
 void GuiItemRoot_closeLevels(void);
+void GuiItemRoot_closeLevelTop(void);
 void GuiItemRoot_tick(BOOL doUpdate, BOOL doDraw, Win* win, Quad2i* redrawRect);
 
 typedef struct GuiItemColor_s GuiItemColor;
@@ -293,7 +316,7 @@ GuiItemColor* GuiItemColor_new(Quad2i grid, DbValue value, BOOL pickuper);
 
 typedef struct GuiItemGroup_s GuiItemGroup;
 GuiItem* GuiItemGroup_new(Quad2i grid, BIG viewRow, DbRows filter, DbValue scrollH);
-GuiItemList* GuiItemGroup_getLaneList(Quad2i grid, DbColumn* columnLane, DbFilter* filter, BIG* selectRow, BIG selectPos, GuiItemCallback* clickSelectRow, GuiItemCallback* clickShowRecords);
+GuiItemList* GuiItemGroup_getLaneList(Quad2i grid, DbColumn* columnLane, DbFilter* filter, BIG* selectRow, BIG selectPos, DbValue scroll, GuiItemCallback* clickSelectRow, GuiItemCallback* clickShowRecords);
 
 typedef struct GuiItemMap_s GuiItemMap;
 GuiItem* GuiItemMap_new(Quad2i grid, BIG viewRow, DbRows filter, DbValue cam_lat, DbValue cam_long, DbValue cam_zoom, DbValue search);

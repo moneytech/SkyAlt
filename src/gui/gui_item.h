@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -44,6 +44,8 @@ typedef enum
 	GuiItem_PARTICLES,
 
 	GuiItem_FILE,
+	GuiItem_AUDIO,
+	GuiItem_GALLERY,
 
 	GuiItem_SWITCH,
 
@@ -99,6 +101,8 @@ typedef struct GuiItem_s
 	BOOL icon_draw_back;
 	BOOL icon_alternativeColor;
 
+	BOOL changeSizeDraw;
+	Rgba changeSizeDrawColor;
 	BOOL changeSizeVertical;	//always right or bottom border(edge)
 	DbValue changeSizeValue;
 	BOOL changeSizeMoveOut;
@@ -173,6 +177,7 @@ GuiItem GuiItem_init(GuiItemTYPE type, Quad2i grid)
 	self.icon_draw_back = TRUE;
 	self.icon_alternativeColor = FALSE;
 
+	self.changeSizeDraw = FALSE;
 	self.changeSizeVertical = FALSE;
 	self.changeSizeValue = DbValue_initEmpty();
 	self.changeSizeMoveOut = FALSE;
@@ -251,6 +256,8 @@ void* GuiItem_findParentType(GuiItem* self, GuiItemTYPE type)
 	return 0;
 }
 
+
+
 GuiItemList* GuiItem_findParentTypeLIST(GuiItem* self)
 {
 	return GuiItem_findParentType(self, GuiItem_LIST);
@@ -314,6 +321,14 @@ BIG GuiItem_findAttribute(GuiItem* self, const char* name)
 
 	return v;
 }
+
+BIG GuiItem_findAttributeNoWarning(GuiItem* self, const char* name)
+{
+	BIG v = -1;
+	_GuiItem_findAttributeSub(self, name, &v);
+	return v;
+}
+
 
 Image1 GuiItem_getColumnIcon(DbFormatTYPE format)
 {
@@ -426,6 +441,10 @@ static void* _GuiItem_findNameInner(GuiItem* self, GuiItem* caller, const char* 
 		if (it)
 			return it;
 	}
+
+	if (self->type == GuiItem_LEVEL)
+		return _GuiItem_findNameInner(GuiItemLevel_getBackChain((GuiItemLevel*)self), self, name, type);
+
 	return 0;
 }
 
@@ -506,8 +525,10 @@ void GuiItem_setResizeOff(GuiItem* self)
 		GuiItem_setResizeOff(self->subs.ptrs[i]);
 }
 
-void GuiItem_setChangeSize(GuiItem* self, UINT changeSizeVertical, DbValue changeSizeValue, BOOL changeSizeMoveOut)
+void GuiItem_setChangeSize(GuiItem* self, UINT changeSizeVertical, DbValue changeSizeValue, BOOL changeSizeMoveOut, BOOL changeSizeDraw, Rgba changeSizeDrawColor)
 {
+	self->changeSizeDraw = changeSizeDraw;
+	self->changeSizeDrawColor = changeSizeDrawColor;
 	self->changeSizeVertical = changeSizeVertical;
 	self->changeSizeMoveOut = changeSizeMoveOut;
 
@@ -646,14 +667,18 @@ GuiItem* GuiItem_findDropName(GuiItem* self, const char* name, Vec2i pos, GuiIte
 			return t;
 	}
 
-	*out_in = Std_cmpCHAR(self->dropInName, name);
-	BOOL beforeAfter = Std_cmpCHAR(self->dropMoveNameDst, name);
-
-	BOOL testCoord = Quad2i_inside(self->coordMove, pos);
-	if (*out_in && beforeAfter)	//both => IN is small rect inside
+	
+	*out_in = FALSE;
+	if (Std_cmpCHAR(self->dropInName, name))// && beforeAfter)	//both => IN is small rect inside
 		*out_in = Quad2i_inside(Quad2i_addSpaceY(self->coordMove, OsWinIO_lineSpace()), pos);
 
-	return (self != ignore && DbRows_is(&self->dropMove) && self->show && testCoord && ((*out_in) || beforeAfter)) ? self : 0;
+	//if (*out_in)
+	//	printf("d");
+
+	BOOL beforeAfter = Std_cmpCHAR(self->dropMoveNameDst, name);
+	BOOL testCoord = Quad2i_inside(self->coordMove, pos);
+
+	return (self != ignore /*&& DbRows_is(&self->dropMove)*/ && self->show && testCoord && ((*out_in) || beforeAfter)) ? self : 0;
 }
 
 UBIG GuiItem_numSub(const GuiItem* self)
@@ -1087,8 +1112,16 @@ void GuiItem_setEnable(GuiItem* self, BOOL enable)
 BOOL GuiItem_enableEnableAttr(GuiItem* self)
 {
 	BIG row = GuiItem_findAttribute(self, "row");
-	return DbValue_getOptionNumber(row, "enable", 1);
+	BIG parentRow = DbRoot_findParent(row);
+	return DbValue_getOptionNumber(parentRow, "enable", 1) && DbValue_getOptionNumber(row, "enable", 1);	//parent and line
 }
+BOOL GuiItem_enableEnableParentAttr(GuiItem* self)
+{
+	BIG row = GuiItem_findAttribute(self, "row");
+	row = DbRoot_findParent(row);
+	return DbValue_getOptionNumber(row, "enable", 1);	//only parent
+}
+
 
 static void _GuiItem_updateEnable(GuiItem* self)
 {

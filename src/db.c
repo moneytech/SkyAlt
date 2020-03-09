@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -31,7 +31,7 @@ typedef enum
 {
 	DbColumn_1,
 	DbColumn_N,
-	DbColumn_STRING_32,	//Text:		utf-32
+	DbColumn_STRING_32,	    //Text:		utf-32
 	//DbColumn_STRING_8,	//Text:		utf-8
 } DbColumnTYPE;
 
@@ -61,6 +61,7 @@ UBIG DbTable_numRows(const DbTable* self);
 BIG DbTable_jumpRows(DbTable* self, UBIG* pos, BIG jumps);
 BIG DbTable_jumpLinks(DbTable* self, const double* links, UBIG* pos, BIG jumps);
 BIG DbTable_jumpLinksFirst(DbTable* self, const double* links);
+BIG DbTable_findRow(const DbTable* self, FileRow row);
 DbColumn1* DbTable_getColumnRows(const DbTable* self);
 BIG* DbTable_getTempMoves(DbTable* self);
 UBIG DbTable_addRowEx(DbTable* self, FileRow row);
@@ -68,7 +69,7 @@ void DbTable_removeRow(DbTable* self, UBIG row);
 void DbTable_setMaxRow(DbTable* self, FileRow lastRow);
 BOOL DbTable_isLoaded(DbTable* self);
 //BIG DbTable_getRemoteRow(const DbTable* self);
-BIG DbTable_findRow(const DbTable* self, FileRow row);
+
 BOOL DbTable_isRemoteSaveItIntoFile(const DbTable* self);
 
 const UBIG DbColumns_num(const DbColumns* self);

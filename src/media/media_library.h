@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -134,7 +134,7 @@ BOOL MediaLibrary_addImageBuffer(const char* url, const char* ext, UCHAR* buff, 
 	return added;
 }
 
-BOOL MediaLibrary_add(FileRow fileId, Vec2i img_rectSize, BOOL* out_image, BOOL* out_audio, BOOL* out_text)
+BOOL MediaLibrary_add(FileRow fileId, Vec2i img_rectSize, BOOL* out_image, BOOL* out_audio, BOOL* out_text, BOOL* out_map)
 {
 	if (img_rectSize.x <= 0 || img_rectSize.y <= 0)
 		return FALSE;
@@ -142,6 +142,7 @@ BOOL MediaLibrary_add(FileRow fileId, Vec2i img_rectSize, BOOL* out_image, BOOL*
 	*out_image = FALSE;
 	*out_audio = FALSE;
 	*out_text = FALSE;
+	out_map = FALSE;
 
 	OsLock_lock(&g_MediaLibrary->lock);
 
@@ -189,7 +190,11 @@ BOOL MediaLibrary_add(FileRow fileId, Vec2i img_rectSize, BOOL* out_image, BOOL*
 					*out_text = TRUE;
 					//}
 				}
-
+				else
+					if (FileHead_isExt(&head, "gpx"))
+					{
+						*out_map = TRUE;
+					}
 			FileHead_free(&head);
 		}
 	}
@@ -198,6 +203,78 @@ BOOL MediaLibrary_add(FileRow fileId, Vec2i img_rectSize, BOOL* out_image, BOOL*
 
 	return (*out_image || *out_audio || *out_text);
 }
+
+
+
+
+BOOL MediaLibrary_addImage(FileRow fileId, Vec2i img_rectSize)
+{
+	if (img_rectSize.x <= 0 || img_rectSize.y <= 0)
+		return FALSE;
+
+	BOOL isAudio = FALSE;
+	BOOL isImage = FALSE;
+	BOOL isText = FALSE;
+
+	OsLock_lock(&g_MediaLibrary->lock);
+
+	if (!_MediaLibrary_is(fileId, Vec2i_init(), &isImage, &isAudio, &isText))
+	{
+		FileHead head;
+		if (FileCache_readHead(fileId, &head))
+		{
+			if (FileHead_isExt(&head, "jpg") || FileHead_isExt(&head, "jpeg") || FileHead_isExt(&head, "png"))
+			{
+				MediaImage* img = MediaImage_newFile(fileId, img_rectSize);
+				if (img)
+				{
+					StdArr_add(&g_MediaLibrary->images, img);
+					isImage = TRUE;
+				}
+			}
+			FileHead_free(&head);
+		}
+	}
+
+	OsLock_unlock(&g_MediaLibrary->lock);
+
+	return isImage;
+}
+
+
+BOOL MediaLibrary_addAudio(FileRow fileId)
+{
+	BOOL isAudio = FALSE;
+	BOOL isImage = FALSE;
+	BOOL isText = FALSE;
+
+	OsLock_lock(&g_MediaLibrary->lock);
+
+	if (!_MediaLibrary_is(fileId, Vec2i_init(), &isImage, &isAudio, &isText))
+	{
+		FileHead head;
+		if (FileCache_readHead(fileId, &head))
+		{
+			if (FileHead_isExt(&head, "jpg") || FileHead_isExt(&head, "jpeg") || FileHead_isExt(&head, "png"))
+			{
+				MediaImage* img = MediaImage_newFile(fileId, Vec2i_init());
+				if (img)
+				{
+					StdArr_add(&g_MediaLibrary->images, img);
+					isAudio = TRUE;
+				}
+			}
+			FileHead_free(&head);
+		}
+	}
+
+	OsLock_unlock(&g_MediaLibrary->lock);
+
+	return isAudio;
+}
+
+
+
 
 BOOL MediaLibrary_imageUpdate(FileRow fileId, Vec2i imgSize)
 {
@@ -330,7 +407,7 @@ BOOL MediaLibrary_imageDraw(FileRow fileId, Image4* img, Quad2i coord)
 	OsLock_unlock(&g_MediaLibrary->lock);
 	return found;
 }
-BOOL MediaLibrary_imageBufferDraw(const char* url, const char* ext, Image4* img, Quad2i coord)
+BOOL MediaLibrary_imageBufferDraw(const char* url, const char* ext, Image4* img, Quad2i coord, float scale)
 {
 	BOOL found = FALSE;
 	OsLock_lock(&g_MediaLibrary->lock);
@@ -341,7 +418,11 @@ BOOL MediaLibrary_imageBufferDraw(const char* url, const char* ext, Image4* img,
 		MediaImage* it = (MediaImage*)g_MediaLibrary->images.ptrs[i];
 		if (it->loaded && MediaImage_isUrl(it, url, ext, coord.size))
 		{
-			Image4_copyImage4(img, Quad2i_getSubStart(coord, it->img.size), &it->img);
+			Vec2i start = Quad2i_getSubStart(coord, it->img.size);
+			if (scale == 1)
+				Image4_copyImage4(img, start, &it->img);
+			else
+				Image4_copyImage4_resize(img, Quad2i_init2(start, Vec2i_mulV(coord.size, scale)), &it->img);
 
 			found = TRUE;
 			break;

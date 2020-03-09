@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -293,6 +293,34 @@ void Image4_copyImage4(Image4* self, Vec2i start, Image4* src)
 		Rgba* s = Image4_getV(src, p);
 		Rgba* d = Image4_getV(self, Vec2i_add(start, p));
 		Os_memcpy(d, s, qSrc.size.x * sizeof(Rgba));
+	}
+}
+
+void Image4_copyImage4_resize(Image4* self, Quad2i coord, Image4* src)
+{
+	const Vec2i start = coord.start;
+	const Vec2i size = coord.size;
+
+	const Vec2f scale = Vec2f_init2(src->size.x / (float)size.x, src->size.y / (float)size.y);
+
+	Quad2i qSrc = Quad2i_getIntersect(Quad2i_init2(start, size), self->rect);
+	if (qSrc.size.x == 0 || qSrc.size.y == 0)
+		return;
+
+	qSrc.start = Vec2i_sub(self->rect.start, start);
+	if (self->rect.start.x < start.x)	qSrc.start.x = 0;
+	if (self->rect.start.y < start.y)	qSrc.start.y = 0;
+	Vec2i qEnd = Quad2i_end(qSrc);
+
+	Vec2i p;
+	for (p.y = qSrc.start.y; p.y < qEnd.y; p.y++)
+	{
+		for (p.x = qSrc.start.x; p.x < qEnd.x; p.x++)
+		{
+			Rgba* s = Image4_getV(src, Vec2i_init2(p.x * scale.x, p.y * scale.y));
+			Rgba* d = Image4_getV(self, Vec2i_add(start, p));
+			*d = *s;
+		}
 	}
 }
 
@@ -616,9 +644,10 @@ static void _Image4_drawLineEx(Image4* self, Vec2i start, Vec2i end, int width, 
 		else
 		{
 			q = Quad2i_addSpace(q, -width);
+			q = Quad2i_getIntersect(q, self->rect);
 
-			Vec2i pos = Quad2i_clamp(self->rect, q.start);
-			Vec2i qend = Quad2i_clamp(self->rect, Quad2i_end(q));
+			Vec2i pos = q.start;// Quad2i_clamp(self->rect, q.start);
+			Vec2i qend = Quad2i_end(q);	// Quad2i_clamp(self->rect, Quad2i_end(q));
 
 			for (; pos.y < qend.y; pos.y++)
 			{
@@ -964,7 +993,7 @@ void Image4_drawText(Image4* img, Vec2i s, BOOL center, OsFont* font, const UNI*
 		else
 			if (*text != '\n')
 			{
-				OsFontLetter l = OsFont_get(font, *text, Hpx);
+				OsFontLetter l = OsFont_get(font, *text, Hpx, 0);
 
 				Vec2i p = Vec2i_init2(pos.x + l.move_x, pos.y - l.move_y + (size.y - l.img_h) - extra_down);
 
@@ -994,6 +1023,62 @@ void Image4_drawTextBackground(Image4* img, Vec2i s, BOOL center, OsFont* font, 
 	Image4_drawText(img, s, center, font, text, Hpx, betweenLinePx, text_cd);
 }
 
+void Image4_drawTextAngle(Image4* img, Vec2i s, BOOL center, OsFont* font, const UNI* text, const int Hpx, const int betweenLinePx, Rgba cd, int angleDeg)
+{
+	int extra_down;
+	Vec2i size = OsFont_getTextSize(font, text, Hpx, betweenLinePx, &extra_down);
+
+	float revAngleRad = angleDeg / 180.0f * M_PI * -1;
+	Vec2f avec = Vec2f_init2(Os_cos(revAngleRad), Os_sin(revAngleRad));
+
+	Vec2i align;
+	align.x = s.x - size.x / 2;
+	align.y = s.y - size.y / 2;
+
+	Vec2i pos;
+	pos.x = center ? align.x : s.x;
+	pos.y = align.y;
+
+	while (text && *text)
+	{
+		if (*text == '\t')
+		{
+			//pos.x += TEXT_TAB_SPACES * Hpx;
+			Vec2f avH = Vec2f_mulV(avec, TEXT_TAB_SPACES * Hpx);
+			pos.x += avH.x;
+			pos.y += avH.y;
+		}
+		else
+			if (*text != '\n')
+			{
+				OsFontLetter l = OsFont_get(font, *text, Hpx, angleDeg);
+
+				Vec2f avH = Vec2f_mulV(avec, l.move_x);
+				Vec2f avV = Vec2f_mulV(Vec2f_perpendicularX(avec), -l.move_y + (size.y - l.img_h) - extra_down);
+
+				Vec2i p = Vec2i_init2(pos.x + avH.x + avV.x, pos.y + avH.y + avV.y);
+
+				Image1 t;
+				t.size = Vec2i_init2(l.img_w, l.img_h);
+				t.data = l.img;
+				Image4_copyImage1(img, p, cd, &t);
+
+				//pos.x += l.m_len;
+
+				avH = Vec2f_mulV(avec, l.m_len);
+				pos.x += avH.x;
+				pos.y += avH.y;
+			}
+			else //next line
+			{
+				pos.y += avec.y * (Hpx + betweenLinePx);
+				pos.x = avec.x * (center ? align.x : s.x);
+			}
+
+		text++;
+	}
+}
+
 static const BOOL _Image4_isEndLine(UNI ch)
 {
 	return(ch == 0 || ch == '\n');
@@ -1018,7 +1103,7 @@ static const UNI* _Image4_getTextLine(const int max_len, OsFont* font, const UNI
 		//get word
 		while (!_Image4_isEndWord(*text))
 		{
-			OsFontLetter l = OsFont_get(font, *text, Hpx);
+			OsFontLetter l = OsFont_get(font, *text, Hpx, 0);
 			len += l.m_len;
 			text++;
 		}
@@ -1034,7 +1119,7 @@ static const UNI* _Image4_getTextLine(const int max_len, OsFont* font, const UNI
 		}
 
 		if (!breakIt)
-			len += OsFont_get(font, ' ', Hpx).m_len; //space to next word
+			len += OsFont_get(font, ' ', Hpx, 0).m_len; //space to next word
 	}
 
 	return end;
@@ -1078,7 +1163,7 @@ int Image4_drawTextMulti(Image4* img, Quad2i coord, BOOL center, OsFont* font, c
 			}
 			else
 			{
-				OsFontLetter l = OsFont_get(font, *text, Hpx);
+				OsFontLetter l = OsFont_get(font, *text, Hpx, 0);
 				Vec2i p = Vec2i_init2(pos.x + l.move_x, pos.y - l.move_y + (Hpx - l.img_h));
 
 				Image1 t;

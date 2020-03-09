@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -13,6 +13,7 @@
 
 #define GuiItemMap_MAX_ZOOM 18	//<0, 19>
 #define GuiItemMap_RES 256
+#define GuiItemMap_ANIM_TIME 0.4f
 
 typedef struct GuiItemMapItem_s
 {
@@ -52,6 +53,7 @@ GuiItemMapItem* GuiItemMapItem_new(BIG row, Vec2f pos, const MapPolyIndex* polyI
 	GuiItemMapItem_setNumLabels(self, num_labels);
 
 	self->next = 0;
+
 	return self;
 }
 GuiItemMapItem* GuiItemMapItem_delete(GuiItemMapItem* self)
@@ -85,7 +87,7 @@ BOOL GuiItemMapItem_cmp(GuiItemMapItem* self, Vec2f pos, int rad)
 	return Vec2f_cmp(self->pos, pos) && self->rad == rad;
 }
 
-Vec2i GuiItemMapItem_getMapPosEx(Vec2f pos, Vec2i start, Quad2f bbox, int zoom)
+Vec2i GuiItemMapItem_getMapPosEx(Vec2f pos, Vec2i start, Quad2f bbox, double zoom)
 {
 	Vec2f tilePos = StdMap_getTile(pos.x, pos.y, zoom);
 	Vec2i mid = Vec2i_init2((int)((tilePos.x - bbox.start.x) * GuiItemMap_RES), (int)((tilePos.y - bbox.start.y) * GuiItemMap_RES));
@@ -137,14 +139,16 @@ typedef struct GuiItemMap_s
 	Vec2f startTile;
 
 	BIG clickMarkRow;
-	BIG clickCopyright;
-	BIG clickFixthemap;
 
 	GuiItemMapItem* items;
 
 	GuiItemMapItem* searchItem;
 
 	BOOL allGeolocated;
+
+	//Vec3f anim_pos_new;
+	Vec3f anim_pos_old;
+	double anim_time_start;
 } GuiItemMap;
 
 static void _GuiItemMap_updateIcon(GuiItemMap* self)
@@ -205,11 +209,11 @@ GuiItem* GuiItemMap_new(Quad2i grid, BIG viewRow, DbRows filter, DbValue cam_lat
 	_GuiItemMap_updateIcon(self);
 
 	self->clickMarkRow = -1;
-	self->clickCopyright = FALSE;
-	self->clickFixthemap = FALSE;
 
 	self->items = 0;
 	self->searchItem = GuiItemMapItem_new(-1, Vec2f_init(), 0, 1, 0, g_theme.main);
+
+	self->anim_time_start = 0;
 
 	return (GuiItem*)self;
 }
@@ -327,15 +331,90 @@ void GuiItemMap_clickShowPage(GuiItemMap* self, BIG row)
 	GuiItemRoot_addDialogRel(&card->base, &self->base, Quad2i_init2(OsWinIO_getTouchPos(), Vec2i_init2(1, 1)), TRUE);
 }
 
-static Vec3f _GuiItemMap_getCam(const GuiItemMap* self)
-{
-	return Vec3f_init3(DbValue_getNumber(&self->cam_long), DbValue_getNumber(&self->cam_lat), DbValue_getNumber(&self->cam_zoom));
-}
+
 
 static Quad2f _GuiItemMap_getBBox(Vec3f cam, Quad2i coord)
 {
-	return StdMap_lonLatToTileBbox(coord.size, GuiItemMap_RES, cam.x, cam.y, (int)cam.z);
+	return StdMap_lonLatToTileBbox(coord.size, GuiItemMap_RES, cam.x, cam.y, cam.z);
 }
+static Vec3f _GuiItemMap_getCam(const GuiItemMap* self)
+{
+	return Vec3f_init3(DbValue_getNumber(&self->cam_long), DbValue_getNumber(&self->cam_lat), (int)DbValue_getNumber(&self->cam_zoom));
+}
+
+
+void GuiItemMap_setZoom(GuiItemMap* self, const int zoom)
+{
+	int old_zoom = DbValue_getNumber(&self->cam_zoom);
+	if (zoom != old_zoom)
+	{
+		BOOL reset = !GuiItemRoot_hasChanges();
+
+		DbValue_setNumber(&self->cam_zoom, Std_clamp(zoom, 1, GuiItemMap_MAX_ZOOM));
+		self->anim_time_start = Os_time();
+
+		if (reset)
+			GuiItemRoot_resetNumChanges();
+	}
+}
+
+static Vec3f _GuiItemMap_checkCam(GuiItemMap* self, Vec3f cam, Quad2i coord)
+{
+	Quad2f bbox = _GuiItemMap_getBBox(cam, coord);
+
+	const Vec2f end = Quad2f_end(bbox);
+	const Vec2f def_bbox_size = Vec2f_divV(Vec2i_to2f(coord.size), 256.0f);
+	const BIG maxTiles = Os_pow(2, cam.z);
+
+	if (bbox.start.x <= 0)
+	{
+		bbox.size.x = def_bbox_size.x;
+		bbox.start.x = 0;
+	}
+	if (bbox.start.y <= 0)
+	{
+		bbox.size.y = def_bbox_size.y;
+		bbox.start.y = 0;
+	}
+
+	if (end.x >= maxTiles)
+	{
+		bbox.size.x = def_bbox_size.x;
+		bbox.start.x = Std_dmax(0, maxTiles - bbox.size.x);
+	}
+	if (end.y >= maxTiles)
+	{
+		bbox.size.y = def_bbox_size.y;
+		bbox.start.y = Std_dmax(0, maxTiles - bbox.size.y);
+	}
+
+
+	Vec2f bbox_mid = Quad2f_getMiddle(bbox);
+	Vec2f p = StdMap_getLonLat(bbox_mid.x, bbox_mid.y, cam.z);
+	cam.x = p.x;
+	cam.y = p.y;
+
+	return cam;
+}
+
+static void _GuiItemMap_setCam(GuiItemMap* self, float lon_x, float lat_y, int zoom, Quad2i coord)
+{
+	BOOL reset = !GuiItemRoot_hasChanges();
+
+	Vec3f cam_old = _GuiItemMap_getCam(self);
+	Vec3f cam = _GuiItemMap_checkCam(self, Vec3f_init3(lon_x, lat_y, zoom), coord);
+
+	DbValue_setNumber(&self->cam_long, cam.x);
+	DbValue_setNumber(&self->cam_lat, cam.y);
+	GuiItemMap_setZoom(self, cam.z);
+
+
+	GuiItem_setRedraw(&self->base, !Vec3f_cmp(cam_old, cam));
+
+	if (reset)
+		GuiItemRoot_resetNumChanges();
+}
+
 
 GuiItemMapTYPE _GuiItemMap_getMapType(const GuiItemMap* self)
 {
@@ -381,8 +460,6 @@ void GuiItemMap_drawPolyLines(Image4* img, Quad2i coord, const Quad2f bbox, cons
 			return;
 	}
 
-	//printf("draw()\n");
-
 	const UBIG N = polygon->num_poses;
 	float* xy = Os_malloc(N * sizeof(float) * 2);
 	BIG i;
@@ -410,16 +487,16 @@ void GuiItemMap_drawPolyLines(Image4* img, Quad2i coord, const Quad2f bbox, cons
 	Image4_drawLine(img, last, first, width, cd);*/
 }
 
-void GuiItemMap_draw(GuiItemMap* self, Image4* img, Quad2i coord, Win* win)
+void GuiItemMap_drawTiles(GuiItemMap* self, Image4* img, Quad2i coord, Vec3f cam, float scale)
 {
 	int textH = _GuiItem_textSize(0, OsWinIO_cellSize());
 	OsFont* font = OsWinIO_getFontDefault();
 
-	Vec3f cam = _GuiItemMap_getCam(self);
+	const double zoom = cam.z;
 	const Quad2f bbox = _GuiItemMap_getBBox(cam, coord);
-	const int zoom = (int)cam.z;
 
-	//map background
+	Vec2i midScreen = Quad2i_getMiddle(coord);
+
 	const Vec2i mid = Vec2i_init2(bbox.start.x + bbox.size.x / 2, bbox.start.y + bbox.size.y / 2);
 	const double maxDistance = Vec2f_len(bbox.size);
 	int x, y;
@@ -433,6 +510,9 @@ void GuiItemMap_draw(GuiItemMap* self, Image4* img, Quad2i coord, Win* win)
 			BOOL draw = FALSE;
 			BOOL inLibrary = FALSE;
 			Quad2i q = _GuiItemMap_getTileCoord(x, y, coord, bbox);
+
+			q.start = Vec2i_add(midScreen, Vec2i_mulV(Vec2i_sub(q.start, midScreen), scale));
+			//q.size = Vec2i_mulV(q.size, scale);	//q.size se mìní, takže nebude stíhat naèítat ...
 
 			char url[64];
 			Map_getTileUrl(x, y, zoom, url);
@@ -453,10 +533,8 @@ void GuiItemMap_draw(GuiItemMap* self, Image4* img, Quad2i coord, Win* win)
 					inLibrary = MediaLibrary_addImageBuffer(url, "png", buff, bytes, q.size);
 			}
 
-
-
 			if (draw)
-				draw = MediaLibrary_imageBufferDraw(url, "png", img, q);
+				draw = MediaLibrary_imageBufferDraw(url, "png", img, q, scale);
 			else
 			{
 				Rgba cdGrey = Rgba_aprox(Rgba_initWhite(), Rgba_initBlack(), 0.2f);
@@ -468,8 +546,49 @@ void GuiItemMap_draw(GuiItemMap* self, Image4* img, Quad2i coord, Win* win)
 				GuiItem_setRedraw(&self->base, TRUE);	//try again
 		}
 	}
+}
+
+void GuiItemMap_draw(GuiItemMap* self, Image4* img, Quad2i coord, Win* win)
+{
+	int textH = _GuiItem_textSize(0, OsWinIO_cellSize());
+	OsFont* font = OsWinIO_getFontDefault();
+
+	Vec3f cam = _GuiItemMap_getCam(self);
+	const Quad2f bbox = _GuiItemMap_getBBox(cam, coord);
+	const double zoom = cam.z;
+
+	//map background
+	if (self->anim_time_start)
+	{
+		//animation
+		float dt = Os_time() - self->anim_time_start;
+		if (dt < GuiItemMap_ANIM_TIME)
+		{
+			BOOL zoomIn = (zoom > self->anim_pos_old.z);
+			const double t = dt / GuiItemMap_ANIM_TIME;
+			const double scale = zoomIn ? (1 + t) : (1 - t / 2);	//(1->2) : (1->0.5)
+
+			Vec3f cam_curr = Vec3f_aprox(self->anim_pos_old, cam, t);
+			cam_curr.z = self->anim_pos_old.z;
+
+			cam_curr = _GuiItemMap_checkCam(self, cam_curr, coord);
+
+			GuiItemMap_drawTiles(self, img, coord, cam_curr, scale);
+		}
+		else
+			self->anim_time_start = 0;
+
+		GuiItem_setRedraw(&self->base, TRUE);
+	}
+	else
+	{
+		self->anim_pos_old = _GuiItemMap_getCam(self);
+		GuiItemMap_drawTiles(self, img, coord, cam, 1.0f);
+	}
 
 	//location points
+	if(self->anim_time_start == 0)
+	{
 	GuiItemMapTYPE mapType = _GuiItemMap_getMapType(self);
 	const BOOL lable_center = DbValue_getNumber(&self->item_label_center);
 
@@ -536,6 +655,7 @@ void GuiItemMap_draw(GuiItemMap* self, Image4* img, Quad2i coord, Win* win)
 		//_GuiItemMap_drawIcon(self, img, mid, self->searchItem.cd);
 		Image4_drawCircleLine(img, mid, 20, 1, Rgba_initRed());
 	}
+	}
 
 	//scale
 	double metersPerPixels = StdMap_getMetersPerPixel(DbValue_getNumber(&self->cam_lat), DbValue_getNumber(&self->cam_zoom));
@@ -556,7 +676,7 @@ void GuiItemMap_draw(GuiItemMap* self, Image4* img, Quad2i coord, Win* win)
 	const int h = Std_max(5, OsWinIO_cellSize() / 8);
 	Vec2i start = coord.start;
 	start.x += OsWinIO_cellSize() / 2;
-	start.y += coord.size.y - OsWinIO_cellSize() / 4 * 3;
+	start.y += coord.size.y - OsWinIO_cellSize() / 4 * 2;
 
 	//black
 	Image4_drawBoxQuad(img, Quad2i_init4(start.x, start.y, pixels, h), Rgba_initBlack());
@@ -587,13 +707,6 @@ void GuiItemMap_draw(GuiItemMap* self, Image4* img, Quad2i coord, Win* win)
 
 	//unit
 	Image4_drawText(img, Vec2i_init2(start.x + 5, start.y), FALSE, font, unit, textH, FALSE, Rgba_initBlack());
-
-	//copyright
-	start.x -= 3 * pixels;
-	Image4_drawText(img, Vec2i_init2(start.x, start.y + OsWinIO_cellSize() / 2), FALSE, font, Lang_find("MAPS_CONTRIBUTORS"), textH, FALSE, Rgba_initBlack());
-
-	//fixthemap
-	Image4_drawText(img, Vec2i_init2(coord.start.x + coord.size.x - OsWinIO_cellSize() * 2, start.y + OsWinIO_cellSize() / 2), FALSE, font, Lang_find("MAPS_FIX_THE_MAP"), textH, FALSE, Rgba_initBlack());
 }
 
 static void _GuiItemMap_undownload(GuiItemMap* self, Quad2i coord)
@@ -610,7 +723,7 @@ static void _GuiItemMap_undownload(GuiItemMap* self, Quad2i coord)
 				continue;
 
 			char url[64];
-			Map_getTileUrl(x, y, (int)cam.z, url);
+			Map_getTileUrl(x, y, cam.z, url);
 			MediaNetwork_undownload(url);
 		}
 	}
@@ -648,14 +761,7 @@ static void _GuiItemMap_resetFocus(GuiItemMap* self, Quad2i coord)
 	}
 
 	//save
-	BOOL reset = !GuiItemRoot_hasChanges();
-
-	DbValue_setNumber(&self->cam_long, mid.x);
-	DbValue_setNumber(&self->cam_lat, mid.y);
-	DbValue_setNumber(&self->cam_zoom, Std_max(1, zoom - 1));
-
-	if (reset)
-		GuiItemRoot_resetNumChanges();
+	_GuiItemMap_setCam(self, mid.x, mid.y, Std_max(1, zoom - 1), coord);
 }
 
 static void _GuiItemMap_setMapItemLabels(GuiItemMapItem* it, BIG row, StdArr* labelColumns, StdString* labelTemp)
@@ -770,7 +876,7 @@ void GuiItemMap_update(GuiItemMap* self, Quad2i coord, Win* win)
 
 	Vec3f cam = _GuiItemMap_getCam(self);
 	const Quad2f bbox = _GuiItemMap_getBBox(cam, coord);
-	const int zoom = (int)cam.z;
+	const double zoom = cam.z;
 
 	//keep tiles in media library
 	int x, y;
@@ -813,15 +919,8 @@ void GuiItemMap_update(GuiItemMap* self, Quad2i coord, Win* win)
 		const MapPolyIndex* polyInd;
 		if (_GuiItemMap_getSearchPos(self, &self->searchItem->pos, &polyInd))
 		{
-			BOOL reset = !GuiItemRoot_hasChanges();
-
 			//change camera
-			DbValue_setNumber(&self->cam_long, self->searchItem->pos.x);
-			DbValue_setNumber(&self->cam_lat, self->searchItem->pos.y);
-			DbValue_setNumber(&self->cam_zoom, 11);
-
-			if (reset)
-				GuiItemRoot_resetNumChanges();
+			_GuiItemMap_setCam(self, self->searchItem->pos.x, self->searchItem->pos.y, 11, coord);
 
 			GuiItem_setRedraw(&self->base, TRUE);
 			self->focusSearch = FALSE;
@@ -838,51 +937,19 @@ void GuiItemMap_touch(GuiItemMap* self, Quad2i coord, Win* win)
 
 	Vec3f cam = _GuiItemMap_getCam(self);
 	const Quad2f bbox = _GuiItemMap_getBBox(cam, coord);
-	const int zoom = (int)cam.z;
+	//double zoom = cam.z;
 
 	if (self->base.touch && GuiItem_isEnable(&self->base) && OsWinIO_canActiveRenderItem(self))
 	{
-		BOOL inside = Quad2i_inside(coord, OsWinIO_getTouchPos());
-		if (OsWinIO_getTouch_action() == Win_TOUCH_WHEEL && inside)
-		{
-			BOOL reset = !GuiItemRoot_hasChanges();
-
-			_GuiItemMap_undownload(self, coord);	//first
-
-			if (OsWinIO_getTouch_wheel() < 0 && zoom < GuiItemMap_MAX_ZOOM)	//zoom in
-			{
-				Vec2f rel;
-				rel.x = (OsWinIO_getTouchPos().x - coord.start.x) / (float)coord.size.x;
-				rel.y = (OsWinIO_getTouchPos().y - coord.start.y) / (float)coord.size.y;
-
-				Vec2f touch_longLat = Vec2f_add(bbox.start, Vec2f_mul(bbox.size, rel));
-				Vec2f longLat = Vec2f_aprox(StdMap_getTile(cam.x, cam.y, zoom), touch_longLat, 0.25f);	//go only 1/4 closer
-
-				longLat = StdMap_getLonLat(longLat.x, longLat.y, zoom);
-				DbValue_setNumber(&self->cam_long, longLat.x);
-				DbValue_setNumber(&self->cam_lat, longLat.y);
-			}
-
-			DbValue_setNumber(&self->cam_zoom, Std_clamp(zoom - OsWinIO_getTouch_wheel(), 1, GuiItemMap_MAX_ZOOM));
-			OsWinIO_resetTouch();
-
-			GuiItem_setRedraw(&self->base, TRUE);
-
-			if (reset)
-				GuiItemRoot_resetNumChanges();
-		}
-
 		BOOL startTouch = (OsWinIO_getTouch_action() == Win_TOUCH_DOWN_S) || (OsWinIO_getTouch_action() == Win_TOUCH_FORCE_DOWN_S);
 		BOOL endTouch = (OsWinIO_getTouch_action() == Win_TOUCH_DOWN_E) || (OsWinIO_getTouch_action() == Win_TOUCH_FORCE_DOWN_E);
+
+		BOOL inside = Quad2i_inside(coord, OsWinIO_getTouchPos());
 
 		BOOL active = OsWinIO_isActiveRenderItem(self);
 		BOOL touch = startTouch || active;
 
-		Quad2i copyrightRect = Quad2i_init4(coord.start.x, coord.start.y + coord.size.y - OsWinIO_cellSize() / 2, OsWinIO_cellSize() * 7, OsWinIO_cellSize() / 2);
-		BOOL insideCopyrightRect = Quad2i_inside(copyrightRect, OsWinIO_getTouchPos());
 
-		Quad2i fixthemapRect = Quad2i_init4(coord.start.x + coord.size.x - 2 * OsWinIO_cellSize(), coord.start.y + coord.size.y - OsWinIO_cellSize() / 2, OsWinIO_cellSize() * 2, OsWinIO_cellSize() / 2);
-		BOOL insideFixthemapRect = Quad2i_inside(fixthemapRect, OsWinIO_getTouchPos());
 
 		BIG clickMarkRow = -1;
 
@@ -890,7 +957,7 @@ void GuiItemMap_touch(GuiItemMap* self, Quad2i coord, Win* win)
 		GuiItemMapItem* it = self->items;
 		while (it)
 		{
-			Vec2i mid = GuiItemMapItem_getMapPos(it, coord.start, bbox, zoom);
+			Vec2i mid = GuiItemMapItem_getMapPos(it, coord.start, bbox, cam.z);
 			int rad = it->rad;
 
 			mid.y -= moveY;
@@ -906,8 +973,6 @@ void GuiItemMap_touch(GuiItemMap* self, Quad2i coord, Win* win)
 		if (startTouch)
 		{
 			self->clickMarkRow = clickMarkRow;
-			self->clickCopyright = insideCopyrightRect;
-			self->clickFixthemap = insideFixthemapRect;
 		}
 
 		if (inside && touch) //full touch
@@ -922,14 +987,12 @@ void GuiItemMap_touch(GuiItemMap* self, Quad2i coord, Win* win)
 				if (startTouch)
 				{
 					self->startTouch = OsWinIO_getTouchPos();
-					self->startTile = StdMap_getTile(cam.x, cam.y, zoom);
+					self->startTile = StdMap_getTile(cam.x, cam.y, cam.z);
 				}
 			}
 
 			if (active)
 			{
-				BOOL reset = !GuiItemRoot_hasChanges();
-
 				_GuiItemMap_undownload(self, coord);	//first
 				Vec2i move = Vec2i_sub(self->startTouch, OsWinIO_getTouchPos());
 
@@ -939,39 +1002,46 @@ void GuiItemMap_touch(GuiItemMap* self, Quad2i coord, Win* win)
 				double tileX = self->startTile.x + rx;
 				double tileY = self->startTile.y + ry;
 
-				Vec2f longLat = StdMap_getLonLat(tileX, tileY, zoom);
-				DbValue_setNumber(&self->cam_long, longLat.x);
-				DbValue_setNumber(&self->cam_lat, longLat.y);
-
-				GuiItem_setRedraw(&self->base, TRUE);
-
-				if (reset)
-					GuiItemRoot_resetNumChanges();
+				Vec2f longLat = StdMap_getLonLat(tileX, tileY, cam.z);
+				_GuiItemMap_setCam(self, longLat.x, longLat.y, cam.z, coord);
 			}
 		}
 
-		if (self->clickCopyright || self->clickFixthemap || (!active && (insideCopyrightRect || insideFixthemapRect)))
-			Win_updateCursor(win, Win_CURSOR_HAND);
-		else
-			if (inside || active)
-				Win_updateCursor(win, ((!active && clickMarkRow >= 0) || (active && clickMarkRow >= 0 && clickMarkRow == self->clickMarkRow)) ? Win_CURSOR_HAND : Win_CURSOR_MOVE);
+
+		//zoom
+		if (inside && (OsWinIO_getTouch_action() == Win_TOUCH_WHEEL || (endTouch && OsWinIO_getTouchNum() == 2)))
+		{
+			_GuiItemMap_undownload(self, coord);	//first
+
+			if ((OsWinIO_getTouch_wheel() < 0) || endTouch)	//zoom in
+			{
+				Vec2f rel;
+				rel.x = (OsWinIO_getTouchPos().x - coord.start.x) / (float)coord.size.x;
+				rel.y = (OsWinIO_getTouchPos().y - coord.start.y) / (float)coord.size.y;
+
+				Vec2f touch_longLat = Vec2f_add(bbox.start, Vec2f_mul(bbox.size, rel));
+				Vec2f longLat = Vec2f_aprox(StdMap_getTile(cam.x, cam.y, cam.z), touch_longLat, 0.5f);	//go only 1/4 closer
+
+				longLat = StdMap_getLonLat(longLat.x, longLat.y, cam.z);
+				_GuiItemMap_setCam(self, longLat.x, longLat.y, cam.z, coord);
+			}
+
+			GuiItemMap_setZoom(self, endTouch ? (cam.z + 1) : (cam.z - OsWinIO_getTouch_wheel()));
+			OsWinIO_resetTouch();
+		}
+
+
+		if (inside || active)
+			Win_updateCursor(win, ((!active && clickMarkRow >= 0) || (active && clickMarkRow >= 0 && clickMarkRow == self->clickMarkRow)) ? Win_CURSOR_HAND : Win_CURSOR_MOVE);
 
 		if (active && endTouch) //end
 		{
 			GuiItemEdit_saveCache();
 			OsWinIO_resetActiveRenderItem();
 
-			if (self->clickCopyright)
-				OsWeb_openWebBrowser("https://www.openstreetmap.org/copyright");
-
-			if (self->clickFixthemap)
-				OsWeb_openWebBrowser("https://www.openstreetmap.org/fixthemap");
-
 			if (clickMarkRow >= 0 && clickMarkRow == self->clickMarkRow)
 				GuiItemMap_clickShowPage(self, self->clickMarkRow);
 			self->clickMarkRow = -1;
-			self->clickCopyright = FALSE;
-			self->clickFixthemap = FALSE;
 		}
 	}
 
@@ -994,42 +1064,40 @@ void GuiItemMap_key(GuiItemMap* self, Quad2i coord, Win* win)
 	if (keyExtra & Win_EXTRAKEY_UP)
 	{
 		Vec2f longLat = StdMap_getLonLat(tile.x, tile.y - JUMP, cam.z);
-		DbValue_setNumber(&self->cam_lat, longLat.y);
+		_GuiItemMap_setCam(self, cam.x, longLat.y, cam.z, coord);
 	}
 	else
 		if (keyExtra & Win_EXTRAKEY_DOWN)
 		{
 			Vec2f longLat = StdMap_getLonLat(tile.x, tile.y + JUMP, cam.z);
-			DbValue_setNumber(&self->cam_lat, longLat.y);
+			_GuiItemMap_setCam(self, cam.x, longLat.y, cam.z, coord);
 		}
 		else
 			if (keyExtra & Win_EXTRAKEY_LEFT)
 			{
 				Vec2f longLat = StdMap_getLonLat(tile.x - JUMP, tile.y, cam.z);
-				DbValue_setNumber(&self->cam_long, longLat.x);
+				_GuiItemMap_setCam(self, longLat.x, cam.y, cam.z, coord);
 			}
 			else
 				if (keyExtra & Win_EXTRAKEY_RIGHT)
 				{
 					Vec2f longLat = StdMap_getLonLat(tile.x + JUMP, tile.y, cam.z);
-					DbValue_setNumber(&self->cam_long, longLat.x);
+					_GuiItemMap_setCam(self, longLat.x, cam.y, cam.z, coord);
 				}
 
 	if (key == '+')
 	{
-		DbValue_setNumber(&self->cam_zoom, Std_clamp(cam.z + 1, 1, GuiItemMap_MAX_ZOOM));
+		GuiItemMap_setZoom(self, cam.z + 1);
 	}
 	else
 		if (key == '-')
 		{
-			DbValue_setNumber(&self->cam_zoom, Std_clamp(cam.z - 1, 1, GuiItemMap_MAX_ZOOM));
+			GuiItemMap_setZoom(self, cam.z - 1);
 		}
 
 	if (keyExtra & Win_EXTRAKEY_HOME)
 	{
-		DbValue_setNumber(&self->cam_long, 0);
-		DbValue_setNumber(&self->cam_lat, 0);
-		DbValue_setNumber(&self->cam_zoom, 2);
+		_GuiItemMap_setCam(self, 0, 0, 2, coord);
 	}
 
 	if (key == 's')
@@ -1041,4 +1109,90 @@ void GuiItemMap_key(GuiItemMap* self, Quad2i coord, Win* win)
 	{
 		GuiItemMap_focusItems(self);
 	}
+}
+
+void GuiItemTags_clickContributors(GuiItem* self)
+{
+	OsWeb_openWebBrowser("https://www.openstreetmap.org/copyright");
+}
+void GuiItemTags_clickFixTheMap(GuiItem* self)
+{
+	OsWeb_openWebBrowser("https://www.openstreetmap.org/fixthemap");
+}
+
+void GuiItemTags_clickZoomAdd(GuiItem* item)
+{
+	GuiItemMap* self = GuiItem_findParentType(item, GuiItem_MAP);
+	GuiItemMap_setZoom(self, DbValue_getNumber(&self->cam_zoom) + 1);
+}
+void GuiItemTags_clickZoomSub(GuiItem* item)
+{
+	GuiItemMap* self = GuiItem_findParentType(item, GuiItem_MAP);
+	GuiItemMap_setZoom(self, DbValue_getNumber(&self->cam_zoom) - 1);
+}
+
+void GuiItemMap_clickFocusItems(GuiItem* item)
+{
+	GuiItemMap* self = GuiItem_findParentType(item, GuiItem_MAP);
+	GuiItemMap_focusItems(self);
+}
+
+GuiItemLayout* GuiItemMap_resize(GuiItemMap* self, GuiItemLayout* layout, Win* win)
+{
+	if (!self->base.resize)
+		return (GuiItemLayout*)GuiItem_getSub(&self->base, 0);
+
+	GuiItem_freeSubs(&self->base);
+
+	//layout
+	layout = GuiItemLayout_newCoord(&self->base, FALSE, FALSE, win);
+	GuiItemLayout_addColumn(layout, 0, 100);
+	GuiItemLayout_addRow(layout, 1, 100);
+	layout->drawBackground = FALSE;
+	GuiItem_addSubName(&self->base, "layout_main", &layout->base);
+
+	{
+		GuiItemLayout* layoutMenu = GuiItemLayout_new(Quad2i_init4(0, 0, 1, 1));
+		GuiItemLayout_setDrawBackground(layoutMenu, FALSE);
+		GuiItemLayout_addColumn(layoutMenu, 0, 2);
+		GuiItemLayout_addColumn(layoutMenu, 1, 4);
+		GuiItemLayout_addColumn(layoutMenu, 2, 2);
+		GuiItemLayout_addColumn(layoutMenu, 3, 4);
+		GuiItemLayout_addColumn(layoutMenu, 4, 2);
+		GuiItemLayout_addColumn(layoutMenu, 5, 2);
+		GuiItemLayout_addColumn(layoutMenu, 6, 1);
+		GuiItemLayout_addColumn(layoutMenu, 7, 1);
+		GuiItemLayout_addColumn(layoutMenu, 9, 4);
+		GuiItem_addSubName((GuiItem*)layout, "top", (GuiItem*)layoutMenu);
+
+		GuiItem_addSubName((GuiItem*)layoutMenu, "cam_longL", GuiItemText_new(Quad2i_init4(0, 0, 1, 1), FALSE, DbValue_initLang("MAP_CAM_LONG"), DbValue_initEmpty()));
+		GuiItem_addSubName((GuiItem*)layoutMenu, "cam_long", GuiItemEdit_new(Quad2i_init4(1, 0, 1, 1), DbValue_initCopy(&self->cam_long), DbValue_initLang("MAP_CAM_LONG")));
+
+		GuiItem_addSubName((GuiItem*)layoutMenu, "cam_latL", GuiItemText_new(Quad2i_init4(2, 0, 1, 1), FALSE, DbValue_initLang("MAP_CAM_LAT"), DbValue_initEmpty()));
+		GuiItem_addSubName((GuiItem*)layoutMenu, "cam_lat", GuiItemEdit_new(Quad2i_init4(3, 0, 1, 1), DbValue_initCopy(&self->cam_lat), DbValue_initLang("MAP_CAM_LAT")));
+
+		GuiItem_addSubName((GuiItem*)layoutMenu, "cam_zoomL", GuiItemText_new(Quad2i_init4(4, 0, 1, 1), FALSE, DbValue_initLang("MAP_CAM_ZOOM"), DbValue_initEmpty()));
+		GuiItem_addSubName((GuiItem*)layoutMenu, "cam_zoom", GuiItemEdit_new(Quad2i_init4(5, 0, 1, 1), DbValue_initCopy(&self->cam_zoom), DbValue_initLang("MAP_CAM_ZOOM")));
+
+		GuiItem_addSubName((GuiItem*)layoutMenu, "+", GuiItemButton_newBlackEx(Quad2i_init4(6, 0, 1, 1), DbValue_initStaticCopyCHAR("+"), &GuiItemTags_clickZoomAdd));
+		GuiItem_addSubName((GuiItem*)layoutMenu, "-", GuiItemButton_newBlackEx(Quad2i_init4(7, 0, 1, 1), DbValue_initStaticCopyCHAR("-"), &GuiItemTags_clickZoomSub));
+
+		GuiItem_addSubName((GuiItem*)layoutMenu, "refocus", GuiItemButton_newClassicEx(Quad2i_init4(9, 0, 1, 1), DbValue_initLang("MAP_REFOCUS"), &GuiItemMap_clickFocusItems));
+	}
+
+	{
+		GuiItemLayout* layoutMenu = GuiItemLayout_new(Quad2i_init4(0, 2, 1, 1));
+		GuiItemLayout_setDrawBackground(layoutMenu, FALSE);
+		GuiItemLayout_addColumn(layoutMenu, 0, 100);
+		GuiItemLayout_addColumn(layoutMenu, 1, 3);
+		GuiItemLayout_addColumn(layoutMenu, 2, 6);
+		GuiItem_addSubName((GuiItem*)layout, "bottom", (GuiItem*)layoutMenu);
+
+		GuiItemButton* b1 = (GuiItemButton*)GuiItem_addSubName((GuiItem*)layoutMenu, "fixthemap", GuiItemButton_newAlphaEx(Quad2i_init4(1, 0, 1, 1), DbValue_initLang("MAPS_FIX_THE_MAP"), &GuiItemTags_clickFixTheMap));
+		GuiItemButton* b2 = (GuiItemButton*)GuiItem_addSubName((GuiItem*)layoutMenu, "contributors", GuiItemButton_newAlphaEx(Quad2i_init4(2, 0, 1, 1), DbValue_initLang("MAPS_CONTRIBUTORS"), &GuiItemTags_clickContributors));
+		b1->drawBackground = FALSE;
+		b2->drawBackground = FALSE;
+	}
+
+	return layout;
 }

@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -22,7 +22,10 @@ typedef struct GuiItemComboDynamic_s
 	DbValue description;
 	int text_level;
 
-	GuiItemCallback* openCall;
+	DbValue hasColors;
+	DbValue cd;
+
+	//GuiItemCallback* openCall;
 	BOOL warningBackground;
 }GuiItemComboDynamic;
 
@@ -38,9 +41,12 @@ GuiItem* GuiItemComboDynamic_new(Quad2i grid, BOOL warningBackground, DbRows val
 	self->text_level = 1;
 
 	self->warningBackground = warningBackground;
-	self->openCall = 0;
+	//self->openCall = 0;
 
 	self->base.icon_draw_back = FALSE;
+
+	self->hasColors = DbValue_initEmpty();
+	self->cd = DbValue_initEmpty();
 
 	return (GuiItem*)self;
 }
@@ -62,7 +68,10 @@ GuiItem* GuiItemComboDynamic_newCopy(GuiItemComboDynamic* src, BOOL copySub)
 	self->optionsLinks = DbRows_initCopy(&src->optionsLinks);
 	self->value = DbRows_initCopy(&src->value);
 	self->description = DbValue_initCopy(&src->description);
-	self->openCall = src->openCall;
+	//self->openCall = src->openCall;
+
+	self->hasColors = DbValue_initCopy(&src->hasColors);
+	self->cd = DbValue_initCopy(&src->cd);
 
 	return (GuiItem*)self;
 }
@@ -73,14 +82,32 @@ void GuiItemComboDynamic_delete(GuiItemComboDynamic* self)
 	DbValue_free(&self->optionsValues);
 	DbRows_free(&self->optionsLinks);
 	DbRows_free(&self->value);
+	DbValue_free(&self->hasColors);
+	DbValue_free(&self->cd);
+
 	GuiItem_free(&self->base);
 	Os_free(self, sizeof(GuiItemComboDynamic));
 }
 
-void GuiItemComboDynamic_setOpenCall(GuiItemComboDynamic* self, GuiItemCallback* openCall)
+/*void GuiItemComboDynamic_setOpenCall(GuiItemComboDynamic* self, GuiItemCallback* openCall)
 {
 	self->openCall = openCall;
+}*/
+
+void GuiItemComboDynamic_setColor(GuiItemComboDynamic* self, DbValue cd, DbValue hasColors)
+{
+	DbValue_free(&self->cd);
+	DbValue_free(&self->hasColors);
+	self->cd = cd;
+	self->hasColors = hasColors;
 }
+
+BOOL GuiItemComboDynamic_hasColors(const GuiItemComboDynamic* self)
+{
+	return DbValue_getNumber(&self->hasColors);
+}
+
+
 
 void GuiItemComboDynamic_setOptionsLinks(GuiItemComboDynamic* self, DbRows optionsLinks)
 {
@@ -120,6 +147,19 @@ void GuiItemComboDynamic_resetValue(GuiItemComboDynamic* self)
 	DbRows_setLinkRow(&self->value, -1);
 }
 
+BIG GuiItemComboDynamic_findRowPos(GuiItemComboDynamic* self, BIG row)
+{
+	const UBIG N = GuiItemComboDynamic_numOptions(self);
+	UBIG i;
+	for (i = 0; i < N; i++)
+	{
+		if (row == GuiItemComboDynamic_getOptionRow(self, i))
+			return i;
+	}
+	return -1;
+}
+
+
 void GuiItemComboDynamic_clickSelect(GuiItem* self)
 {
 	GuiItemComboDynamic* combo = GuiItem_findParentType(self->parent, GuiItem_COMBO_DYNAMIC);
@@ -143,25 +183,35 @@ static GuiItemLayout* _GuiItemComboDynamic_createDialog(GuiItemComboDynamic* sel
 
 	BIG valueRow = GuiItemComboDynamic_getValueRow(self);
 
-	GuiItemButton* button = (GuiItemButton*)GuiItem_addSubName(&layout->base, "choose", GuiItemButton_newAlphaEx(Quad2i_init4(0, 0, 1, 1), DbValue_initLang("CHOOSE"), &GuiItemComboDynamic_clickSelect));
-	button->stayPressed = (-1 == valueRow);
+	{
+	/*GuiItemButton* button = (GuiItemButton*)*/GuiItem_addSubName(&layout->base, "choose", GuiItemButton_newAlphaEx(Quad2i_init4(0, 0, 1, 1), DbValue_initLang("CHOOSE"), &GuiItemComboDynamic_clickSelect));
+	//button->stayPressed = (-1 == valueRow);
+	//if (GuiItemComboDynamic_hasColors(self))
+	//	GuiItemButton_setBackgroundCdValue(button, TRUE, DbValue_initCopy(&self->cd));
+	}
 
 	UBIG i;
 	for (i = 0; i < N; i++)
 	{
-		BIG row = GuiItemComboDynamic_getOptionRow(self, i);
+		BIG it = GuiItemComboDynamic_getOptionRow(self, i);
 
 		char nameId[64];
-		Std_buildNumber(row, 0, nameId);
+		Std_buildNumber(it, 0, nameId);
 
 		DbValue nameValue = DbValue_initCopy(&self->optionsValues);
-		DbValue_setRow(&nameValue, row, 0);
+		DbValue_setRow(&nameValue, it, 0);
 
 		GuiItemButton* button = (GuiItemButton*)GuiItem_addSubName(&layout->base, nameId, GuiItemButton_newAlphaEx(Quad2i_init4(0, 1 + i, 1, 1), nameValue, &GuiItemComboDynamic_clickSelect));
-		button->stayPressed = (row == valueRow);
+		button->stayPressed = (it == valueRow);
 		button->textCenter = FALSE;
 		GuiItemTable_callListIcon((GuiItem*)button);
-		//GuiItem_setIconCallback((GuiItem*)button, &GuiItemTable_callListIcon);
+
+		if (GuiItemComboDynamic_hasColors(self))
+		{
+			DbValue vv = DbValue_initCopy(&self->cd);
+			DbValue_setRow(&vv, it, 0);
+			GuiItemButton_setBackgroundCdValue(button, TRUE, vv);
+		}
 	}
 
 	return layout;
@@ -247,13 +297,20 @@ void GuiItemComboDynamic_draw(GuiItemComboDynamic* self, Image4* img, Quad2i coo
 
 void GuiItemComboDynamic_update(GuiItemComboDynamic* self, Quad2i coord, Win* win)
 {
-	GuiItem_setRedraw(&self->base, (DbValue_hasChanged(&self->optionsValues) || DbValue_hasChanged(&self->description)));
+	BIG row = GuiItemComboDynamic_getValueRow(self);
+
+	DbValue_setRow(&self->cd, row, 0);
+
+	GuiItem_setRedraw(&self->base, (DbValue_hasChanged(&self->hasColors) || DbValue_hasChanged(&self->cd) || DbValue_hasChanged(&self->optionsValues) || DbValue_hasChanged(&self->description)));
 }
 
 void GuiItemComboDynamic_touch(GuiItemComboDynamic* self, Quad2i coord, Win* win)
 {
 	Rgba back_cd = g_theme.white;
 	Rgba front_cd = g_theme.black;
+
+	if (GuiItemComboDynamic_hasColors(self) && GuiItemComboDynamic_getValueRow(self) >= 0)
+		back_cd = DbValue_getCd(&self->cd);
 
 	if (self->base.touch && GuiItem_isEnable(&self->base) && OsWinIO_canActiveRenderItem(self))
 	{
@@ -279,12 +336,32 @@ void GuiItemComboDynamic_touch(GuiItemComboDynamic* self, Quad2i coord, Win* win
 		{
 			GuiItemEdit_saveCache();
 
-			if (self->openCall)
-				self->openCall(&self->base);
+			if (OsWinIO_getKeyExtra() & Win_EXTRAKEY_CTRL && OsWinIO_getKeyExtra() & Win_EXTRAKEY_SHIFT)
+				GuiItemComboDynamic_resetValue(self);
+			else
+				if (OsWinIO_getKeyExtra() & Win_EXTRAKEY_CTRL)
+				{
+					const int N = GuiItemComboDynamic_numOptions(self);
 
-			GuiItemLayout* lay = _GuiItemComboDynamic_createDialog(self);
-			if (lay)
-				GuiItemRoot_addDialogRelLayout(lay, &self->base, self->base.coordMove, TRUE);
+						//UBIG GuiItemComboDynamic_numOptions(const GuiItemComboDynamic * self)
+	
+					//BIG GuiItemComboDynamic_getOptionRow(const GuiItemComboDynamic * self, UBIG i)
+
+					if (N > 1)
+					{
+						BIG pos = GuiItemComboDynamic_findRowPos(self, GuiItemComboDynamic_getValueRow(self)) + 1;
+						if (pos >= N)
+							pos = 0;
+
+						DbRows_setLinkRow(&self->value, GuiItemComboDynamic_getOptionRow(self, pos));
+					}
+				}
+				else
+				{
+					GuiItemLayout* lay = _GuiItemComboDynamic_createDialog(self);
+					if (lay)
+						GuiItemRoot_addDialogRelLayout(lay, &self->base, self->base.coordMove, TRUE);
+				}
 		}
 
 		if (endTouch)

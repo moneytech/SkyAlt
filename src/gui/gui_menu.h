@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -17,10 +17,11 @@ typedef struct GuiItemMenuItem_s
 	DbValue text;
 	GuiItemCallback* click;
 	BOOL confirm;
+	BOOL separ_line;
 	BIG attr_type;
 }GuiItemMenuItem;
 
-GuiItemMenuItem* GuiItemMenuItem_new(GuiImage* icon, DbValue text, GuiItemCallback* click, BOOL confirm, BIG attr_type)
+GuiItemMenuItem* GuiItemMenuItem_new(GuiImage* icon, DbValue text, GuiItemCallback* click, BOOL confirm, BOOL separ_line, BIG attr_type)
 {
 	GuiItemMenuItem* self = Os_malloc(sizeof(GuiItemMenuItem));
 	self->icon = icon;
@@ -28,11 +29,12 @@ GuiItemMenuItem* GuiItemMenuItem_new(GuiImage* icon, DbValue text, GuiItemCallba
 	self->click = click;
 	self->confirm = confirm;
 	self->attr_type = attr_type;
+	self->separ_line = separ_line;
 	return self;
 }
 GuiItemMenuItem* GuiItemMenuItem_newCopy(GuiItemMenuItem* src)
 {
-	return GuiItemMenuItem_new(GuiImage_newCopy(src->icon), DbValue_initCopy(&src->text), src->click, src->confirm, src->attr_type);
+	return GuiItemMenuItem_new(GuiImage_newCopy(src->icon), DbValue_initCopy(&src->text), src->click, src->confirm, src->separ_line, src->attr_type);
 }
 
 void GuiItemMenuItem_delete(GuiItemMenuItem* self)
@@ -47,6 +49,8 @@ typedef struct GuiItemMenu_s
 	GuiItem base;
 
 	DbValue value;
+	//DbValue hasColors;
+
 	int text_level;
 
 	StdArr items;	//context(button list)
@@ -63,6 +67,7 @@ typedef struct GuiItemMenu_s
 	BOOL imageIcon;
 
 	BOOL highligthBackground;
+	float highligthAlpha;
 
 	BOOL err;
 
@@ -74,20 +79,20 @@ GuiItemMenuItem* GuiItemMenu_getItem(GuiItemMenu* self, int i)
 	return self->items.ptrs[i];
 }
 
-void GuiItemMenu_addItemIcon(GuiItemMenu* self, GuiImage* icon, DbValue text, GuiItemCallback* click, BOOL confirm, BIG attr_type)
+void GuiItemMenu_addItemIcon(GuiItemMenu* self, GuiImage* icon, DbValue text, GuiItemCallback* click, BOOL confirm, BOOL separ_line, BIG attr_type)
 {
-	GuiItemMenuItem* it = GuiItemMenuItem_new(icon, text, click, confirm, attr_type);
+	GuiItemMenuItem* it = GuiItemMenuItem_new(icon, text, click, confirm, separ_line, attr_type);
 	StdArr_add(&self->items, it);
 }
 
-void GuiItemMenu_addItemEx(GuiItemMenu* self, DbValue text, GuiItemCallback* click, BOOL confirm, BIG attr_type)
+void GuiItemMenu_addItemEx(GuiItemMenu* self, DbValue text, GuiItemCallback* click, BOOL confirm, BOOL separ_line, BIG attr_type)
 {
-	GuiItemMenu_addItemIcon(self, 0, text, click, confirm, attr_type);
+	GuiItemMenu_addItemIcon(self, 0, text, click, confirm, separ_line, attr_type);
 }
 
 void GuiItemMenu_addItem(GuiItemMenu* self, DbValue text, GuiItemCallback* click)
 {
-	GuiItemMenu_addItemEx(self, text, click, FALSE, -1);
+	GuiItemMenu_addItemEx(self, text, click, FALSE, FALSE, -1);
 }
 
 void GuiItemMenu_addItemEmpty(GuiItemMenu* self)
@@ -101,6 +106,7 @@ GuiItem* GuiItemMenu_new(Quad2i grid, DbValue value, BOOL circle)
 	self->base = GuiItem_init(GuiItem_MENU, grid);
 
 	self->value = value;
+	//self->hasColors = DbValue_initEmpty();
 	self->text_level = 1;
 
 	self->items = StdArr_init();
@@ -115,6 +121,7 @@ GuiItem* GuiItemMenu_new(Quad2i grid, DbValue value, BOOL circle)
 	self->textCenter = TRUE;
 	self->closeAuto = TRUE;
 	self->highligthBackground = FALSE;
+	self->highligthAlpha = 1.0f;
 	self->transparent = TRUE;
 
 	self->base.icon_draw_back = FALSE;
@@ -139,7 +146,9 @@ GuiItem* GuiItemMenu_newCopy(GuiItemMenu* src, BOOL copySub)
 	GuiItem_initCopy(&self->base, &src->base, copySub);
 
 	if (self->image)	self->image = GuiImage_newCopy(src->image);
+
 	self->value = DbValue_initCopy(&src->value);
+	//self->hasColors = DbValue_initCopy(&src->hasColors);
 
 	self->items = StdArr_initCopyFn(&src->items, (StdArrCOPY)&GuiItemMenuItem_newCopy);
 
@@ -158,7 +167,9 @@ void GuiItemMenu_delete(GuiItemMenu* self)
 {
 	if (self->image)
 		GuiImage_delete(self->image);
+
 	DbValue_free(&self->value);
+	//DbValue_free(&self->hasColors);
 
 	GuiItemMenu_clearItems(self);
 
@@ -182,6 +193,17 @@ DbValue* _GuiItemMenu_findItem(GuiItemMenu* self, const UNI* name)
 	return 0;
 }
 
+
+/*void GuiItemMenu_setHasColors(GuiItemMenu* self, DbValue hasColors)
+{
+	DbValue_free(&self->hasColors);
+	self->hasColors = hasColors;
+}
+BOOL GuiItemMenu_hasColors(const GuiItemMenu* self)
+{
+	return DbValue_getNumber(&self->hasColors);
+}*/
+
 void GuiItemMenu_setUnderline(GuiItemMenu* self, BOOL underline)
 {
 	self->underline = underline;
@@ -203,9 +225,10 @@ void GuiItemMenu_setTransparent(GuiItemMenu* self, BOOL transparent)
 	_GuiItemMenu_updateIconDrawBack(self);
 }
 
-void GuiItemMenu_setHighligthBackground(GuiItemMenu* self, BOOL highligthBackground)
+void GuiItemMenu_setHighligthBackground(GuiItemMenu* self, BOOL highligthBackground, float highligthAlpha)
 {
 	self->highligthBackground = highligthBackground;
+	self->highligthAlpha = highligthAlpha;
 	_GuiItemMenu_updateIconDrawBack(self);
 }
 
@@ -260,6 +283,7 @@ static GuiItem* _GuiItemMenu_createContext(GuiItemMenu* self)
 			if (it->confirm)
 			{
 				item = GuiItem_addSubName(&layout->base, nameId, GuiItemMenu_new(Quad2i_init4(0, i, 1, 1), DbValue_initCopy(&it->text), FALSE));
+				//GuiItemMenu_setHasColors((GuiItemMenu*)item, DbValue_initCopy(&self->hasColors));
 				GuiItemMenu_addItem((GuiItemMenu*)item, DbValue_initLang("YES_IAM_SURE"), it->click);
 
 				GuiItemMenu_setUnderline((GuiItemMenu*)item, TRUE);
@@ -269,6 +293,7 @@ static GuiItem* _GuiItemMenu_createContext(GuiItemMenu* self)
 			{
 				item = GuiItem_addSubName(&layout->base, nameId, GuiItemButton_newAlphaEx(Quad2i_init4(0, i, 1, 1), DbValue_initCopy(&it->text), it->click));
 				((GuiItemButton*)item)->textCenter = FALSE;
+				((GuiItemButton*)item)->drawBottomSepar = it->separ_line;
 			}
 
 			GuiItem_setIcon(item, GuiImage_newCopy(it->icon));
@@ -352,6 +377,12 @@ void GuiItemMenu_update(GuiItemMenu* self, Quad2i coord, Win* win)
 	GuiItem_setRedraw(&self->base, (DbValue_hasChanged(&self->value)));
 }
 
+void GuiItemMenu_showContext(GuiItemMenu* self)
+{
+	GuiItem* lay = self->context ? GuiItem_newCopy(&self->context->base, TRUE) : _GuiItemMenu_createContext(self);
+	GuiItemRoot_addDialogRel(lay, &self->base, self->base.coordMove, self->closeAuto);
+}
+
 void GuiItemMenu_touch(GuiItemMenu* self, Quad2i coord, Win* win)
 {
 	Rgba back_cd = self->transparent ? g_theme.white : g_theme.background;
@@ -364,7 +395,7 @@ void GuiItemMenu_touch(GuiItemMenu* self, Quad2i coord, Win* win)
 		back_cd = Rgba_aprox(back_cd, front_cd, 0.2f);
 
 	if (self->highligthBackground)
-		back_cd = g_theme.main;
+		back_cd = Rgba_aprox(g_theme.background, g_theme.main, self->highligthAlpha);
 
 	if (self->err)
 		back_cd = g_theme.warning;
@@ -399,9 +430,7 @@ void GuiItemMenu_touch(GuiItemMenu* self, Quad2i coord, Win* win)
 		if (inside && active && endTouch)	//end
 		{
 			GuiItemEdit_saveCache();
-
-			GuiItem* lay = self->context ? GuiItem_newCopy(&self->context->base, TRUE) : _GuiItemMenu_createContext(self);
-			GuiItemRoot_addDialogRel(lay, &self->base, self->base.coordMove, self->closeAuto);
+			GuiItemMenu_showContext(self);
 		}
 
 		if (endTouch)

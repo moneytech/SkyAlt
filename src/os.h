@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -37,7 +37,7 @@ typedef long long BIG;
 #define TRUE 1
 #define FALSE 0
 
-#define STD_BUILD 2	//! ...
+#define STD_BUILD 3	//! ...
 #define STD_TITLE "SkyAlt"
 
 #define STD_LICENSE_VER 1
@@ -49,7 +49,7 @@ typedef long long BIG;
 #define MAX_EXE_FPS 60
 #define MAX_WORKSPACE_UPDATE 0.1	//every 10sec
 
-#define NET_USER_AGENT "SkyAlt/0.2"
+#define NET_USER_AGENT "SkyAlt/0.3"
 
 #define TEXT_TAB_SPACES 2
 
@@ -134,6 +134,7 @@ int Os_memcmp(void* a, void* b, UBIG size);
 void Os_qsort(void* base, UBIG num, int item_size, int (cmpfunc)(const void* context, const void* a, const void* b), void* context);
 
 void Os_showConsole(BOOL show);
+void Os_consoleWaitForKey(void);
 
 void Os_showMemleaks(void);
 
@@ -170,7 +171,10 @@ UCHAR* OsFile_initRead(const char* path, UBIG* out_size, UBIG alloc_extra_bytes)
 BOOL OsFile_initWrite(const char* path, void* data, const UBIG bytes);
 BOOL OsFile_initHash(const char* path, OsCryptoSha2* out);
 
+char* OsFile_readLineEx(OsFile* self, BIG* seek, BIG* skipedLines);
 char* OsFile_readLine(OsFile* self);
+
+
 void OsFile_writeUNIch(OsFile* self, const UNI l);
 void OsFile_writeUNI(OsFile* self, const UNI* str);
 void OsFile_writeNumber(OsFile* self, double value);
@@ -179,6 +183,7 @@ BOOL OsFile_existFile(const char* path);
 BOOL OsFile_existFolder(const char* path);
 BOOL OsFile_exist(const char* path);
 BIG OsFile_bytes(const char* path);
+BIG OsFile_getChangeTime(const char* path);
 BIG OsFileDir_getFileList(const char* path, BOOL file_names, BOOL subdir_names, BOOL complete_path, char*** out);
 UBIG OsFileDir_getFolderBytes(const char* path, BOOL subdirs);
 
@@ -594,6 +599,9 @@ typedef enum
 #define Win_EXTRAKEY_SELECT_ROW (1ULL << 38)
 #define Win_EXTRAKEY_SELECT_COLUMN (1ULL << 39)
 
+#define Win_EXTRAKEY_GOTO (1ULL << 40)
+
+
 typedef struct Win_s Win;
 typedef struct Quad2i_s Quad2i;
 typedef struct Vec2i_s Vec2i;
@@ -683,10 +691,14 @@ BOOL OsWinIO_isCursorGuiItemInTime(void* item);
 void OsWinIO_updateCursorTimeout(void);
 void OsWinIO_tryRemoveCursorGuiItem(void* item);
 BOOL OsWinIO_isStartTouch(void);
+BOOL OsWinIO_isEndTouch(void);
 BOOL OsWinIO_setCursorGuiItem(void* item);
 void OsWinIO_setCursorText(const UNI* text);
 void OsWinIO_resetCursorGuiItem(void);
 double OsWinIO_getEditboxAnim(void* item);
+
+void OsWinIO_setKey(UNI key);
+void OsWinIO_setKeyExtra(UBIG extra_key);
 
 void OsWinIO_pleaseExit(void);
 void OsWinIO_pleaseTouch(void);
@@ -738,7 +750,7 @@ const char* OsFont_initFile(OsFont* self, const UNI* name, const char* path);
 const char* OsFont_initMemory(OsFont* self, const UNI* name, const UCHAR* memory, int memory_bytes);
 
 BOOL OsFont_is(const OsFont* self, const UNI* name);
-OsFontLetter OsFont_get(OsFont* self, const UNI CH, const int Hpx);
+OsFontLetter OsFont_get(OsFont* self, const UNI CH, const int Hpx, const int angleDeg);
 Vec2i OsFont_getTextSize(OsFont* self, const UNI* text, const int Hpx, const int betweenLinePx, int* extra_down);
 int OsFont_getTextSizeX(OsFont* self, const UNI* text, const int Hpx);
 int OsFont_getCharPixelPos(OsFont* self, const int Hpx, const UNI* text, int cur_pos);
@@ -808,3 +820,29 @@ BOOL OsODBCQuery_addColumnString(OsODBCQuery* self, int index, char* str, BIG ma
 BOOL OsODBCQuery_execute(OsODBCQuery* self);
 BOOL OsODBCQuery_fetch(OsODBCQuery* self);
 UBIG OsODBCQuery_count(OsODBCQuery* self);
+
+
+typedef struct OsXml_s OsXml;
+typedef struct OsXmlMark_s OsXmlMark;
+
+void OsXml_initGlobal(void);
+void OsXml_freeGlobal(void);
+OsXml* OsXml_newFile(const char* path);
+OsXml* OsXml_newMemory(const char* buffer, int size);
+OsXml* OsXml_newString(const UCHAR* str);
+void OsXml_delete(OsXml* self);
+OsXmlMark* OsXml_createMark(OsXml* self, const char* str, const char* prefix, const char* url);
+
+void OsXmlMark_delete(OsXmlMark* self);
+UBIG OsXmlMark_num(OsXmlMark* self);
+BOOL OsXmlMark_isElement(OsXmlMark* self, UBIG i);
+BOOL OsXmlMark_isEmpty(OsXmlMark* self);
+BOOL OsXmlMark_hasProp(OsXmlMark* self, UBIG i, const char* str);
+const char* OsXmlMark_getProp(OsXmlMark* self, UBIG i, const char* str);
+const char* OsXmlMark_getValue(const OsXmlMark* self);
+
+
+OsXmlMark* OsXmlMark_createMark(OsXmlMark* self, OsXml* xml, const char* prefix, const char* url);
+void OsXmlMark_setContext(OsXmlMark* self, OsXmlMark* orig, UBIG i, const char* str);
+
+void OsXml_testGpx(const char* path);

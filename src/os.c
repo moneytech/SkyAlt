@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -31,6 +31,7 @@
 #include "os/os_media.h"
 #include "os/os_qshort.h"
 #include "os/os_odbc.h"
+#include "os/os_xml.h"
 
 #ifdef _WIN32
 #include "os/os_window_win.h"
@@ -132,6 +133,8 @@ void* Os_calloc(UBIG count, UBIG item_size)
 
 void* Os_malloc(UBIG size)
 {
+	//if (size == 112)
+	//printf("df");
 	return Os_calloc(1, size);
 }
 
@@ -180,6 +183,12 @@ void Os_showConsole(BOOL show)
 #ifdef _WIN32
 	ShowWindow(GetConsoleWindow(), show ? SW_SHOW : SW_HIDE);
 #endif
+}
+
+void Os_consoleWaitForKey(void)
+{
+	printf("press key ...");
+	getchar();
 }
 
 void Os_showMemleaks(void)

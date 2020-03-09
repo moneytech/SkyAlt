@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -246,16 +246,25 @@ BOOL Lang_initGlobal(const char* lang_selectName)
 	}
 
 	//copy english EULA if there are not available in langauge
+	BOOL eula_exist = FALSE;
 	const UNI* eulaStr = Lang_findEx("EULA_TEXT", Lang_findLangNamePos("en"));
 	for (i = 0; i < g_lang_num; i++)
 	{
-		if (!Lang_is("EULA_TEXT"))
+		if (Lang_is("EULA_TEXT"))
+			eula_exist = TRUE;
+		else
 			Lang_addItem(&g_lang_langs[i], LangItem_init(Std_newCHAR("EULA_TEXT"), Std_newUNI(eulaStr)));
 	}
-
 	Std_deleteCHAR(currPath);
 
-	return (g_lang_select >= 0);
+
+	if(g_lang_select < 0)
+		printf("Error: No language translation available(folder 'languages' missing or it is empty)\n");
+	else
+	if(!eula_exist)
+		printf("Error: Eula translation not found(folder 'eula' missing or it is empty)\n");
+
+	return (eula_exist && g_lang_select >= 0);
 }
 
 void Lang_setPos(UINT i)
@@ -297,10 +306,10 @@ const UNI* Lang_findEx(const char* id, int langPos)
 	if (Std_cmpCHARsmall(id, "LANGUAGE_LIST"))
 		return g_lang_list;
 
-	printf("Warning: Lang_find(%s) can't find translation\n", id);
-	Os_showConsole(TRUE);
+	//printf("Warning: Lang_find(%s) can't find translation\n", id);
+	//Os_showConsole(TRUE);
 
-	return _UNI32("--No translation--");
+	return 0;// _UNI32("--No translation--");
 }
 const UNI* Lang_find(const char* id)
 {

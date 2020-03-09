@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -240,7 +240,11 @@ BOOL FileProject_newCreate(const char* path, const UNI* password, BIG cycles)
 
 FileRow FileProject_getUID(void)
 {
-	return g_FileProject->uid;
+	FileRow r;
+	r.row = 0;
+	r.user = 0;
+
+	return g_FileProject ? g_FileProject->uid : r;
 }
 
 UNI* FileProject_getUID_string(void)
@@ -482,3 +486,125 @@ void FileProject_removeMyColumn(FileRow file)
 	OsFileDir_removeFile(path);
 	Std_deleteCHAR(path);
 }
+
+
+
+
+/*void FileProject_cleanTimeMachine(FileRow fileId, const double startDate, const double endDate)
+{
+	StdArr files = FileProject_openColumns(fileId, FALSE);
+
+	double* fileDates = Os_calloc(files.num, sizeof(double));
+	UBIG* fileNumItems = Os_calloc(files.num, sizeof(UBIG));
+
+	BIG i;
+	for (i = 0; i < files.num; i++)
+		FileFile_readItemHeader(files.ptrs[i], &fileDates[i], &fileNumItems[i]);
+
+	while (files.num && StdProgress_is())
+	{
+		BIG file_i = -1;
+
+		double minDate = Std_minDouble();
+		for (i = 0; i < files.num; i++) //find minimum
+		{
+			if (files.ptrs[i])
+			{
+				if (minDate == Std_minDouble())
+					minDate = fileDates[i];
+
+				if (fileDates[i] <= minDate)
+					file_i = i;
+			}
+		}
+
+		if (file_i < 0 || fileDates[file_i] > endDate) //end
+			break;
+
+		FileRow row;
+		BIG r = 0;
+		switch (self->type)
+		{
+			case DbColumn_1:
+			{
+				for (i = 0; i < fileNumItems[file_i] && StdProgress_is(); i++)
+				{
+					double number;
+					FileFile_readItem_1(files.ptrs[file_i], &row, &number);
+					DbTable_setMaxRow(table, row);
+
+					if (_DbColumn_loadRow(self, index, row, &r))
+					{
+						DbColumn1_set((DbColumn1*)self, r, number);
+
+						if (DbColumn1_getBTable((DbColumn1*)self))
+							((DbColumn1*)self)->isConverted = FALSE;
+					}
+					StdProgress_setEx("LOADING", (*filesDone += 16), filesSizes);
+				}
+
+				break;
+			}
+
+			case DbColumn_N:
+			{
+				for (i = 0; i < fileNumItems[file_i] && StdProgress_is(); i++)
+				{
+					double* numbers;
+					FileFile_readItem_n(files.ptrs[file_i], &row, &numbers);
+					DbTable_setMaxRow(table, row);
+
+					BOOL use = _DbColumn_loadRow(self, index, row, &r);
+					if (use)
+					{
+						DbColumnN_setArray((DbColumnN*)self, r, numbers);
+
+						if (DbColumnN_getBTable((DbColumnN*)self))
+							((DbColumnN*)self)->isConverted = FALSE;
+					}
+
+					StdProgress_setEx("LOADING", (*filesDone += 16 + DbColumnN_array_bytes(numbers)), filesSizes);
+
+					if (!use)
+						DbColumnN_array_resize(&numbers, 0);	//free
+				}
+
+				break;
+			}
+
+			case DbColumn_STRING_32:
+			{
+				for (i = 0; i < fileNumItems[file_i] && StdProgress_is(); i++)
+				{
+					UNI* text;
+					FileFile_readItemText_32(files.ptrs[file_i], &row, &text);
+					DbTable_setMaxRow(table, row);
+
+					BOOL use = _DbColumn_loadRow(self, index, row, &r);
+					if (use)
+						DbColumnString32_setEqFree((DbColumnString32*)self, r, text);
+
+					StdProgress_setEx("LOADING", (*filesDone += 16 + Std_bytesUNI(text)), filesSizes);	//not accurate
+
+					if (!use)
+						Std_deleteUNI(text);
+				}
+				break;
+			}
+		}
+
+		if (!FileFile_readItemHeader(files.ptrs[file_i], &fileDates[file_i], &fileNumItems[file_i]))
+		{
+			FileFile_delete(files.ptrs[file_i]);
+			files.ptrs[file_i] = 0;
+		}
+		*filesDone += 16;
+	}
+
+	Os_free(fileDates, files.num * sizeof(double));
+	Os_free(fileNumItems, files.num * sizeof(UBIG));
+
+	StdArr_freeFn(&files, (StdArrFREE)&FileFile_delete);
+}*/
+
+

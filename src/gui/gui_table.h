@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -17,17 +17,22 @@ typedef struct GuiItemTable_s
 	BIG viewRow;
 	DbRows filter;
 
+	DbValue searchHighlight;
+
 	BIG oldNumRows;
 
 	UBIG num_rows_max;		//visible
 	UBIG num_rows_real;
-	UBIG subs_start_rowOptionOrder;
-	UBIG subs_start_rowOptionCards;
-	UBIG subs_start_rowOption;
-	UBIG subs_end_rowCell;
-	UBIG subs_start_add;
 
-	GuiScroll scroll;
+	UBIG subs_ids_start_rowOptionOrder;
+	UBIG subs_ids_start_rowOptionCards;
+	UBIG subs_ids_start_rowOption;
+	UBIG subs_ids_add_record;
+
+	UBIG subs_cells_start;
+	UBIG subs_cells_end;
+
+	GuiScroll scrollV;
 
 	BIG selectedRow;
 
@@ -45,12 +50,6 @@ typedef struct GuiItemTable_s
 	Quad2i cellExtendRect;
 	BOOL cellExtendActive;
 
-	UBIG subs_start_rowCell;
-
-	DbValue rowSize;
-
-	DbRows group;
-
 	DbColumn* choosenSourceColumn;
 
 	BOOL showAddButton;
@@ -60,10 +59,6 @@ typedef struct GuiItemTable_s
 	char* changeOrderNameSrc;
 
 	DbValue scrollH;
-
-	//BOOL mode_summary;
-
-	//StdArr insights;
 }GuiItemTable;
 
 char* _GuiItemTable_getNameId(char* nameId, const char* format, BIG value)
@@ -90,9 +85,23 @@ BIG GuiItemTable_getColumnRow(const GuiItemTable* self, UBIG i)
 	return DbRows_getSubsRow(self->viewRow, "columns", TRUE, i);
 }
 
+BIG GuiItemTable_getColumnBaseRow(const GuiItemTable* self, UBIG i)
+{
+	return DbColumn_getRow(GuiItemTable_getColumn(self, i));
+}
+
 UBIG GuiItemTable_numRows(GuiItemTable* self)
 {
 	return DbRows_getSize(&self->filter);
+}
+
+static GuiItemLayout* _GuiItemTable_getIdsLayout(const GuiItemTable* self)
+{
+	return GuiItem_findName((GuiItem*)self, "ids_layout");
+}
+static GuiItemLayout* _GuiItemTable_getCellsLayout(const GuiItemTable* self)
+{
+	return GuiItem_findName((GuiItem*)self, "cells_layout");
 }
 
 BOOL GuiItemTable_repairSelect(GuiItemTable* self)
@@ -115,27 +124,30 @@ BOOL GuiItemTable_repairSelect(GuiItemTable* self)
 	return ok;
 }
 
-GuiItemTable* GuiItemTable_new(Quad2i grid, BIG tableRow, DbRows filter, BOOL showHeader, BOOL showAddRecord, DbValue scrollV, DbValue scrollH, DbValue selectGrid)
+GuiItemTable* GuiItemTable_new(Quad2i grid, BIG viewRow, DbRows filter, BOOL showHeader, BOOL showAddRecord, DbValue scrollV, DbValue scrollH, DbValue selectGrid, DbValue searchHighlight)
 {
 	GuiItemTable* self = Os_malloc(sizeof(GuiItemTable));
 	self->base = GuiItem_init(GuiItem_TABLE, grid);
 
-	self->viewRow = tableRow;
+	self->viewRow = viewRow;
 	self->filter = filter;
 	DbRows_hasChanged(&self->filter);
+
+	self->searchHighlight = searchHighlight;
 
 	self->oldNumRows = -1;
 
 	self->num_rows_max = 0;
 	self->num_rows_real = 0;
 
-	self->subs_start_rowOptionOrder = 0;
-	self->subs_start_rowOptionCards = 0;
-	self->subs_start_rowOption = 0;
-	self->subs_start_rowCell = 0;
-	self->subs_start_add = 0;
+	self->subs_ids_start_rowOptionOrder = 0;
+	self->subs_ids_start_rowOptionCards = 0;
+	self->subs_ids_start_rowOption = 0;
+	self->subs_ids_add_record = 0;
+	self->subs_cells_start = 0;
+	self->subs_cells_end = 0;
 
-	self->scroll = GuiScroll_init(scrollV);
+	self->scrollV = GuiScroll_init(scrollV);
 	self->scrollH = scrollH;
 
 	self->showChangeOrder = FALSE;
@@ -150,13 +162,11 @@ GuiItemTable* GuiItemTable_new(Quad2i grid, BIG tableRow, DbRows filter, BOOL sh
 	self->cellExtendRect = Quad2i_init();
 	self->cellExtendActive = FALSE;
 
-	self->subs_start_rowCell = 0;
-
-	self->rowSize = DbValue_initOption(tableRow, "height", 0);
+	//self->rowSize = DbValue_initOption(tableRow, "height", 0);
 
 	self->choosenSourceColumn = 0;
 
-	self->group = DbRows_initEmpty();
+	//self->group = DbRows_initEmpty();
 
 	self->showAddButton = FALSE;
 	self->showRemoveButton = FALSE;
@@ -186,10 +196,12 @@ GuiItem* GuiItemTable_newCopy(GuiItemTable* src, BOOL copySub)
 	GuiItem_initCopy(&self->base, &src->base, copySub);
 
 	self->filter = DbRows_initCopy(&src->filter);
-	self->group = DbRows_initCopy(&src->group);
+	self->searchHighlight = DbValue_initCopy(&src->searchHighlight);
+
+	//self->group = DbRows_initCopy(&src->group);
 
 	self->oldNumRows = -1;
-	self->scroll = GuiScroll_initCopy(&src->scroll);
+	self->scrollV = GuiScroll_initCopy(&src->scrollV);
 	self->scrollH = DbValue_initCopy(&src->scrollH);
 
 	self->selectGrid = DbValue_initCopy(&src->selectGrid);
@@ -212,7 +224,7 @@ BOOL GuiItemTable_isColumnLocked(const GuiItemTable* self, UBIG c)
 
 int GuiItemTable_getColumnIdsWidth(const GuiItemTable* self)
 {
-	DbValue v = DbValue_initOption(self->viewRow, "width_ids", _UNI32("3"));
+	DbValue v = DbValue_initOption(self->viewRow, "width_ids", _UNI32("4"));
 	int width = DbValue_getNumber(&v);
 	DbValue_free(&v);
 	return Std_bmax(1, width);
@@ -235,23 +247,18 @@ BOOL GuiItemTable_isColumnRemote(GuiItemTable* self, UBIG c)
 void GuiItemTable_delete(GuiItemTable* self)
 {
 	DbRows_free(&self->filter);
-	DbRows_free(&self->group);
+	DbValue_free(&self->searchHighlight);
 
 	Std_deleteCHAR(self->changeOrderNameDst);
 	Std_deleteCHAR(self->changeOrderNameSrc);
 
 	DbValue_free(&self->scrollH);
-	GuiScroll_free(&self->scroll);
+	GuiScroll_free(&self->scrollV);
 
 	DbValue_free(&self->selectGrid);
 
 	GuiItem_free(&self->base);
 	Os_free(self, sizeof(GuiItemTable));
-}
-
-void GuiItemTable_disableScrollSend(GuiItemTable* self)
-{
-	self->scroll.sendScrollDown = FALSE;
 }
 
 DbColumn* GuiItemTable_getBaseColumn(const GuiItemTable* self)
@@ -271,7 +278,7 @@ void GuiItemTable_setBaseRow(GuiItemTable* self, BIG row)
 
 int GuiItemTable_getRowSize(GuiItemTable* self)
 {
-	int rs = DbValue_getNumber(&self->rowSize);
+	int rs = DbValue_getOptionNumber(self->viewRow, "height", 0);
 	rs += 1;
 
 	if (rs >= 2)
@@ -299,7 +306,7 @@ Quad2i GuiItemTable_getSelectRect(const GuiItemTable* self)
 
 static int GuiItemTable_scrollExtra(const GuiItemTable* self, Win* win)
 {
-	return self->showHeader * OsWinIO_cellSize();
+	return (self->showHeader) * OsWinIO_cellSize();
 }
 
 void GuiItemTable_clickNewColumnLinkSET_1(GuiItem* self)
@@ -429,12 +436,15 @@ void GuiItemTable_clickAddColumn(GuiItem* self)
 		GuiItem_closeParentLevel(self);
 }
 
-BIG _GuiItemTable_addOptionLine(BIG parentRow)
+BIG _GuiItemTable_addOptionLine(BIG parentRow, Rgba cd)
 {
 	DbRows rows = DbRows_initLinkN(DbRoot_subs(), parentRow);
-	BIG row = DbRows_addNewRow(&rows);
+	BIG r = DbRows_addNewRow(&rows);
+
+	DbValue_setOptionNumber(r, "cd", Rgba_asNumber(cd));
+
 	DbRows_free(&rows);
-	return row;
+	return r;
 }
 void GuiItemTable_clickAddOptionLine(GuiItem* self)
 {
@@ -442,11 +452,13 @@ void GuiItemTable_clickAddOptionLine(GuiItem* self)
 	if (table)
 	{
 		BIG c = GuiItem_findAttribute(self, "c");
-		BIG crowT = DbColumn_getRow(GuiItemTable_getColumn(table, c));
+		BIG crowT = GuiItemTable_getColumnBaseRow(table, c);
 
 		BIG optionsRow = DbRows_findSubType(crowT, "options");
 
-		_GuiItemTable_addOptionLine(optionsRow);
+		BIG cdn = GuiItem_findAttribute(self, "cd");
+		if (cdn >= 0)
+			_GuiItemTable_addOptionLine(optionsRow, Rgba_initFromNumber(cdn));
 	}
 }
 
@@ -456,7 +468,7 @@ void GuiItemTable_clickInsertItemToOptionLineSET(GuiItem* self)
 	if (table && self->type == GuiItem_BUTTON)
 	{
 		BIG c = GuiItem_findAttribute(self, "c");
-		BIG crowT = DbColumn_getRow(GuiItemTable_getColumn(table, c));
+		BIG crowT = GuiItemTable_getColumnBaseRow(table, c);
 
 		BIG pathRow = DbRows_findOrCreateSubType(crowT, "path");
 
@@ -482,7 +494,7 @@ void GuiItemTable_clickInsertItemToOptionLine(GuiItem* self)
 {
 	GuiItemTable* table = GuiItem_findParentType(self->parent, GuiItem_TABLE);
 	BIG c = GuiItem_findAttribute(self, "c");
-	BIG crowT = DbColumn_getRow(GuiItemTable_getColumn(table, c));
+	BIG crowT = GuiItemTable_getColumnBaseRow(table, c);
 	//BIG pos = GuiItem_findAttribute(self, "pos");
 
 	GuiItemLayout* layout = GuiStruct_create(GuiStruct_SHOW_TABLES, DbRoot_findParentTableRow(crowT), DbValue_initLang("TABLES"), &GuiItemTable_clickInsertItemToOptionLineSET, -1, -1, -1, FALSE);
@@ -617,7 +629,7 @@ void GuiItemTable_clickColumnConvert(GuiItem* self)
 				if (cc->srcType != DbFormat_LINK_1 && cc->srcType != DbFormat_LINK_N)
 				{
 					GuiItem_setAttribute(self, "dstType", co);
-					GuiItemLayout* layout = GuiStruct_create(GuiStruct_SHOW_COLUMNS, DbColumn_getRow(GuiItemTable_getColumn(table, c)), DbValue_initLang("COLUMNS"), &GuiItemTable_clickColumnConvertLINK, -1, -1, -1, FALSE);
+					GuiItemLayout* layout = GuiStruct_create(GuiStruct_SHOW_COLUMNS, GuiItemTable_getColumnBaseRow(table, c), DbValue_initLang("COLUMNS"), &GuiItemTable_clickColumnConvertLINK, -1, -1, -1, FALSE);
 					GuiItemRoot_addDialogRelLayout(layout, self, self->coordMove, TRUE);
 					return;
 				}
@@ -659,11 +671,41 @@ void GuiItemTable_clickShortColumn(GuiItem* self)
 		DbRows shortRows = DbRows_initLinkN(DbRoot_subs(), DbRows_findSubType(table->viewRow, "short"));
 
 		BIG r = DbRows_addNewRow(&shortRows);
-		DbColumn1_set(DbRoot_ref(), r, GuiItemTable_getColumnRow(table, c));
+		DbColumn1_set(DbRoot_ref(), r, GuiItemTable_getColumnBaseRow(table, c));
 		DbValue_setOptionNumber(r, "ascending", 0);	//0 is "a->z"
 
 		DbRows_free(&shortRows);
 	}
+
+	GuiItem_closeParentLevel(self);
+
+	GuiItemMenu* shortt = GuiItem_findNameType(self->parent, "short_menu", GuiItem_MENU);
+	if (shortt)
+		GuiItemMenu_showContext(shortt);
+}
+
+void GuiItemTable_clickFilterColumn(GuiItem* self)
+{
+	GuiItemTable* table = GuiItem_findParentType(self->parent, GuiItem_TABLE);
+	if (table && self->type == GuiItem_BUTTON)
+	{
+		BIG c = GuiItem_findAttribute(self, "c");
+
+		DbRows selectRows = DbRows_initLinkN(DbRoot_subs(), DbRows_findSubType(table->viewRow, "select"));
+		BIG r = DbRows_addNewRow(&selectRows);	//new filter line
+
+		//set line properties, in this case "column"
+		BIG rr = DbRoot_findOrCreateChildType(r, "column");
+		DbColumn1_set(DbRoot_ref(), rr, GuiItemTable_getColumnBaseRow(table, c));
+
+		DbRows_free(&selectRows);
+	}
+
+	GuiItem_closeParentLevel(self);
+
+	GuiItemMenu* filterr = GuiItem_findNameType(self->parent, "filter_menu", GuiItem_MENU);
+	if (filterr)
+		GuiItemMenu_showContext(filterr);
 }
 
 void GuiItemTable_clickHideColumn(GuiItem* self)
@@ -707,11 +749,17 @@ void GuiItemTable_clickDuplicateColumn(GuiItem* self)
 	}
 }
 
-void GuiItemTable_clickAddRecord(GuiItem* self)
+void GuiItemTable_clickAddRecord(GuiItem* item)
 {
-	GuiItemTable* table = GuiItem_findParentType(self->parent, GuiItem_TABLE);
-	if (table)
-		DbRows_addNewRow(&table->filter);
+	GuiItemTable* self = GuiItem_findParentType(item->parent, GuiItem_TABLE);
+	if (self)
+	{
+		DbRows_addNewRow(&self->filter);
+
+		const UBIG N_ROWS = GuiItemTable_numRows(self);
+		self->selectFirstTouch = self->selectLastTouch = Vec2i_init2(0, N_ROWS - 1);
+		GuiScroll_setWheelRow(&self->scrollV, N_ROWS - 1);
+	}
 }
 
 void GuiItemTable_clickRemoveRow(GuiItem* self)
@@ -737,6 +785,395 @@ void GuiItemTable_clickRemoveRows(GuiItem* self)
 			//DbTable_removeRow(tab, DbRows_getRow(&table->filter, y))
 			DbRows_removeRowDirect(tab, DbRows_getRow(&table->filter, y));
 	}
+}
+
+static Quad2i _GuiItemTable_getSelectGridCoordBase(const GuiItemTable* self, Quad2i q, BOOL noScroll)
+{
+	Quad2i ret = Quad2i_init();
+
+	const GuiItem* layoutCells = (GuiItem*)_GuiItemTable_getCellsLayout(self);
+	if (layoutCells)
+	{
+		const GuiItem* it = GuiItem_getSubConst(layoutCells, self->subs_cells_start);
+		if (it)
+		{
+			Quad2i firstCell = noScroll ? it->coordMove : it->coordScreen;
+
+			//x
+			const int N_ROWS_VISIBLE = self->num_rows_max;
+			BIG x;
+			for (x = 0; x < Quad2i_end(q).x; x++)
+			{
+				//const int s = GuiItem_getSubConst(layoutCells, self->subs_cells_start + x * N_ROWS_VISIBLE)->coordMove.size.x; //coordMove;
+				const int s = GuiItemTable_getColumnWidth(self, x) * OsWinIO_cellSize();
+				if (x < q.start.x)
+					ret.start.x += s;
+				else
+					ret.size.x += s;
+			}
+
+			//y
+			const int s = firstCell.size.y;
+			const BIG WHEEL = GuiScroll_getWheelRow(&self->scrollV);
+			if ((q.start.y - WHEEL) < 0)
+			{
+				ret.size.y = (q.size.y + q.start.y - WHEEL) * s;
+				ret.start.y = 0;
+			}
+			else
+			{
+				ret.start.y = (q.start.y - WHEEL) * s;
+				ret.size.y = (q.size.y) * s;
+			}
+
+			ret.start = Vec2i_add(ret.start, firstCell.start);
+		}
+	}
+	return ret;
+}
+static Quad2i _GuiItemTable_getSelectGridCoord(const GuiItemTable* self, Quad2i q, BOOL noScroll)
+{
+	Quad2i ret = _GuiItemTable_getSelectGridCoordBase(self, q, noScroll);
+
+	Quad2i coordLayout = _GuiItemTable_getCellsLayout(self)->base.coordMoveCut;
+	ret = Quad2i_getIntersect(ret, coordLayout);	//cut it
+	return ret;
+}
+
+static BOOL _GuiItemTable_getTouchCellPos(const GuiItemTable* self, Vec2i touch_pos, BOOL noScroll, Vec2i* out_pos)
+{
+	const GuiItem* layoutCells = (GuiItem*)_GuiItemTable_getCellsLayout(self);
+	const UBIG WHEEL = GuiScroll_getWheelRow(&self->scrollV);
+	const int N_COLS = GuiItemTable_numColumns(self);
+	const int N_ROWS_VISIBLE = self->num_rows_max;
+	const int N_ROWS_REAL = self->num_rows_real;
+
+	BIG x, y;
+	for (y = 0; y < N_ROWS_REAL; y++)
+	{
+		for (x = 0; x < N_COLS; x++)
+		{
+			const GuiItem* it = GuiItem_getSubConst(layoutCells, self->subs_cells_start + x * N_ROWS_VISIBLE + y);
+			if (Quad2i_inside(noScroll ? it->coordMove : it->coordMoveCut, touch_pos))
+			{
+				*out_pos = Vec2i_init2(x, y + WHEEL);
+				return TRUE;
+			}
+		}
+	}
+
+	return FALSE;
+}
+
+static BOOL _GuiItemTable_getTouchCellPosClosest(GuiItemTable* self, Vec2i touch_pos, Vec2i* out_pos)
+{
+	const float max_r = 10000000;
+	float r = max_r;
+
+	const GuiItem* layoutCells = (GuiItem*)_GuiItemTable_getCellsLayout(self);
+	const UBIG WHEEL = GuiScroll_getWheelRow(&self->scrollV);
+	const int N_COLS = GuiItemTable_numColumns(self);
+	const int N_ROWS_VISIBLE = self->num_rows_max;
+	const int N_ROWS_REAL = self->num_rows_real;
+
+	BIG x, y;
+	for (y = 0; y < N_ROWS_REAL; y++)
+	{
+		for (x = 0; x < N_COLS; x++)
+		{
+			Quad2i itCoord = GuiItem_getSubConst(layoutCells, self->subs_cells_start + x * N_ROWS_VISIBLE + y)->coordMoveCut;
+			float dist = Quad2i_inside(itCoord, touch_pos) ? 0 : Vec2i_distance(touch_pos, Quad2i_getMiddle(itCoord));
+			if (dist < r)
+			{
+				r = dist;
+				*out_pos = Vec2i_init2(x, y + WHEEL);
+
+				if (dist == 0)
+				{
+					printf("[%d %d] %f %d %lld, [%lld %lld]\n", touch_pos.x, touch_pos.y, r, out_pos->y, WHEEL, x, y);
+					Quad2i_print(itCoord, "itCoord");
+				}
+			}
+		}
+	}
+
+	return (r < max_r);
+}
+
+static BOOL _GuiItemTable_isSelect(const GuiItemTable* self, Win* win)
+{
+	Quad2i selectRect = GuiItemTable_getSelectRect(self);
+	Quad2i g = _GuiItemTable_getSelectGridCoord(self, selectRect, TRUE);
+	return (g.size.x > 0 && g.size.y > 0);
+}
+
+static BOOL _GuiItemTable_isCellExtendSelect(const GuiItemTable* self, Win* win)
+{
+	Quad2i g = _GuiItemTable_getSelectGridCoord(self, self->cellExtendRect, TRUE);
+	return _GuiItemTable_isSelect(self, win) && (g.size.x > 0 && g.size.y > 0);
+}
+
+static Quad2i _GuiItemTable_getCellExtendQuad(const GuiItemTable* self, Quad2i grid, Win* win)
+{
+	const int cell = OsWinIO_cellSize();
+
+	Quad2i q = _GuiItemTable_getSelectGridCoord(self, grid, TRUE);
+	return Quad2i_initMid(Quad2i_end(q), Vec2i_init2(cell / 4, cell / 4));
+}
+
+/*static GuiItem* _GuiItemTable_getBaseLayout(GuiItemTable* self)
+{
+	return GuiItem_getSub(&self->base, 0);
+}*/
+
+void GuiItemTable_scrollToCell(GuiItemTable* self, Vec2i cell)
+{
+	const UBIG WHEEL = GuiScroll_getWheelRow(&self->scrollV);
+	const int N_COLS = GuiItemTable_numColumns(self);
+	const int N_ROWS_VISIBLE = self->num_rows_max;
+
+	//Vertical
+	if (cell.y < WHEEL)
+		GuiScroll_setWheelRow(&self->scrollV, cell.y);
+	else
+		if (cell.y > WHEEL + N_ROWS_VISIBLE - 1)
+			GuiScroll_setWheelRow(&self->scrollV, cell.y - (N_ROWS_VISIBLE - 3));
+
+	//Horizontal
+	GuiItemLayout* lay = _GuiItemTable_getCellsLayout(self);
+	Quad2i coord = lay->base.coordScreen;
+	if (GuiItemLayout_hasScrollH(lay))
+	{
+		Quad2i rect = _GuiItemTable_getSelectGridCoordBase(self, Quad2i_init2(cell, Vec2i_init2(1, 1)), TRUE);
+
+		//left
+		if (rect.start.x < coord.start.x)
+			GuiScroll_setWheel(&lay->scrollH, GuiScroll_getWheel(&lay->scrollH) - (coord.start.x - rect.start.x));
+
+		//right
+		if (rect.start.x + rect.size.x > coord.start.x + coord.size.x)
+			GuiScroll_setWheel(&lay->scrollH, GuiScroll_getWheel(&lay->scrollH) + (rect.start.x + rect.size.x) - (coord.start.x + coord.size.x));
+	}
+
+
+
+/*	const BIG Y = GuiScroll_getWheel(&self->scrollV);
+
+	if (cell.y < Y || cell.y > Y + self->num_rows_max - 2)
+		GuiScroll_setWheelRow(&self->scrollV, cell.y);*/
+
+
+
+
+	/*for (c = 0; c < N_COLS; c++)
+	{
+		DbFormatTYPE type = GuiItemTable_getColumnType(self, c);
+		int width = GuiItemTable_getColumnWidth(self, c);
+
+	GuiItemLayout* cells = _GuiItemTable_getCellsLayout(self);
+	const BIG X = GuiItemLayout_getWheelH(cells);
+	int W = cells->base.coordScreen.size.x;
+	cell.x *= OsWinIO_cellSize();
+	if (cell.x < X || cell.x > X + W)
+		GuiItemLayout_setWheelH(cells, cell.x);*/
+}
+
+BOOL GuiItemTable_findForward(GuiItemTable* self, DbValues* columns, Vec2i startPos, const UNI* findStr, BOOL onlyReplaceColumns)
+{
+	const UBIG N = DbRows_getSize(&self->filter);
+	BIG x = startPos.x;
+	BIG y;
+	for (y = startPos.y; y < N; y++)
+	{
+		DbValues_setRow(columns, DbRows_getRow(&self->filter, y));
+
+		for (; x < columns->num; x++)
+		{
+			DbValue* v = &columns->values[x];
+
+			if (!onlyReplaceColumns || DbColumn_isFindAndReplace(v->column))
+			{
+				DbValue_hasChanged(v);
+				if (Std_subUNI(v->result.str, findStr) >= 0)
+				{
+					self->selectFirstTouch = self->selectLastTouch = Vec2i_init2(x, y);
+					return TRUE;
+				}
+			}
+		}
+		x = 0;
+	}
+	return FALSE;
+}
+
+BOOL GuiItemTable_findBackward(GuiItemTable* self, DbValues* columns, Vec2i startPos, const UNI* findStr)
+{
+	const UBIG N = DbRows_getSize(&self->filter);
+	BIG x = startPos.x;
+	BIG y;
+	for (y = startPos.y; y >= 0; y--)
+	{
+		DbValues_setRow(columns, DbRows_getRow(&self->filter, y));
+
+		for (; x >= 0; x--)
+		{
+			DbValue_hasChanged(&columns->values[x]);
+			if (Std_subUNI(columns->values[x].result.str, findStr) >= 0)
+			{
+				self->selectFirstTouch = self->selectLastTouch = Vec2i_init2(x, y);
+				return TRUE;
+			}
+		}
+		x = columns->num - 1;
+	}
+	return FALSE;
+}
+
+void GuiItemTable_clickFindForward(GuiItem* item)
+{
+	GuiItemTable* self = GuiItem_findType(item, GuiItem_TABLE);
+	GuiItemEdit* search = GuiItem_findNameType(item, "search", GuiItem_EDIT);
+	if (self && search)
+	{
+		const UNI* findStr = GuiItemEdit_getText(search);
+		if (Std_sizeUNI(findStr))
+		{
+			const Vec2i pos = self->selectLastTouch;
+			DbValues columns = DbRows_getSubs(self->viewRow, "columns", TRUE, -1);
+
+			BOOL found = GuiItemTable_findForward(self, &columns, Vec2i_init2(pos.x + 1, pos.y), findStr, FALSE);
+			if (!found)
+				found = GuiItemTable_findForward(self, &columns, Vec2i_init2(0, 0), findStr, FALSE);
+
+			if (found)
+			{
+				GuiItemTable_scrollToCell(self, self->selectLastTouch);
+				GuiItem_setRedraw(&self->base, TRUE);
+			}
+
+			DbValues_free(&columns);
+		}
+	}
+}
+
+void GuiItemTable_clickFindBackward(GuiItem* item)
+{
+	GuiItemTable* self = GuiItem_findType(item, GuiItem_TABLE);
+	GuiItemEdit* search = GuiItem_findNameType(item, "search", GuiItem_EDIT);
+	if (self && search)
+	{
+		const UNI* findStr = GuiItemEdit_getText(search);
+		if (Std_sizeUNI(findStr))
+		{
+			const Vec2i pos = self->selectFirstTouch;
+			DbValues columns = DbRows_getSubs(self->viewRow, "columns", TRUE, -1);
+
+			BOOL found = GuiItemTable_findBackward(self, &columns, Vec2i_init2(pos.x - 1, pos.y), findStr);
+			if (!found)
+				found = GuiItemTable_findBackward(self, &columns, Vec2i_init2(columns.num - 1, DbRows_getSize(&self->filter) - 1), findStr);
+
+			if (found)
+			{
+				GuiItemTable_scrollToCell(self, self->selectLastTouch);
+				GuiItem_setRedraw(&self->base, TRUE);
+			}
+
+			DbValues_free(&columns);
+		}
+	}
+}
+
+
+void GuiItemTable_findAndReplaceCell(DbValue* v, const UNI* findStr, const UNI* replaceStr, BOOL rewriteCells)
+{
+	if (rewriteCells)
+		DbValue_setTextCopy(v, replaceStr);
+	else
+	{
+		UNI* new_str = Std_newUNI(v->result.str);
+		Std_replaceInsideUNI(&new_str, findStr, replaceStr);
+		DbValue_setText(v, new_str);
+	}
+}
+
+void GuiItemTable_moveOnRight(GuiItemTable* self)
+{
+	self->selectLastTouch.x++;
+	if (self->selectLastTouch.x >= GuiItemTable_numColumns(self))
+	{
+		self->selectLastTouch.x = 0;
+		self->selectLastTouch.y++;
+	}
+
+	if (self->selectLastTouch.y >= DbRows_getSize(&self->filter))
+		self->selectLastTouch.y = 0;
+
+	self->selectFirstTouch = self->selectLastTouch;	//one cell
+}
+
+
+void GuiItemTable_clickFindReplaceOne(GuiItem* item)
+{
+	GuiItemTable* self = GuiItem_findType(item, GuiItem_TABLE);
+
+	const UNI* findStr = GuiItemEdit_getText(GuiItem_findNameType(item, "find_str", GuiItem_EDIT));
+	const UNI* replaceStr = GuiItemEdit_getText(GuiItem_findNameType(item, "replace_str", GuiItem_EDIT));
+	BOOL rewriteCells = GuiItemCheck_isActive(GuiItem_findNameType(item, "replace_cell", GuiItem_CHECK));
+
+	const Vec2i pos = self->selectLastTouch;
+	DbValues columns = DbRows_getSubs(self->viewRow, "columns", TRUE, -1);
+
+	BOOL found = GuiItemTable_findForward(self, &columns, Vec2i_init2(pos.x+1, pos.y), findStr, TRUE);
+	if (!found)
+		found = GuiItemTable_findForward(self, &columns, Vec2i_init2(0, 0), findStr, TRUE);
+
+	if (found)
+	{
+		DbValues_setRow(&columns, DbRows_getRow(&self->filter, self->selectLastTouch.y));
+
+		GuiItemTable_findAndReplaceCell(&columns.values[self->selectLastTouch.x], findStr, replaceStr, rewriteCells);
+
+		//GuiItemTable_moveOnRight(self);
+
+		GuiItemTable_scrollToCell(self, self->selectLastTouch);
+		GuiItem_setRedraw(&self->base, TRUE);
+	}
+
+
+	DbValues_free(&columns);
+}
+
+void GuiItemTable_clickFindReplaceAll(GuiItem* item)
+{
+	GuiItemTable* self = GuiItem_findType(item, GuiItem_TABLE);
+
+	const UNI* findStr = GuiItemEdit_getText(GuiItem_findNameType(item, "find_str", GuiItem_EDIT));
+	const UNI* replaceStr = GuiItemEdit_getText(GuiItem_findNameType(item, "replace_str", GuiItem_EDIT));
+	BOOL rewriteCells = GuiItemCheck_isActive(GuiItem_findNameType(item, "replace_cell", GuiItem_CHECK));
+
+	DbValues columns = DbRows_getSubs(self->viewRow, "columns", TRUE, -1);
+
+	const UBIG N = DbRows_getSize(&self->filter);
+	BIG x, y;
+	for (y = 0; y < N; y++)
+	{
+		DbValues_setRow(&columns, DbRows_getRow(&self->filter, y));
+
+		for (x = 0; x < columns.num; x++)
+		{
+			DbValue* v = &columns.values[x];
+
+			if (DbColumn_isFindAndReplace(v->column))
+			{
+				DbValue_hasChanged(v);
+				if (Std_subUNI(v->result.str, findStr) >= 0)
+					GuiItemTable_findAndReplaceCell(v, findStr, replaceStr, rewriteCells);
+			}
+		}
+	}
+	DbValues_free(&columns);
+
+	GuiItem_setRedraw(&self->base, TRUE);
 }
 
 void GuiItemTable_clickSelectCalendar(GuiItem* self)
@@ -820,9 +1257,9 @@ void GuiItemTable_clickImportWeb(GuiItem* self)
 	}
 }
 
-static void _GuiItemTable_setPageShow(BIG row, BOOL show)
+static void _GuiItemTable_setPageShow(BIG propRow, BOOL show)
 {
-	DbValues values = DbRows_getOptions(row, "columns", "enable", FALSE);
+	DbValues values = DbRows_getOptions(propRow, "enable", FALSE);
 
 	BIG i;
 	for (i = 0; i < values.num; i++)
@@ -833,12 +1270,12 @@ static void _GuiItemTable_setPageShow(BIG row, BOOL show)
 
 void GuiItemTable_clickPageShowAll(GuiItem* item)
 {
-	_GuiItemTable_setPageShow(GuiItem_findAttribute(item, "row"), TRUE);
+	_GuiItemTable_setPageShow(GuiItem_findAttribute(item, "columnsRow"), TRUE);
 }
 
 void GuiItemTable_clickPageHideAll(GuiItem* item)
 {
-	_GuiItemTable_setPageShow(GuiItem_findAttribute(item, "row"), FALSE);
+	_GuiItemTable_setPageShow(GuiItem_findAttribute(item, "columnsRow"), FALSE);
 }
 
 void GuiItemTable_clickRemoveSummaryItem(GuiItem* item)
@@ -848,7 +1285,7 @@ void GuiItemTable_clickRemoveSummaryItem(GuiItem* item)
 	{
 		BIG c = GuiItem_findAttribute(item, "c");
 		BIG it = GuiItem_findAttribute(item, "it");
-		BIG crowT = DbColumn_getRow(GuiItemTable_getColumn(table, c));
+		BIG crowT = GuiItemTable_getColumnBaseRow(table, c);
 
 		DbRows rows = DbRows_initSubLink(crowT, "summary");
 		DbRows_removeRow(&rows, it);
@@ -868,59 +1305,162 @@ void GuiItemTable_callListIcon(GuiItem* item)
 	}
 }
 
-GuiItemLayout* GuiItemTable_buildShowedList(BIG row)
+void GuiItemTable_rebuildShowedList(GuiItem* item)
 {
-	BIG columnsRow = DbRows_findSubType(row, "columns");
+	GuiItem_freeSubs(item);
 
-	GuiItemLayout* layColumn = GuiItemLayout_new(Quad2i_init());
-	GuiItemLayout_addColumn(layColumn, 0, 10);
-	GuiItemLayout_addRow(layColumn, 0, 10);	//list
+	GuiItemLayout* layColumn = (GuiItemLayout*)item;
 
-	GuiItem_setAttribute((GuiItem*)layColumn, "row", row);
+	const BIG row = GuiItem_findAttribute(item, "row");
+	const BIG columnsRow = GuiItem_findAttribute(item, "columnsRow");
+	const BOOL isNameDirect = GuiItem_findAttribute(item, "isNameDirect");
+	const BOOL editable = GuiItem_findAttribute(item, "editable");
 
-	GuiItemLayout* skin = GuiItemLayout_new(Quad2i_init4(0, 0, 1, 1));
-	GuiItem_setAttribute((GuiItem*)skin, "row", row);
-	GuiItemLayout_addColumn(skin, 2, 99);
-
-	GuiItem* drag = GuiItem_addSubName((GuiItem*)skin, "drag", GuiItemBox_newEmpty(Quad2i_init4(0, 0, 1, 1)));
-	GuiItem_setIcon(drag, GuiImage_new1(UiIcons_init_reoder()));
-	GuiItem_setDrop(drag, "columns", 0, FALSE, DbRows_initLinkN(DbRoot_subs(), columnsRow), -1);
-
-	GuiItem_addSubName((GuiItem*)skin, "on", GuiItemCheck_newEx(Quad2i_init4(1, 0, 1, 1), DbValue_initOptionEnable(-1), DbValue_initEmpty(), 0));
-
-	BOOL isFilter = DbRoot_findParentTableRow(row) != row;
-	GuiItem* name;
-	if (!isFilter)
+	int y = 0;
+	UBIG i = 0;
+	BIG it;
+	while ((it = DbColumnN_jump(DbRoot_subs(), columnsRow, &i, 1)) >= 0)
 	{
-		name = GuiItem_addSubName((GuiItem*)skin, "name", GuiItemText_new(Quad2i_init4(2, 0, 1, 1), FALSE, DbValue_initOption(-1, "name", 0), DbValue_initEmpty()));
-		GuiItem_setEnableCallback(name, &GuiItem_enableEnableAttr);
+		GuiItemLayout* skin = GuiItemLayout_new(Quad2i_init4(0, y++, 1, 1));
+		GuiItem_setAttribute((GuiItem*)skin, "row", row);
+		GuiItemLayout_addColumn(skin, 2, 99);
+
+		GuiItem* drag = GuiItem_addSubName((GuiItem*)skin, "drag", GuiItemBox_newEmpty(Quad2i_init4(0, 0, 1, 1)));
+		GuiItem_setIcon(drag, GuiImage_new1(UiIcons_init_reoder()));
+		GuiItem_setDrop(drag, "columns", 0, FALSE, DbRows_initLinkN(DbRoot_subs(), columnsRow), -1);
+
+		GuiItem_addSubName((GuiItem*)skin, "on", GuiItemCheck_newEx(Quad2i_init4(1, 0, 1, 1), DbValue_initOptionEnable(-1), DbValue_initEmpty(), 0));
+
+		GuiItem* name;
+		if (isNameDirect)
+		{
+			name = GuiItem_addSubName((GuiItem*)skin, "name", GuiItemText_new(Quad2i_init4(2, 0, 1, 1), FALSE, DbValue_initOption(-1, "name", 0), DbValue_initEmpty()));
+			GuiItem_setEnableCallback(name, &GuiItem_enableEnableAttr);
+		}
+		else
+		{
+			name = GuiItemText_new(Quad2i_init4(2, 0, 1, 1), FALSE, DbValue_initOption(-1, "name", 0), DbValue_initEmpty());
+
+			GuiItemList* listName = (GuiItemList*)GuiItem_addSubName((GuiItem*)skin, "list", GuiItemList_new(Quad2i_init4(2, 0, 1, 1), DbRows_initLink1(DbRoot_ref(), -1), name, DbValue_initEmpty()));
+			GuiItemList_setShowBorder(listName, FALSE);
+			GuiItemList_setShowScroll(listName, FALSE);
+			GuiItem_setEnableCallback((GuiItem*)listName, &GuiItem_enableEnableAttr);
+		}
+		GuiItem_setIconCallback(name, &GuiItemTable_callListIcon);
+		GuiItem_setDrop(&skin->base, 0, "columns", FALSE, DbRows_initLinkN(DbRoot_subs(), columnsRow), -1);
+
+		GuiItem_setRow(&skin->base, it, 0);
+		char nameId[64];
+		GuiItem_addSubName((GuiItem*)layColumn, _GuiItemTable_getNameId(nameId, "%lld_line", i), &skin->base);
+
+		//GuiItemList* list = (GuiItemList*)GuiItem_addSubName((GuiItem*)layColumn, "list", GuiItemList_new(Quad2i_init4(0, 0, 1, 1), DbRows_initLinkN(DbRoot_subs(), columnsRow), (GuiItem*)skin, DbValue_initEmpty()));
+		//GuiItemList_setShowBorder(list, FALSE);
+		//GuiItem_setCallClick((GuiItem*)list, 0);
+		i++;
 	}
-	else
+
+	y++;
+
+	//Hide all
+	GuiItem_addSubName((GuiItem*)layColumn, "hideAll", GuiItemButton_newClassicEx(Quad2i_init4(0, y++, 1, 1), DbValue_initLang("HIDE_ALL"), &GuiItemTable_clickPageHideAll));
+
+	//Show All
+	GuiItem_addSubName((GuiItem*)layColumn, "showAll", GuiItemButton_newClassicEx(Quad2i_init4(0, y++, 1, 1), DbValue_initLang("SHOW_ALL"), &GuiItemTable_clickPageShowAll));
+
+	if (editable)
 	{
-		name = GuiItemText_new(Quad2i_init4(2, 0, 1, 1), FALSE, DbValue_initOption(-1, "name", 0), DbValue_initEmpty());
+		GuiItem_addSubName((GuiItem*)layColumn, "edit", GuiItemCheck_new(Quad2i_init4(0, y++, 1, 1), DbValue_initOption(columnsRow, "edit", 0), DbValue_initLang("ALLOW_EDIT")));
+	}
+}
+
+static GuiItemLayout* _GuiItemTable_buildShowedList(Quad2i grid, BIG row, const char* subType, BOOL isNameDirect, BOOL editable)
+{
+	GuiItemLayout* layout = GuiItemLayout_new(grid);
+	GuiItem_setAttribute((GuiItem*)layout, "row", row);
+	GuiItem_setAttribute((GuiItem*)layout, "columnsRow", DbRows_findOrCreateSubType(row, subType));
+	GuiItem_setAttribute((GuiItem*)layout, "isNameDirect", isNameDirect);
+	GuiItem_setAttribute((GuiItem*)layout, "editable", editable);
+
+	GuiItemLayout_addColumn(layout, 0, 10);
+	GuiItemLayout_setResize(layout, &GuiItemTable_rebuildShowedList);
+	return layout;
+}
+
+GuiItemLayout* GuiItemTable_buildShowedList(Quad2i grid, BIG row)
+{
+	return _GuiItemTable_buildShowedList(grid, row, "columns", (DbRoot_findParentTableRow(row) == row), FALSE);
+}
+
+GuiItemLayout* GuiItemTable_buildIDShowedList(Quad2i grid, BIG row)
+{
+	return _GuiItemTable_buildShowedList(grid, row, "id_columns", FALSE, TRUE);
+}
+
+/*void GuiItemTable_clickRemoveIdColumLine(GuiItem* item)
+{
+	BIG row = GuiItem_getRow(item);
+	DbRoot_removeRow(row);
+}
+
+void GuiItemTable_rebuildIdColumnList(GuiItem* item)
+{
+	GuiItem_freeSubs(item);
+
+	GuiItemLayout* layColumn = (GuiItemLayout*)item;
+	BIG row = GuiItem_findAttribute(item, "row");
+	BIG isColumnRow = DbRows_findOrCreateSubType(row, "id_columns");
+
+	int y = 0;
+	GuiItem_addSubName((GuiItem*)layColumn, "info", GuiItemText_new(Quad2i_init4(0, y++, 1, 1), TRUE, DbValue_initLang("DRAG_DROP_COLUMN_HERE"), DbValue_initEmpty()));
+
+	GuiItem_addSubName((GuiItem*)layColumn, "edit", GuiItemCheck_new(Quad2i_init4(0, y++, 1, 1), DbValue_initOption(isColumnRow, "edit", 0), DbValue_initLang("ALLOW_EDIT")));
+
+	UBIG i = 0;
+	BIG it;
+	while ((it = DbColumnN_jump(DbRoot_subs(), isColumnRow, &i, 1)) >= 0)
+	{
+		GuiItemLayout* skin = GuiItemLayout_new(Quad2i_init4(0, y++, 1, 1));
+		GuiItem_setAttribute((GuiItem*)skin, "row", row);
+		GuiItemLayout_addColumn(skin, 2, 99);
+
+		GuiItem* drag = GuiItem_addSubName((GuiItem*)skin, "drag", GuiItemBox_newEmpty(Quad2i_init4(0, 0, 1, 1)));
+		GuiItem_setIcon(drag, GuiImage_new1(UiIcons_init_reoder()));
+		GuiItem_setDrop(drag, "columns", 0, FALSE, DbRows_initLinkN(DbRoot_subs(), isColumnRow), -1);
+
+		GuiItem_addSubName((GuiItem*)skin, "on", GuiItemCheck_newEx(Quad2i_init4(1, 0, 1, 1), DbValue_initOptionEnable(-1), DbValue_initEmpty(), 0));
+
+		BOOL isFilter = DbRoot_findParentTableRow(row) != row;
+		GuiItem* name = GuiItemText_new(Quad2i_init4(2, 0, 1, 1), FALSE, DbValue_initOption(-1, "name", 0), DbValue_initEmpty());
 
 		GuiItemList* listName = (GuiItemList*)GuiItem_addSubName((GuiItem*)skin, "list", GuiItemList_new(Quad2i_init4(2, 0, 1, 1), DbRows_initLink1(DbRoot_ref(), -1), name, DbValue_initEmpty()));
 		GuiItemList_setShowBorder(listName, FALSE);
 		GuiItemList_setShowScroll(listName, FALSE);
 		GuiItem_setEnableCallback((GuiItem*)listName, &GuiItem_enableEnableAttr);
+
+		GuiItem_setIconCallback(name, &GuiItemTable_callListIcon);
+		GuiItem_setDrop(&skin->base, 0, "columns", FALSE, DbRows_initLinkN(DbRoot_subs(), isColumnRow), -1);
+
+		//remove
+		GuiItem_addSubName((GuiItem*)skin, "remove", GuiItemButton_newBlackEx(Quad2i_init4(3, 0, 1, 1), DbValue_initStaticCopyCHAR("X"), &GuiItemTable_clickRemoveIdColumLine));
+
+		GuiItem_setRow(&skin->base, it, 0);
+		char nameId[64];
+		GuiItem_addSubName((GuiItem*)layColumn, _GuiItemTable_getNameId(nameId, "%lld_line", i), &skin->base);
+
+		i++;
 	}
-	GuiItem_setIconCallback(name, &GuiItemTable_callListIcon);
-	GuiItem_setDrop(&skin->base, 0, "columns", FALSE, DbRows_initLinkN(DbRoot_subs(), columnsRow), -1);
-
-	GuiItemList* list = (GuiItemList*)GuiItem_addSubName((GuiItem*)layColumn, "list", GuiItemList_new(Quad2i_init4(0, 0, 1, 1), DbRows_initLinkN(DbRoot_subs(), columnsRow), (GuiItem*)skin, DbValue_initEmpty()));
-	GuiItemList_setShowBorder(list, FALSE);
-	GuiItem_setCallClick((GuiItem*)list, 0);
-
-	//Hide all
-	GuiItem_addSubName((GuiItem*)layColumn, "hideAll", GuiItemButton_newClassicEx(Quad2i_init4(0, 1, 1, 1), DbValue_initLang("HIDE_ALL"), &GuiItemTable_clickPageHideAll));
-
-	//Show All
-	GuiItem_addSubName((GuiItem*)layColumn, "showAll", GuiItemButton_newClassicEx(Quad2i_init4(0, 2, 1, 1), DbValue_initLang("SHOW_ALL"), &GuiItemTable_clickPageShowAll));
-
-	return layColumn;
 }
 
-GuiItem* GuiItemTable_getCardSkinItem(Quad2i grid, DbValue column, BOOL showDescription)//, BOOL onlyRead)
+GuiItemLayout* GuiItemTable_buildIdColumnList(Quad2i grid, BIG row)
+{
+	GuiItemLayout* layout = GuiItemLayout_new(grid);
+	GuiItem_setAttribute((GuiItem*)layout, "row", row);
+	GuiItemLayout_addColumn(layout, 0, 10);
+	GuiItemLayout_setResize(layout, &GuiItemTable_rebuildIdColumnList);
+	return layout;
+}*/
+
+GuiItem* GuiItemTable_getCardSkinItem(Quad2i grid, DbValue column, BOOL showDescription, const DbValue searchHighlight)//, BOOL onlyRead)
 {
 	UNI name[64];
 	DbFormatTYPE type = DbValue_getFormat(&column);
@@ -947,6 +1487,8 @@ GuiItem* GuiItemTable_getCardSkinItem(Quad2i grid, DbValue column, BOOL showDesc
 				edit = GuiItemEdit_new(grid, column, showDescription ? DbValue_initStaticCopy(DbColumn_getName(column.column, name, 64)) : DbValue_initEmpty());
 				((GuiItemEdit*)edit)->drawBackground_procentage_visualize = DbValue_getOptionNumber(crowT, "back_vis", 0);
 				((GuiItemEdit*)edit)->drawBackground_procentage_visualize_mult100 = DbValue_getOptionNumber(crowT, "mult100", 0);
+
+				GuiItemEdit_setHighlightFind((GuiItemEdit*)edit, DbValue_initCopy(&searchHighlight));
 			}
 
 			return edit;
@@ -962,12 +1504,22 @@ GuiItem* GuiItemTable_getCardSkinItem(Quad2i grid, DbValue column, BOOL showDesc
 		return GuiItemSlider_new(grid, DbValue_initOption(crowT, "min", 0), DbValue_initOption(crowT, "max", 0), DbValue_initOption(crowT, "jump", 0), column, showDescription ? DbValue_initStaticCopy(DbColumn_getName(column.column, name, 64)) : DbValue_initEmpty());
 
 		case DbFormat_CHECK:
-		return GuiItemCheck_new(grid, column, showDescription ? DbValue_initStaticCopy(DbColumn_getName(column.column, name, 64)) : DbValue_initEmpty());
+		{
+			GuiItemCheck* check = (GuiItemCheck*)GuiItemCheck_new(grid, column, showDescription ? DbValue_initStaticCopy(DbColumn_getName(column.column, name, 64)) : DbValue_initEmpty());
+
+			UNI* whiteCd = Std_newNumber(Rgba_asNumber(g_theme.white));
+			GuiItemCheck_setColors(check, DbValue_initOption(crowT, "cd_enable", whiteCd), DbValue_initOption(crowT, "cd_on", whiteCd), DbValue_initOption(crowT, "cd_off", whiteCd));
+			Std_deleteUNI(whiteCd);
+
+			return (GuiItem*)check;
+		}
 
 		case DbFormat_MENU:
 		{
 			BIG optionsRow = DbRows_findSubType(crowT, "options");
-			return GuiItemComboDynamic_new(grid, FALSE, DbRows_initLinkN((DbColumnN*)column.column, -1), DbValue_initOption(-1, "name", 0), DbRows_initLinkN(DbRoot_subs(), optionsRow), showDescription ? DbValue_initStaticCopy(DbColumn_getName(column.column, name, 64)) : DbValue_initEmpty());
+			GuiItemComboDynamic* mn = (GuiItemComboDynamic*)GuiItemComboDynamic_new(grid, FALSE, DbRows_initLinkN((DbColumnN*)column.column, -1), DbValue_initOption(-1, "name", 0), DbRows_initLinkN(DbRoot_subs(), optionsRow), showDescription ? DbValue_initStaticCopy(DbColumn_getName(column.column, name, 64)) : DbValue_initEmpty());
+			GuiItemComboDynamic_setColor(mn, DbValue_initOption(-1, "cd", 0), DbValue_initOption(crowT, "cd_enable", 0));
+			return (GuiItem*)mn;
 		}
 
 		case DbFormat_TAGS:
@@ -978,7 +1530,7 @@ GuiItem* GuiItemTable_getCardSkinItem(Quad2i grid, DbValue column, BOOL showDesc
 			DbValues columns = DbValues_init();
 			DbValues_add(&columns, DbValue_initOption(optionsRow, "name", 0));
 
-			GuiItem* ret = GuiItemTags_new(grid, DbRows_initLinkN((DbColumnN*)column.column, -1), columns, GuiItemTags_dialogTagsAdd, GuiItemTags_dialogTagsDetails, TRUE, TRUE, FALSE, TRUE, DbValue_initEmpty());
+			GuiItem* ret = GuiItemTags_new(grid, DbRows_initLinkN((DbColumnN*)column.column, -1), columns, DbValue_initOption(crowT, "cd_enable", 0), GuiItemTags_dialogTagsAdd, GuiItemTags_dialogTagsDetails, TRUE, TRUE, FALSE, TRUE, DbValue_initEmpty());
 			DbValue_free(&column);
 			return ret;
 		}
@@ -1000,7 +1552,7 @@ GuiItem* GuiItemTable_getCardSkinItem(Quad2i grid, DbValue column, BOOL showDesc
 				GuiItemTagsCallback* callbackAdd = generated ? 0 : GuiItemTags_dialogLinksAdd;
 				GuiItemTagsCallback* callbackItem = GuiItemTags_dialogLinksDetails;
 
-				GuiItem* ret = GuiItemTags_new(grid, DbRows_initLinkN((DbColumnN*)column.column, -1), columns, callbackAdd, callbackItem, FALSE, TRUE, TRUE, TRUE, DbValue_initEmpty());
+				GuiItem* ret = GuiItemTags_new(grid, DbRows_initLinkN((DbColumnN*)column.column, -1), columns, DbValue_initEmpty(), callbackAdd, callbackItem, FALSE, TRUE, TRUE, TRUE, DbValue_initEmpty());
 				((GuiItemTags*)ret)->showClose = !generated;
 
 				DbValue_free(&column);
@@ -1012,7 +1564,7 @@ GuiItem* GuiItemTable_getCardSkinItem(Quad2i grid, DbValue column, BOOL showDesc
 		case DbFormat_FILE_N:
 		{
 			DbValues columns = DbValues_init();
-			GuiItem* ret = GuiItemTags_new(grid, DbRows_initLinkN((DbColumnN*)column.column, -1), columns, GuiItemTags_dialogFileAdd, GuiItemTags_dialogFileDetails, TRUE, TRUE, TRUE, TRUE, DbValue_initOption(crowT, "preview", 0));
+			GuiItem* ret = GuiItemTags_new(grid, DbRows_initLinkN((DbColumnN*)column.column, -1), columns, DbValue_initEmpty(), GuiItemTags_dialogFileAdd, GuiItemTags_dialogFileDetails, TRUE, TRUE, TRUE, TRUE, DbValue_initOption(crowT, "preview", 0));
 			DbValue_free(&column);
 			return ret;
 		}
@@ -1081,8 +1633,8 @@ void GuiItemTable_resizePage(GuiItem* item)
 	{
 		//Column list
 		GuiItemMenu* columns = (GuiItemMenu*)GuiItem_addSubName((GuiItem*)skin, "columns", GuiItemMenu_new(Quad2i_init4(0, 0, 1, 1), DbValue_initLang("COLUMNS"), FALSE));
-		GuiItemMenu_setContext(columns, GuiItemTable_buildShowedList(viewRow));
-		GuiItemMenu_setHighligthBackground(columns, DbRows_hasColumnsSubDeactive(viewRow, "columns"));
+		GuiItemMenu_setContext(columns, GuiItemTable_buildShowedList(Quad2i_init(), viewRow));
+		GuiItemMenu_setHighligthBackground(columns, DbRows_hasColumnsSubDeactive(viewRow, "columns"), 0.5f);
 		GuiItemMenu_setTransparent(columns, FALSE);
 		GuiItem_setIcon((GuiItem*)columns, GuiImage_new1(UiIcons_init_table_hide()));
 		GuiItemMenu_setCenter(columns, FALSE);
@@ -1099,7 +1651,7 @@ void GuiItemTable_resizePage(GuiItem* item)
 	{
 		DbValue value = DbRows_getSubsCell(viewRow, "columns", TRUE, c, -1);
 
-		GuiItem* it = GuiItemTable_getCardSkinItem(Quad2i_init4(0, y, 2, 2), value, TRUE);//, onlyRead);
+		GuiItem* it = GuiItemTable_getCardSkinItem(Quad2i_init4(0, y, 2, 2), value, TRUE, DbValue_initEmpty());//, onlyRead);
 		if (it)
 		{
 			char nameId[64];
@@ -1205,7 +1757,7 @@ GuiItemLayout* GuiItemTable_buildDialogLinks(DbColumn* column)
 	//Table with current links
 	GuiItem_addSubName((GuiItem*)layout, "links", GuiItemText_new(Quad2i_init4(0, 1, 3, 1), TRUE, DbValue_initLang("LINKS"), DbValue_initEmpty()));
 
-	GuiItemTable* tableActual = (GuiItemTable*)GuiItem_addSubName((GuiItem*)layout, "btable", (GuiItem*)GuiItemTable_new(Quad2i_init4(0, 2, 3, 1), bRow, DbRows_initLinkN((DbColumnN*)column, srcRow), TRUE, FALSE, DbValue_initNumber(0), DbValue_initNumber(0), DbValue_initStaticCopyCHAR("0 0 0 0")));
+	GuiItemTable* tableActual = (GuiItemTable*)GuiItem_addSubName((GuiItem*)layout, "btable", (GuiItem*)GuiItemTable_new(Quad2i_init4(0, 2, 3, 1), bRow, DbRows_initLinkN((DbColumnN*)column, srcRow), TRUE, FALSE, DbValue_initNumber(0), DbValue_initNumber(0), DbValue_initStaticCopyCHAR("0 0 0 0"), DbValue_initEmpty()));
 	tableActual->drawBorder = TRUE;
 	tableActual->showRemoveButton = TRUE;
 	tableActual->showChangeOrder = TRUE;
@@ -1215,7 +1767,7 @@ GuiItemLayout* GuiItemTable_buildDialogLinks(DbColumn* column)
 	//BTable
 	UNI name[64];
 	GuiItem_addSubName((GuiItem*)layout, "name", GuiItemText_new(Quad2i_init4(0, 3, 3, 1), TRUE, DbValue_initStaticCopy(DbTable_getName(btable, name, 64)), DbValue_initEmpty()));
-	GuiItemTable* tableAdd = (GuiItemTable*)GuiItem_addSubName((GuiItem*)layout, "cTable", (GuiItem*)GuiItemTable_new(Quad2i_init4(0, 4, 3, 1), bRow, DbRows_initTable(btable), TRUE, TRUE, DbValue_initNumber(0), DbValue_initNumber(0), DbValue_initStaticCopyCHAR("0 0 0 0")));
+	GuiItemTable* tableAdd = (GuiItemTable*)GuiItem_addSubName((GuiItem*)layout, "cTable", (GuiItem*)GuiItemTable_new(Quad2i_init4(0, 4, 3, 1), bRow, DbRows_initTable(btable), TRUE, TRUE, DbValue_initNumber(0), DbValue_initNumber(0), DbValue_initStaticCopyCHAR("0 0 0 0"), DbValue_initEmpty()));
 	tableAdd->drawBorder = TRUE;
 	tableAdd->showAddButton = TRUE;
 	tableAdd->showChangeOrder = TRUE;
@@ -1233,133 +1785,24 @@ void GuiItemTable_draw(GuiItemTable* self, Image4* img, Quad2i coord, Win* win)
 	Image4_drawBoxQuad(img, coord, self->base.back_cd);		//header
 }
 
-static Quad2i _GuiItemTable_getSelectGridCoord(const GuiItemTable* self, Quad2i q, BOOL noScroll)
+
+
+static BOOL _GuiItemTable_hasHScroll(const GuiItemTable* self)
 {
-	Quad2i ret = Quad2i_init();
-
-	const GuiItem* layout = GuiItem_getSubConst(&self->base, 0);
-	if (layout)
-	{
-		const GuiItem* it = GuiItem_getSubConst(layout, self->subs_start_rowCell);
-		if (it)
-		{
-			Quad2i firstCell = noScroll ? it->coordMove : it->coordScreen;
-
-			//x
-			const int N_ROWS_VISIBLE = self->num_rows_max;
-			BIG x;
-			for (x = 0; x < Quad2i_end(q).x; x++)
-			{
-				const int s = GuiItem_getSubConst(layout, self->subs_start_rowCell + x * N_ROWS_VISIBLE)->coordMove.size.x; //coordMove;
-				if (x < q.start.x)
-					ret.start.x += s;
-				else
-					ret.size.x += s;
-			}
-
-			//y
-			const int s = firstCell.size.y;
-			const BIG WHEEL = GuiScroll_getWheelRow(&self->scroll);
-			if ((q.start.y - WHEEL) < 0)
-			{
-				ret.size.y = (q.size.y + q.start.y - WHEEL) * s;
-				ret.start.y = 0;
-			}
-			else
-			{
-				ret.start.y = (q.start.y - WHEEL) * s;
-				ret.size.y = (q.size.y) * s;
-			}
-
-			ret.start = Vec2i_add(ret.start, firstCell.start);
-		}
-	}
-
-	return ret;
+	return GuiItemLayout_hasScrollH(_GuiItemTable_getCellsLayout(self));
 }
 
-static BOOL _GuiItemTable_getTouchCellPos(const GuiItemTable* self, Vec2i touch_pos, BOOL noScroll, Vec2i* out_pos)
-{
-	const GuiItem* layout = GuiItem_getSubConst(&self->base, 0);
-	const UBIG WHEEL = GuiScroll_getWheelRow(&self->scroll);
-	const int N_COLS = GuiItemTable_numColumns(self);
-	const int N_ROWS_VISIBLE = self->num_rows_max;
-	const int N_ROWS_REAL = self->num_rows_real;
-
-	BIG x, y;
-	for (y = 0; y < N_ROWS_REAL; y++)
-	{
-		for (x = 0; x < N_COLS; x++)
-		{
-			const GuiItem* it = GuiItem_getSubConst(layout, self->subs_start_rowCell + x * N_ROWS_VISIBLE + y);
-			if (Quad2i_inside(noScroll ? it->coordMove : it->coordMoveCut, touch_pos))
-			{
-				*out_pos = Vec2i_init2(x, y + WHEEL);
-				return TRUE;
-			}
-		}
-	}
-
-	return FALSE;
-}
-
-static BOOL _GuiItemTable_getTouchCellPosClosest(GuiItemTable* self, Vec2i touch_pos, Vec2i* out_pos)
-{
-	const float max_r = 10000000;
-	float r = max_r;
-
-	const GuiItem* layout = GuiItem_getSubConst(&self->base, 0);
-	const UBIG WHEEL = GuiScroll_getWheelRow(&self->scroll);
-	const int N_COLS = GuiItemTable_numColumns(self);
-	const int N_ROWS_VISIBLE = self->num_rows_max;
-	const int N_ROWS_REAL = self->num_rows_real;
-
-	BIG x, y;
-	for (y = 0; y < N_ROWS_REAL; y++)
-	{
-		for (x = 0; x < N_COLS; x++)
-		{
-			Quad2i itCoord = GuiItem_getSubConst(layout, self->subs_start_rowCell + x * N_ROWS_VISIBLE + y)->coordMoveCut;
-			float dist = Quad2i_inside(itCoord, touch_pos) ? 0 : Vec2i_distance(touch_pos, Quad2i_getMiddle(itCoord));
-			if (dist < r)
-			{
-				r = dist;
-				*out_pos = Vec2i_init2(x, y + WHEEL);
-			}
-		}
-	}
-
-	return (r < max_r);
-}
-
-static BOOL _GuiItemTable_isSelect(const GuiItemTable* self)
-{
-	Quad2i selectRect = GuiItemTable_getSelectRect(self);
-	Quad2i g = _GuiItemTable_getSelectGridCoord(self, selectRect, TRUE);
-	return (g.size.x > 0 && g.size.y > 0);
-}
-
-static BOOL _GuiItemTable_isCellExtendSelect(const GuiItemTable* self)
-{
-	Quad2i g = _GuiItemTable_getSelectGridCoord(self, self->cellExtendRect, TRUE);
-	return _GuiItemTable_isSelect(self) && (g.size.x > 0 && g.size.y > 0);
-}
-
-static Quad2i _GuiItemTable_getCellExtendQuad(const GuiItemTable* self, Quad2i grid)
+static void _GuiItemTable_setScroll(GuiItemTable* self, Quad2i coord, Win* win)
 {
 	const int cell = OsWinIO_cellSize();
+	const int RS = GuiItemTable_getRowSize(self);
+	const UINT extra = GuiItemTable_scrollExtra(self, win);
+	const int scroll_width = GuiScroll_widthWin(win);
 
-	Quad2i q = _GuiItemTable_getSelectGridCoord(self, grid, TRUE);
-	return Quad2i_initMid(Quad2i_end(q), Vec2i_init2(cell / 4, cell / 4));
-}
-
-static GuiItem* _GuiItemTable_getBaseLayout(GuiItemTable* self)
-{
-	return GuiItem_getSub(&self->base, 0);
-}
-static BOOL _GuiItemTable_hasHScroll(GuiItemTable* self)
-{
-	return GuiItemLayout_hasScrollH((GuiItemLayout*)_GuiItemTable_getBaseLayout(self));
+	BOOL hScroll = _GuiItemTable_hasHScroll(self);	//is horizontal scroll on
+	if (!hScroll)
+		hScroll = (coord.size.y % cell) < cell * RS * 3 / 4;	//check if last is visible from 3/4
+	GuiScroll_set(&self->scrollV, (GuiItemTable_numRows(self) + self->showAddRecord + hScroll) * cell * RS, coord.size.y - extra - cell + scroll_width, cell * RS);
 }
 
 void GuiItemTable_drawPost(GuiItemTable* self, Image4* img, Quad2i coord, Win* win)
@@ -1370,16 +1813,22 @@ void GuiItemTable_drawPost(GuiItemTable* self, Image4* img, Quad2i coord, Win* w
 	if (_GuiItemTable_hasHScroll(self))
 		coord.size.y -= scroll_width;
 
-	if (_GuiItemTable_isSelect(self) && GuiItemTable_repairSelect(self))
+	//DbValue_getOptionNumber(self->viewRow, "width_ids", 4);
 	{
+		Quad2i q = _GuiItemTable_getIdsLayout(self)->base.coordScreen;
+		q.start.x += q.size.x - 2;
+		q.size.x = 4;
+		Image4_drawBoxQuadAlpha(img, q, g_theme.main);
+		//Image4_drawBoxQuadAlpha(img, q, Rgba_aprox(g_theme.background, g_theme.black, 0.4f));
+	}
+
+	if (_GuiItemTable_isSelect(self, win) && GuiItemTable_repairSelect(self))
+	{
+		//GuiItem* cells_layout = GuiItem_findName((GuiItem*)self, "cells_layout");
+		//const Quad2i layoutCoord = cells_layout->coordMoveCut;
+
 		Quad2i selectRect = GuiItemTable_getSelectRect(self);
 		Quad2i q = _GuiItemTable_getSelectGridCoord(self, selectRect, TRUE);
-
-		{
-			Quad2i coord2 = coord;
-			coord2.size.x -= GuiScroll_widthWin(win);
-			q = Quad2i_getIntersect(q, coord2);	//cut it
-		}
 
 		Rgba cd = g_theme.edit;
 		if (selectRect.size.x == 1 && selectRect.size.y == 1)
@@ -1390,7 +1839,7 @@ void GuiItemTable_drawPost(GuiItemTable* self, Image4* img, Quad2i coord, Win* w
 				qs.start.x = coord.start.x;
 				qs.size.x = coord.size.x - scroll_width;
 				Rgba cds = g_theme.main;
-				cds.a = 20;
+				cds.a = 35;
 				Image4_drawBoxQuadAlpha(img, qs, cds);
 			}
 
@@ -1412,7 +1861,7 @@ void GuiItemTable_drawPost(GuiItemTable* self, Image4* img, Quad2i coord, Win* w
 			Image4_drawBorder(img, q, 2, cd);
 		}
 
-		if (_GuiItemTable_isCellExtendSelect(self))
+		if (_GuiItemTable_isCellExtendSelect(self, win))
 		{
 			q = _GuiItemTable_getSelectGridCoord(self, self->cellExtendRect, TRUE);
 			Rgba cd = g_theme.main;
@@ -1422,7 +1871,7 @@ void GuiItemTable_drawPost(GuiItemTable* self, Image4* img, Quad2i coord, Win* w
 			if (!GuiItemTable_isSummaryTable(self))
 			{
 				//holder
-				q = _GuiItemTable_getCellExtendQuad(self, _GuiItemTable_isCellExtendSelect(self) ? self->cellExtendRect : selectRect);
+				q = _GuiItemTable_getCellExtendQuad(self, _GuiItemTable_isCellExtendSelect(self, win) ? self->cellExtendRect : selectRect, win);
 				Image4_drawBoxQuad(img, q, g_theme.white);
 				cd.a = 255;
 				Image4_drawBorder(img, q, 1, cd);
@@ -1434,17 +1883,11 @@ void GuiItemTable_drawPost(GuiItemTable* self, Image4* img, Quad2i coord, Win* w
 
 	//scroll
 	UINT extra = GuiItemTable_scrollExtra(self, win);
-	const int RS = GuiItemTable_getRowSize(self);
-	//int N_ROWS_VISIBLE = (coord.size.y - GuiItemTable_scrollExtra(self, win)) / cell / RS;
-
-	BOOL hScroll = _GuiItemTable_hasHScroll(self);	//is horizontal scroll on
-	if (!hScroll)
-		hScroll = (coord.size.y % cell) < cell * RS * 3 / 4;	//check if last is visible from 3/4
-	GuiScroll_set(&self->scroll, (GuiItemTable_numRows(self) + self->showAddRecord + hScroll) * cell * RS, coord.size.y - extra, cell * RS);
-	GuiScroll_drawV(&self->scroll, Vec2i_init2(coord.start.x + coord.size.x - scroll_width, coord.start.y + extra), img, win);
+	_GuiItemTable_setScroll(self, coord, win);
+	GuiScroll_drawV(&self->scrollV, Vec2i_init2(coord.start.x + coord.size.x - scroll_width, coord.start.y + extra), img, win);
 }
 
-void GuiItemTable_update(GuiItemTable* self, Quad2i coord, Win* win)
+void GuiItemTable_saveSelect(GuiItemTable* self)
 {
 	GuiItemTable_repairSelect(self);
 
@@ -1461,6 +1904,11 @@ void GuiItemTable_update(GuiItemTable* self, Quad2i coord, Win* win)
 		if (reset)
 			GuiItemRoot_resetNumChanges();
 	}
+}
+
+void GuiItemTable_update(GuiItemTable* self, Quad2i coord, Win* win)
+{
+	GuiItemTable_saveSelect(self);
 
 	DbRows_hasChanged(&self->filter);
 
@@ -1470,10 +1918,15 @@ void GuiItemTable_update(GuiItemTable* self, Quad2i coord, Win* win)
 	//update cells
 	if (self->base.subs.num)
 	{
-		GuiItem* layout = _GuiItemTable_getBaseLayout(self);
+		GuiItem* ids_layout = (GuiItem*)_GuiItemTable_getIdsLayout(self);
+		GuiItem* cells_layout = (GuiItem*)_GuiItemTable_getCellsLayout(self);
 
 		const UBIG N_ROWS_VISIBLE = self->num_rows_max;//Std_bmin(DbTable_numRowsReal(table), self->num_rows_max);
-		const UBIG WHEEL = GuiScroll_getWheelRow(&self->scroll);
+
+		if (_GuiItemTable_hasHScroll(self))
+			coord.size.y -= GuiScroll_widthWin(win);
+		_GuiItemTable_setScroll(self, coord, win);
+		const UBIG WHEEL = GuiScroll_getWheelRow(&self->scrollV);
 
 		self->num_rows_real = 0;
 
@@ -1482,10 +1935,10 @@ void GuiItemTable_update(GuiItemTable* self, Quad2i coord, Win* win)
 		int last_y = 0;
 
 		//cards
-		p = self->subs_start_rowOptionCards;
+		p = self->subs_ids_start_rowOptionCards;
 		for (r = 0; r < N_ROWS_VISIBLE; r++)
 		{
-			GuiItem* it = GuiItem_getSub(layout, p++);
+			GuiItem* it = GuiItem_getSub(ids_layout, p++);
 			GuiItem_setRow(it, DbRows_getRow(&self->filter, WHEEL + r), 0);
 
 			BOOL show = DbRows_isRow(&self->filter, WHEEL + r);
@@ -1499,10 +1952,10 @@ void GuiItemTable_update(GuiItemTable* self, Quad2i coord, Win* win)
 			last_y = 1;
 
 		//options
-		p = self->subs_start_rowOption;
+		p = self->subs_ids_start_rowOption;
 		for (r = 0; r < N_ROWS_VISIBLE; r++)
 		{
-			GuiItem* it = GuiItem_getSub(layout, p++);
+			GuiItem* it = GuiItem_getSub(ids_layout, p++);
 
 			GuiItem_setRow(it, DbRows_getRow(&self->filter, WHEEL + r), 0);
 
@@ -1514,10 +1967,10 @@ void GuiItemTable_update(GuiItemTable* self, Quad2i coord, Win* win)
 
 		if (self->showChangeOrder)
 		{
-			p = self->subs_start_rowOptionOrder;
+			p = self->subs_ids_start_rowOptionOrder;
 			for (r = 0; r < N_ROWS_VISIBLE; r++)
 			{
-				GuiItem* it = GuiItem_getSub(layout, p++);
+				GuiItem* it = GuiItem_getSub(ids_layout, p++);
 				GuiItem_setRow(it, DbRows_getRow(&self->filter, WHEEL + r), 0);
 
 				BOOL show = DbRows_isRow(&self->filter, WHEEL + r);
@@ -1527,13 +1980,13 @@ void GuiItemTable_update(GuiItemTable* self, Quad2i coord, Win* win)
 
 		if (self->showAddRecord)
 		{
-			GuiItem* addRecord = GuiItem_getSub(layout, self->subs_start_add);
+			GuiItem* addRecord = GuiItem_getSub(ids_layout, self->subs_ids_add_record);
 
 			BOOL show = (DbColumns_num(DbTable_getColumns((GuiItemTable_getTable(self)))) > 1 && self->showAddRecord);
 
 			GuiItem_setShow(addRecord, show);
 			if (show)
-				GuiItem_setGrid(addRecord, Quad2i_init4(0, last_y, 1, 1));
+				GuiItem_setGrid(addRecord, Quad2i_init4(1, last_y, self->showChangeOrder + 1, 1));
 		}
 
 		//Records data
@@ -1542,15 +1995,13 @@ void GuiItemTable_update(GuiItemTable* self, Quad2i coord, Win* win)
 		int c;
 		for (c = 0; c < N_COLS; c++)
 		{
-			//DbColumn* col = GuiItemTable_getColumn(self, c);
 			const BOOL modeSummary = GuiItemTable_isSummaryTable(self);// && !DbColumn_isSummaryLinks(col);
-
 			for (r = 0; r < N_ROWS_VISIBLE; r++)
 			{
-				p = Std_min(self->subs_start_rowCell + c * self->num_rows_max + r, self->subs_end_rowCell);
-				if (p < self->subs_end_rowCell)
+				p = Std_min(self->subs_cells_start + c * self->num_rows_max + r, self->subs_cells_end);
+				if (p < self->subs_cells_end)
 				{
-					GuiItem* it = GuiItem_getSub(layout, p);
+					GuiItem* it = GuiItem_getSub(cells_layout, p);
 
 					GuiItem_setRow(it, DbRows_getRow(&self->filter, WHEEL + r), 0);
 					GuiItem_setShow(it, DbRows_isRow(&self->filter, WHEEL + r));
@@ -1562,7 +2013,7 @@ void GuiItemTable_update(GuiItemTable* self, Quad2i coord, Win* win)
 			}
 		}
 
-		GuiItem_setRedraw(&self->base, (oldNumRows != self->oldNumRows || GuiScroll_getRedrawAndReset(&self->scroll)));
+		GuiItem_setRedraw(&self->base, (oldNumRows != self->oldNumRows || GuiScroll_getRedrawAndReset(&self->scrollV) || DbValue_hasChanged(&self->searchHighlight)));
 	}
 
 	GuiItemText* numRecords = GuiItem_findNameType(&self->base, "#records", GuiItem_TEXT);
@@ -1879,8 +2330,11 @@ void GuiItemTable_touch(GuiItemTable* self, Quad2i coord, Win* win)
 	const int scroll_width = GuiScroll_widthWin(win);
 	GuiItemTable_repairSelect(self);
 
-	const int N_COLS = GuiItemTable_numColumns(self);
-	const int N_ROWS = GuiItemTable_numRows(self);
+	//const int N_COLS = GuiItemTable_numColumns(self);
+	//const int N_ROWS = GuiItemTable_numRows(self);
+
+	Quad2i tableCoord = coord;
+	coord = _GuiItemTable_getCellsLayout(self)->base.coordMoveCut;
 
 	if (_GuiItemTable_hasHScroll(self))
 		coord.size.y -= scroll_width;
@@ -1903,40 +2357,18 @@ void GuiItemTable_touch(GuiItemTable* self, Quad2i coord, Win* win)
 		UINT extra = GuiItemTable_scrollExtra(self, win);
 
 		if (OsWinIO_isCursorEmpty())
-			GuiScroll_touchV(&self->scroll, self, coord, Vec2i_init2(coord.start.x + coord.size.x - scroll_width, coord.start.y + extra), win);
-
-		int width_sum = 1 + GuiItemTable_getColumnIdsWidth(self);
-		width_sum = Std_max(0, width_sum - GuiItemLayout_getWheelH((GuiItemLayout*)_GuiItemTable_getBaseLayout(self)));
-
-		BOOL insideColumnsHeader = FALSE;
-		if (self->showHeader)
-		{
-			Quad2i q = coord;
-			q.size.y = cell;
-			insideColumnsHeader = Quad2i_inside(q, OsWinIO_getTouchPos());
-		}
-		BOOL insideRowsHeader = FALSE;
-		if (self->showHeader)
-		{
-			Quad2i q = coord;
-			q.size.x = width_sum * cell;
-			insideRowsHeader = Quad2i_inside(q, OsWinIO_getTouchPos());
-		}
+			GuiScroll_touchV(&self->scrollV, self, tableCoord, Vec2i_init2(coord.start.x + coord.size.x/* - scroll_width*/, coord.start.y + extra), win);
 
 		if (self->showHeader)
 		{
 			//cut top
 			coord.start.y += cell;
 			coord.size.y -= cell;
-
-			//cut left
-			coord.start.x += width_sum * cell;
-			coord.size.x -= width_sum * cell;
 		}
 
 		BOOL inside = Quad2i_inside(coord, OsWinIO_getTouchPos());
 		BOOL insideSelect = Quad2i_inside(_GuiItemTable_getSelectGridCoord(self, selectRect, TRUE), OsWinIO_getTouchPos());
-		BOOL insideCellExtend = _GuiItemTable_isSelect(self) && Quad2i_inside(Quad2i_addSpace(_GuiItemTable_getCellExtendQuad(self, selectRect), -5), OsWinIO_getTouchPos());
+		BOOL insideCellExtend = _GuiItemTable_isSelect(self, win) && Quad2i_inside(Quad2i_addSpace(_GuiItemTable_getCellExtendQuad(self, selectRect, win), -5), OsWinIO_getTouchPos());
 
 		if (inside && touchR && !insideSelect)
 		{
@@ -2024,7 +2456,7 @@ void GuiItemTable_touch(GuiItemTable* self, Quad2i coord, Win* win)
 			BOOL down = OsWinIO_getTouchPos().y > q.start.y + q.size.y;
 			if (up || down)
 			{
-				if (GuiScroll_tryDragScroll(&self->scroll, 3, up ? -1 : 1))
+				if (GuiScroll_tryDragScroll(&self->scrollV, 3, up ? -1 : 1))
 				{
 					GuiItem_update(&self->base, win);
 					GuiItem_setRedraw(&self->base, TRUE);
@@ -2032,7 +2464,7 @@ void GuiItemTable_touch(GuiItemTable* self, Quad2i coord, Win* win)
 			}
 
 			//horizontal
-			GuiItemLayout* layout = (GuiItemLayout*)_GuiItemTable_getBaseLayout(self);
+			GuiItemLayout* layout = _GuiItemTable_getCellsLayout(self);
 			if (GuiItemLayout_hasScrollH(layout))
 			{
 				BOOL left = OsWinIO_getTouchPos().x < q.start.x;
@@ -2051,22 +2483,6 @@ void GuiItemTable_touch(GuiItemTable* self, Quad2i coord, Win* win)
 		if (insideSelect && touchR)
 		{
 			GuiItemTable_showCellMenu(self);
-			OsWinIO_setTouch_action(Win_TOUCH_NONE);
-		}
-
-		if (insideColumnsHeader && touchR)
-		{
-			//select complete column
-			if (_GuiItemTable_getTouchCellPosClosest(self, OsWinIO_getTouchPos(), &self->selectFirstTouch))
-				self->selectLastTouch = Vec2i_init2(self->selectFirstTouch.x, N_ROWS - 1);
-			OsWinIO_setTouch_action(Win_TOUCH_NONE);
-		}
-		if (insideRowsHeader && touchR)
-		{
-			//select complete row
-			if (_GuiItemTable_getTouchCellPosClosest(self, OsWinIO_getTouchPos(), &self->selectFirstTouch))
-				self->selectLastTouch = Vec2i_init2(N_COLS - 1, self->selectFirstTouch.y);
-
 			OsWinIO_setTouch_action(Win_TOUCH_NONE);
 		}
 
@@ -2118,7 +2534,7 @@ void GuiItemTable_key(GuiItemTable* self, Quad2i coord, Win* win)
 		return;
 	}
 
-	const UBIG WHEEL = GuiScroll_getWheelRow(&self->scroll);
+	const UBIG WHEEL = GuiScroll_getWheelRow(&self->scrollV);
 	const int N_COLS = GuiItemTable_numColumns(self);
 	const int N_ROWS_VISIBLE = self->num_rows_max;
 
@@ -2299,27 +2715,28 @@ void GuiItemTable_key(GuiItemTable* self, Quad2i coord, Win* win)
 	{
 		GuiItem_setRedraw(&self->base, TRUE);
 
-		//Vertical
+		GuiItemTable_scrollToCell(self, self->selectLastTouch);
+		/*//Vertical
 		if (self->selectLastTouch.y < WHEEL)
-			GuiScroll_setWheelRow(&self->scroll, self->selectLastTouch.y);
+			GuiScroll_setWheelRow(&self->scrollV, self->selectLastTouch.y);
 		else
 			if (self->selectLastTouch.y > WHEEL + N_ROWS_VISIBLE - 1)
-				GuiScroll_setWheelRow(&self->scroll, self->selectLastTouch.y - (N_ROWS_VISIBLE - 1));
+				GuiScroll_setWheelRow(&self->scrollV, self->selectLastTouch.y - (N_ROWS_VISIBLE - 1));
 
 		//Horizontal
-		GuiItemLayout* lay = (GuiItemLayout*)_GuiItemTable_getBaseLayout(self);
+		GuiItemLayout* lay = _GuiItemTable_getCellsLayout(self);
 		if (GuiItemLayout_hasScrollH(lay))
 		{
 			Quad2i rect = _GuiItemTable_getSelectGridCoord(self, Quad2i_init2(self->selectLastTouch, Vec2i_init2(1, 1)), TRUE);
 
 			//left
 			if (rect.start.x < coord.start.x)
-				GuiScroll_setWheel(&lay->scrollH, lay->scrollH.wheel - (coord.start.x - rect.start.x));
+				GuiScroll_setWheel(&lay->scrollH, GuiScroll_getWheel(&lay->scrollH) - (coord.start.x - rect.start.x));
 
 			//right
 			if (rect.start.x + rect.size.x > coord.start.x + coord.size.x)
-				GuiScroll_setWheel(&lay->scrollH, lay->scrollH.wheel + (rect.start.x + rect.size.x) - (coord.start.x + coord.size.x));
-		}
+				GuiScroll_setWheel(&lay->scrollH, GuiScroll_getWheel(&lay->scrollH) + (rect.start.x + rect.size.x) - (coord.start.x + coord.size.x));
+		}*/
 	}
 }
 
@@ -2329,7 +2746,7 @@ void GuiItemTable_clickLinkMirrorColumnSET(GuiItem* self)
 	if (table && self->type == GuiItem_BUTTON)
 	{
 		BIG c = GuiItem_findAttribute(self, "c");
-		BIG crowT = DbColumn_getRow(GuiItemTable_getColumn(table, c));
+		BIG crowT = GuiItemTable_getColumnBaseRow(table, c);
 		//DbColumn* columnSrc = GuiItemTable_getColumn(table, c);
 
 		BIG dstColumnRow = ((GuiItemButton*)self)->text.row;
@@ -2348,7 +2765,7 @@ void GuiItemTable_clickLinkMirrorColumn(GuiItem* self)
 	if (table && self->type == GuiItem_BUTTON)
 	{
 		BIG c = GuiItem_findAttribute(self, "c");
-		BIG crowT = DbColumn_getRow(GuiItemTable_getColumn(table, c));
+		BIG crowT = GuiItemTable_getColumnBaseRow(table, c);
 		DbColumn* columnSrc = GuiItemTable_getColumn(table, c);
 		if (columnSrc)
 		{
@@ -2433,24 +2850,38 @@ void GuiItemTable_buildColumnDialogProperties(GuiItem* item, GuiItemTable* self)
 
 			BIG optionsRow = DbRows_findSubType(crowT, "options");
 
-			//+
-			GuiItem_addSubName((GuiItem*)properLayout, "+", GuiItemButton_newClassicEx(Quad2i_init4(0, 0, 3, 1), DbValue_initStaticCopyCHAR("+"), &GuiItemTable_clickAddOptionLine));
+			DbValue colors = DbValue_initOption(crowT, "cd_enable", 0);
+			const BOOL isColors = DbValue_getNumber(&colors);
 
 			//skin
 			GuiItemLayout* skin = GuiItemLayout_new(Quad2i_init4(0, 0, 1, 1));
-			GuiItemLayout_addColumn(skin, 1, 100);
+			{
+				GuiItemLayout_addColumn(skin, 1, 100);
+				if (isColors)
+					GuiItemLayout_addColumn(skin, 2, 2);
 
-			GuiItem* drag = GuiItem_addSubName((GuiItem*)skin, "drag", GuiItemBox_newEmpty(Quad2i_init4(0, 0, 1, 1)));
-			GuiItem_setIcon(drag, GuiImage_new1(UiIcons_init_reoder()));
-			GuiItem_setDrop(drag, "option", "option", FALSE, DbRows_initLinkN(DbRoot_subs(), optionsRow), -1);
+				GuiItem* drag = GuiItem_addSubName((GuiItem*)skin, "drag", GuiItemBox_newEmpty(Quad2i_init4(0, 0, 1, 1)));
+				GuiItem_setIcon(drag, GuiImage_new1(UiIcons_init_reoder()));
+				GuiItem_setDrop(drag, "option", "option", FALSE, DbRows_initLinkN(DbRoot_subs(), optionsRow), -1);
 
-			GuiItem_addSubName((GuiItem*)skin, "name", GuiItemEdit_new(Quad2i_init4(1, 0, 1, 1), DbValue_initOption(-1, "name", 0), DbValue_initEmpty()));
+				GuiItem_addSubName((GuiItem*)skin, "name", GuiItemEdit_new(Quad2i_init4(1, 0, 1, 1), DbValue_initOption(-1, "name", 0), DbValue_initEmpty()));
+
+				if (isColors)
+					GuiItem_addSubName((GuiItem*)skin, "cd", (GuiItem*)GuiItemColor_new(Quad2i_init4(2, 0, 1, 1), DbValue_initOption(-1, "cd", 0), FALSE));
+			}
+
+			//colors enable
+			GuiItem_addSubName((GuiItem*)properLayout, "cd_enable", GuiItemCheck_new(Quad2i_init4(0, 0, 3, 1), colors, DbValue_initLang("COLORS_ENABLE")));
 
 			//list
 			GuiItemList* list = (GuiItemList*)GuiItem_addSubName((GuiItem*)properLayout, "list", GuiItemList_new(Quad2i_init4(0, 1, 3, 5), DbRows_initLinkN(DbRoot_subs(), optionsRow), (GuiItem*)skin, DbValue_initEmpty()));
 			GuiItemList_setShowRemove(list, TRUE);
 			GuiItemList_setDrawBackground(list, TRUE);
 			GuiItemList_setClickRemove(list, &GuiItemTable_clickRemoveOption);
+
+			//+
+			GuiItem* add = GuiItem_addSubName((GuiItem*)properLayout, "+", GuiItemButton_newClassicEx(Quad2i_init4(0, 6, 3, 1), DbValue_initStaticCopyCHAR("+"), &GuiItemTable_clickAddOptionLine));
+			GuiItem_setAttribute(add, "cd", Rgba_asNumber(type == DbFormat_MENU ? Rgba_initWhite() : Rgba_initGreyDark()));
 
 			break;
 		}
@@ -2471,6 +2902,29 @@ void GuiItemTable_buildColumnDialogProperties(GuiItem* item, GuiItemTable* self)
 
 		case DbFormat_CHECK:
 		{
+			GuiItemLayout_addColumn(properLayout, 0, 99);
+			GuiItemLayout_addColumn(properLayout, 1, 99);
+
+			//colors enable
+			DbValue colors = DbValue_initOption(crowT, "cd_enable", 0);
+			const BOOL isColors = DbValue_getNumber(&colors);
+			GuiItem_addSubName((GuiItem*)properLayout, "cd_enable", GuiItemCheck_new(Quad2i_init4(0, 0, 2, 1), colors, DbValue_initLang("COLORS_ENABLE")));
+
+			UNI* whiteCd = Std_newNumber(Rgba_asNumber(g_theme.white));
+
+			GuiItem* ont = GuiItem_addSubName((GuiItem*)properLayout, "text_on", GuiItemText_new(Quad2i_init4(0, 1, 1, 1), TRUE, DbValue_initLang("CHECK_ON"), DbValue_initEmpty()));
+			GuiItem* on = GuiItem_addSubName((GuiItem*)properLayout, "cd_on", (GuiItem*)GuiItemColor_new(Quad2i_init4(0, 2, 1, 1), DbValue_initOption(crowT, "cd_on", whiteCd), FALSE));
+
+			GuiItem* offt = GuiItem_addSubName((GuiItem*)properLayout, "text_off", GuiItemText_new(Quad2i_init4(1, 1, 1, 1), TRUE, DbValue_initLang("CHECK_OFF"), DbValue_initEmpty()));
+			GuiItem* off = GuiItem_addSubName((GuiItem*)properLayout, "cd_off", (GuiItem*)GuiItemColor_new(Quad2i_init4(1, 2, 1, 1), DbValue_initOption(crowT, "cd_off", whiteCd), FALSE));
+
+			Std_deleteUNI(whiteCd);
+
+			GuiItem_setEnable(ont, isColors);
+			GuiItem_setEnable(on, isColors);
+			GuiItem_setEnable(offt, isColors);
+			GuiItem_setEnable(off, isColors);
+
 			break;
 		}
 
@@ -2751,6 +3205,65 @@ void GuiItemTable_resizeColumnDialogProperties(GuiItem* item)
 		GuiItemTable_buildColumnDialogProperties(item, self);
 }
 
+void GuiItemTable_clickGotoRow(GuiItem* item)
+{
+	GuiItemEdit* edit = GuiItem_findNameType(item, "edit", GuiItem_EDIT);
+	GuiItemTable* self = GuiItem_findParentType(item, GuiItem_TABLE);
+	if (edit && self)
+	{
+		BIG row = Std_bmax(0, GuiItemEdit_getNumber(edit));
+
+		BIG pos = DbRows_findRowScroll(&self->filter, row);
+		//BIG pos = DbTable_findRowScroll(GuiItemTable_getTable(self), row);
+		if (pos >= 0)
+		{
+			const int N_COLS = GuiItemTable_numColumns(self);
+			self->selectFirstTouch = Vec2i_init2(0, pos);
+			self->selectLastTouch = Vec2i_init2(N_COLS - 1, pos);
+
+			GuiScroll_setWheelRow(&self->scrollV, pos);
+
+			GuiItemTable_saveSelect(self);
+
+			OsWinIO_resetKeyEXTRA();
+			GuiItemRoot_closeLevelTop();
+		}
+		else
+			GuiItemEdit_setHighlightIfContent(edit, TRUE);
+	}
+}
+void GuiItemTable_clickOpenGotoRowDialog(GuiItem* self)
+{
+	GuiItemLayout* layout = GuiItemLayout_new(Quad2i_init());
+	layout->drawBorder = TRUE;
+	GuiItemLayout_addColumn(layout, 0, 10);
+
+	GuiItem_addSubName(&layout->base, "edit", GuiItemEdit_newEx(Quad2i_init4(0, 0, 1, 1), DbValue_initNumber(1), DbValue_initEmpty(), &GuiItemTable_clickGotoRow));
+	GuiItem* b = GuiItem_addSubName(&layout->base, "button", GuiItemButton_newClassicEx(Quad2i_init4(0, 1, 1, 1), DbValue_initLang("GOTO_ROW"), &GuiItemTable_clickGotoRow));
+	//GuiItem_setShortcutKey(b, FALSE, Win_EXTRAKEY_ENTER, 0, &GuiItemTable_clickGoto);
+
+	const int cell = OsWinIO_cellSize();
+	GuiItemRoot_addDialogRel((GuiItem*)layout, (GuiItem*)self, Quad2i_getSub(self->coordMoveCut, Vec2i_init2(10 * cell, 2 * cell)), TRUE);
+}
+
+void GuiItemTable_callbackDropIdColumn(GuiItem* dstItem, BIG dstRow, BIG srcRow, BOOL findIn)
+{
+	GuiItemTable* self = GuiItem_findParentType(dstItem, GuiItem_TABLE);
+	if (self)
+	{
+		UBIG idColumnsRow = DbRoot_findOrCreateChildType(self->viewRow, "id_columns");
+
+		DbColumn* column = DbRoot_findColumn(srcRow);
+		if (!column)
+			column = DbRoot_findColumn(DbRoot_ref_row(srcRow));
+
+		BIG line = DbRoot_findSubLineRefRow(idColumnsRow, DbColumn_getRow(column));
+		DbRoot_setEnable(line, TRUE);
+
+		GuiItemMenu_showContext(((GuiItemMenu*)dstItem));
+	}
+}
+
 GuiItemLayout* GuiItemTable_resize(GuiItemTable* self, GuiItemLayout* layout, Win* win)
 {
 	if (!self->base.resize)
@@ -2763,23 +3276,42 @@ GuiItemLayout* GuiItemTable_resize(GuiItemTable* self, GuiItemLayout* layout, Wi
 	GuiItem_freeSubs(&self->base);
 
 	//layout(will hold table cells)
-	layout = GuiItemLayout_newCoord(&self->base, FALSE, TRUE, win);
+	//layout = GuiItemLayout_newCoord(&self->base, FALSE, TRUE, win);
+	layout = GuiItemLayout_newCoord(&self->base, FALSE, FALSE, win);
 	GuiItemLayout_setDrawBackground(layout, FALSE);
-	GuiItem_addSubName(&self->base, "layout_main", &layout->base);
-	GuiItemLayout_setScrollH(layout, DbValue_initCopy(&self->scrollH));
+	GuiItem_addSubName(&self->base, "main_layout", &layout->base);
+	//GuiItemLayout_setScrollH(layout, DbValue_initCopy(&self->scrollH));
+	GuiItemLayout_addRow(layout, 0, 99);
+	GuiItemLayout_addColumn(layout, 0, GuiItemTable_getColumnIdsWidth(self));
+	GuiItemLayout_addColumn(layout, 1, 99);
 
-	GuiItem_setShortcutKey((GuiItem*)layout, FALSE, Win_EXTRAKEY_CTRL | Win_EXTRAKEY_ADD_RECORD, 0, &GuiItemTable_clickAddRecord);
+	GuiItemLayout* ids_layout = GuiItemLayout_new(Quad2i_init4(0, 0, 1, 1));
+	GuiItemLayout_setDrawBackground(ids_layout, TRUE);
+	//GuiItemLayout_setBackgroundBlack(ids_layout, TRUE);
+	GuiItemLayout_showScroll(ids_layout, FALSE, FALSE);
+	GuiItem_addSubName(&layout->base, "ids_layout", &ids_layout->base);
+	GuiItem_setShortcutKey((GuiItem*)layout, FALSE, Win_EXTRAKEY_CTRL | Win_EXTRAKEY_GOTO, 0, &GuiItemTable_clickOpenGotoRowDialog);
+	GuiItem_setChangeSize(&ids_layout->base, TRUE, DbValue_initOption(self->viewRow, "width_ids", _UNI32("4")), FALSE, FALSE, Rgba_initBlack());
+
+	GuiItemLayout* cells_layout = GuiItemLayout_new(Quad2i_init4(1, 0, 1, 1));
+	GuiItemLayout_setDrawBackground(cells_layout, FALSE);
+	GuiItemLayout_showScroll(cells_layout, FALSE, TRUE);
+	GuiItemLayout_setScrollH(cells_layout, DbValue_initCopy(&self->scrollH));
+	GuiItem_addSubName(&layout->base, "cells_layout", &cells_layout->base);
 
 	//cells will not be under scroll
-	layout->base.coordScreen.size.x -= GuiScroll_widthWin(win);	//vertical
+	layout->base.coordScreen.size.x -= GuiScroll_widthWin(win);
+	//cells_layout->base.coordScreen.size.y -= GuiScroll_widthWin(win);
+
+	GuiItem_setShortcutKey((GuiItem*)ids_layout, FALSE, Win_EXTRAKEY_CTRL | Win_EXTRAKEY_ADD_RECORD, 0, &GuiItemTable_clickAddRecord);
 
 	const int N_COLS = GuiItemTable_numColumns(self);
 
-	int width_sum = GuiItemTable_getColumnIdsWidth(self);
+	int width_sum = 0;// GuiItemTable_getColumnIdsWidth(self);
 	BIG c;
-	for (c = 0; c < N_COLS; c++)
-		width_sum += GuiItemTable_getColumnWidth(self, c);
-	const int header_x = 1 + self->showChangeOrder;	//[card_icon][order]
+	//for (c = 0; c < N_COLS; c++)
+	//	width_sum += GuiItemTable_getColumnWidth(self, c);
+	const int header_x = 0;// 1 + self->showChangeOrder;	//[card_icon][order]
 	const int header_y = self->showHeader;
 
 	BOOL isFilter = !DbRoot_isType_table(self->viewRow);
@@ -2797,56 +3329,7 @@ GuiItemLayout* GuiItemTable_resize(GuiItemTable* self, GuiItemLayout* layout, Wi
 	self->num_rows_max++;	//extra row
 
 	BIG r;
-	GuiItemLayout_addColumn(layout, self->showChangeOrder + 1, 2 + (self->showAddButton || self->showRemoveButton)); //row menus
-
-	if (!isFilter)
-	{
-		//create new column
-		GuiItemMenu* newColumn = (GuiItemMenu*)GuiItem_addSubName(&layout->base, "+column", GuiItemMenu_new(Quad2i_init4(header_x + width_sum, 0, 2, 1), DbValue_initStaticCopy(_UNI32("+")), FALSE));
-		GuiItemMenu_setHighligthBackground(newColumn, TRUE);
-		GuiItemMenu_setTransparent(newColumn, FALSE);
-		newColumn->base.drawTable = TRUE;
-		newColumn->underline = FALSE;
-		GuiItemMenu_setCloseAuto(newColumn, FALSE);
-		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_text()), DbValue_initLang("COLUMN_TEXT"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_TEXT);
-		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_number()), DbValue_initLang("COLUMN_NUMBER_1"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_NUMBER_1);
-		//GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_file()), DbValue_initLang("COLUMN_NUMBER_N"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_NUMBER_N);
-		GuiItemMenu_addItemEmpty(newColumn);
-		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_currency()), DbValue_initLang("COLUMN_CURRENCY"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_CURRENCY);
-		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_percentage()), DbValue_initLang("COLUMN_PERCENTAGE"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_PERCENTAGE);
-		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_rating()), DbValue_initLang("COLUMN_RATING"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_RATING);
-		GuiItemMenu_addItemEmpty(newColumn);
-		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_phone()), DbValue_initLang("COLUMN_PHONE"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_PHONE);
-		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_url()), DbValue_initLang("COLUMN_URL"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_URL);
-		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_email()), DbValue_initLang("COLUMN_EMAIL"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_EMAIL);
-		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_location()), DbValue_initLang("COLUMN_LOCATION"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_LOCATION);
-		GuiItemMenu_addItemEmpty(newColumn);
-		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_date()), DbValue_initLang("COLUMN_DATE"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_DATE);
-		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_menu()), DbValue_initLang("COLUMN_MENU"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_MENU);
-		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_tags()), DbValue_initLang("COLUMN_TAGS"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_TAGS);
-		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_slider()), DbValue_initLang("COLUMN_SLIDER"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_SLIDER);
-		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_check()), DbValue_initLang("COLUMN_CHECK"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_CHECK);
-		GuiItemMenu_addItemEmpty(newColumn);
-		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_insight()), DbValue_initLang("COLUMN_SUMMARY"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_SUMMARY);
-		GuiItemMenu_addItemEmpty(newColumn);
-		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_link()), DbValue_initLang("COLUMN_LINK_1"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_LINK_1);
-		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_link()), DbValue_initLang("COLUMN_LINK_N"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_LINK_N);
-		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_link()), DbValue_initLang("COLUMN_LINK_MIRRORED"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_LINK_MIRRORED);
-		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_link()), DbValue_initLang("COLUMN_LINK_JOINTED"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_LINK_JOINTED);
-		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_link()), DbValue_initLang("COLUMN_LINK_FILTERED"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_LINK_FILTERED);
-		GuiItemMenu_addItemEmpty(newColumn);
-		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_file()), DbValue_initLang("COLUMN_FILE_1"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_FILE_1);
-		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_file()), DbValue_initLang("COLUMN_FILE_N"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_FILE_N);
-	}
-
-	//num records
-	{
-		width_sum = GuiItemTable_getColumnIdsWidth(self);
-		DbValue nrv = DbValue_initNumber(0);
-		nrv.staticPost = Std_newUNI_char("x");
-		GuiItem* numrecrods = GuiItem_addSubName(&layout->base, "#records", GuiItemText_new(Quad2i_init4(header_x, 0, width_sum, 1), TRUE, nrv, DbValue_initEmpty()));
-		GuiItem_setChangeSize(numrecrods, TRUE, DbValue_initOption(self->viewRow, "width_ids", _UNI32("3")), FALSE);
-	}
+	//GuiItemLayout_addColumn(ids_layout, self->showChangeOrder + 1, 2 + (self->showAddButton || self->showRemoveButton)); //row menus
 
 	const BOOL mode_summary = GuiItemTable_isSummaryTable(self);
 
@@ -2874,15 +3357,15 @@ GuiItemLayout* GuiItemTable_resize(GuiItemTable* self, GuiItemLayout* layout, Wi
 		GuiItemLayout_addColumn(headColumn, 0, 20);
 		if (modeSummaryFunc)
 			GuiItemLayout_addColumn(headColumn, 1, 10);
-		GuiItem_addSubName(&layout->base, crowName, &headColumn->base);
+		GuiItem_addSubName(&cells_layout->base, crowName, &headColumn->base);
 
 		if (modeSummaryGroup)
 			GuiItemLayout_setBackgroundWhite(headColumn, TRUE);
 		else
 			GuiItemLayout_setBackgroundMain(headColumn, TRUE);
 
-		GuiItem_setChangeSize(&headColumn->base, TRUE, DbValue_initOption(crow, "width", 0), FALSE);	//pro cel\FD column(od shora - dol\F9) ...
-		GuiItem_setDrop(&headColumn->base, "column", "column", TRUE, DbRows_getSubsArray(self->viewRow, "columns"), crow);	//pro cel\FD column(od shora - dol\F9) ...
+		GuiItem_setChangeSize(&headColumn->base, TRUE, DbValue_initOption(crow, "width", 0), FALSE, FALSE, g_theme.white);
+		GuiItem_setDrop(&headColumn->base, "column", "column", TRUE, DbRows_getSubsArray(self->viewRow, "columns"), crow);
 		GuiItem_setIcon(&headColumn->base, GuiImage_new1(GuiItem_getColumnIcon(type)));
 
 		if (modeSummaryFunc)
@@ -2896,9 +3379,7 @@ GuiItemLayout* GuiItemTable_resize(GuiItemTable* self, GuiItemLayout* layout, Wi
 
 		GuiItemMenu* mn = (GuiItemMenu*)GuiItem_addSubName(&headColumn->base, "name", GuiItemMenu_new(Quad2i_init4(0, 0, 1, 1), DbRows_getSubsOption(self->viewRow, "columns", TRUE, c, "name", TRUE), FALSE));
 		if (!modeSummaryGroup)
-			GuiItemMenu_setHighligthBackground(mn, TRUE);
-		//GuiItemMenu_setTransparent(mn, FALSE);
-		//mn->base.drawTable = TRUE;
+			GuiItemMenu_setHighligthBackground(mn, TRUE, 1.0f);
 		mn->textCenter = FALSE;
 
 		if (DbColumn_isErr(col))
@@ -2915,12 +3396,14 @@ GuiItemLayout* GuiItemTable_resize(GuiItemTable* self, GuiItemLayout* layout, Wi
 		int y = 0;
 		if (!mode_summary)
 		{
-			GuiItem* name = GuiItem_addSubName((GuiItem*)settingsColumn, "name", GuiItemEdit_new(Quad2i_init4(0, 0, 3, 1), DbRows_getSubsOption(self->viewRow, "columns", TRUE, c, "name", TRUE), DbValue_initLang("NAME")));
+			GuiItem* name = GuiItem_addSubName((GuiItem*)settingsColumn, "name", GuiItemEdit_new(Quad2i_init4(0, y++, 3, 1), DbRows_getSubsOption(self->viewRow, "columns", TRUE, c, "name", TRUE), DbValue_initLang("NAME")));
 			GuiItem_setIcon(name, GuiImage_new1(GuiItem_getColumnIcon(type)));
 			//GuiItem_setAlternativeIconCd(name, remote);
 			GuiItem_setEnable(name, !remote);
 
-			y++;
+			//description
+			GuiItem_addSubName((GuiItem*)settingsColumn, "description", GuiItemEdit_new(Quad2i_init4(0, y, 3, 2), DbRows_getSubsOption(self->viewRow, "columns", TRUE, c, "description", TRUE), DbValue_initLang("DESCRIPTION")));
+			y += 2;
 		}
 
 		//convert types
@@ -2946,7 +3429,9 @@ GuiItemLayout* GuiItemTable_resize(GuiItemTable* self, GuiItemLayout* layout, Wi
 			y++;	//space
 
 			GuiItemLayout* propertiesLayout = GuiItemLayout_new(Quad2i_init4(0, y, 3, 1));
-			GuiItemLayout_setBackgroundMain(propertiesLayout, TRUE);
+			//GuiItemLayout_setBackgroundMain(propertiesLayout, TRUE);
+			GuiItemLayout_setBackgroundGrey(propertiesLayout, TRUE);
+
 			GuiItemLayout_setResize(propertiesLayout, &GuiItemTable_resizeColumnDialogProperties);
 			GuiItem_addSubName((GuiItem*)settingsColumn, "propertiesLayout", (GuiItem*)propertiesLayout);
 
@@ -2955,11 +3440,13 @@ GuiItemLayout* GuiItemTable_resize(GuiItemTable* self, GuiItemLayout* layout, Wi
 			y += propertiesLayout->base.grid.size.y + 1;
 		}
 
+		GuiItem_addSubName((GuiItem*)settingsColumn, "short", GuiItemButton_newNoCenterEx(Quad2i_init4(0, y++, 3, 1), DbValue_initLang("ADD_TO_SHORT"), &GuiItemTable_clickShortColumn));
+		if (isFilter)
+			GuiItem_addSubName((GuiItem*)settingsColumn, "filter", GuiItemButton_newNoCenterEx(Quad2i_init4(0, y++, 3, 1), DbValue_initLang("ADD_TO_FILTER"), &GuiItemTable_clickFilterColumn));
+		GuiItem_addSubName((GuiItem*)settingsColumn, "hide", GuiItemButton_newNoCenterEx(Quad2i_init4(0, y++, 3, 1), DbValue_initLang("HIDE"), &GuiItemTable_clickHideColumn));
+
 		if (!mode_summary)
 			GuiItem_addSubName((GuiItem*)settingsColumn, "lock", GuiItemCheck_new(Quad2i_init4(0, y++, 3, 1), DbRows_getSubsOption(self->viewRow, "columns", TRUE, c, "lock", FALSE), DbValue_initLang("LOCK")));
-
-		GuiItem_addSubName((GuiItem*)settingsColumn, "short", GuiItemButton_newNoCenterEx(Quad2i_init4(0, y++, 3, 1), DbValue_initLang("SHORT"), &GuiItemTable_clickShortColumn));
-		GuiItem_addSubName((GuiItem*)settingsColumn, "hide", GuiItemButton_newNoCenterEx(Quad2i_init4(0, y++, 3, 1), DbValue_initLang("HIDE"), &GuiItemTable_clickHideColumn));
 
 		if (!mode_summary)
 		{
@@ -2978,16 +3465,71 @@ GuiItemLayout* GuiItemTable_resize(GuiItemTable* self, GuiItemLayout* layout, Wi
 		width_sum += width;
 	}
 
+	if (!isFilter)
+	{
+		//create new column
+		GuiItemMenu* newColumn = (GuiItemMenu*)GuiItem_addSubName(&cells_layout->base, "+column", GuiItemMenu_new(Quad2i_init4(header_x + width_sum, 0, 2, 1), DbValue_initStaticCopy(_UNI32("+")), FALSE));
+		GuiItemMenu_setHighligthBackground(newColumn, TRUE, 1.0f);
+		GuiItemMenu_setTransparent(newColumn, FALSE);
+		newColumn->base.drawTable = TRUE;
+		newColumn->underline = FALSE;
+		GuiItemMenu_setCloseAuto(newColumn, FALSE);
+		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_text()), DbValue_initLang("COLUMN_TEXT"), &GuiItemTable_clickAddColumn, FALSE, FALSE, DbFormat_TEXT);
+		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_number()), DbValue_initLang("COLUMN_NUMBER_1"), &GuiItemTable_clickAddColumn, FALSE, TRUE, DbFormat_NUMBER_1);
+		//GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_file()), DbValue_initLang("COLUMN_NUMBER_N"), &GuiItemTable_clickAddColumn, FALSE, DbFormat_NUMBER_N);
+		//GuiItemMenu_addItemEmpty(newColumn);
+		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_currency()), DbValue_initLang("COLUMN_CURRENCY"), &GuiItemTable_clickAddColumn, FALSE, FALSE, DbFormat_CURRENCY);
+		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_percentage()), DbValue_initLang("COLUMN_PERCENTAGE"), &GuiItemTable_clickAddColumn, FALSE, FALSE, DbFormat_PERCENTAGE);
+		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_rating()), DbValue_initLang("COLUMN_RATING"), &GuiItemTable_clickAddColumn, FALSE, TRUE, DbFormat_RATING);
+		//GuiItemMenu_addItemEmpty(newColumn);
+		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_phone()), DbValue_initLang("COLUMN_PHONE"), &GuiItemTable_clickAddColumn, FALSE, FALSE, DbFormat_PHONE);
+		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_url()), DbValue_initLang("COLUMN_URL"), &GuiItemTable_clickAddColumn, FALSE, FALSE, DbFormat_URL);
+		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_email()), DbValue_initLang("COLUMN_EMAIL"), &GuiItemTable_clickAddColumn, FALSE, FALSE, DbFormat_EMAIL);
+		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_location()), DbValue_initLang("COLUMN_LOCATION"), &GuiItemTable_clickAddColumn, FALSE, TRUE, DbFormat_LOCATION);
+		//GuiItemMenu_addItemEmpty(newColumn);
+		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_date()), DbValue_initLang("COLUMN_DATE"), &GuiItemTable_clickAddColumn, FALSE, FALSE, DbFormat_DATE);
+		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_menu()), DbValue_initLang("COLUMN_MENU"), &GuiItemTable_clickAddColumn, FALSE, FALSE, DbFormat_MENU);
+		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_tags()), DbValue_initLang("COLUMN_TAGS"), &GuiItemTable_clickAddColumn, FALSE, FALSE, DbFormat_TAGS);
+		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_slider()), DbValue_initLang("COLUMN_SLIDER"), &GuiItemTable_clickAddColumn, FALSE, FALSE, DbFormat_SLIDER);
+		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_check()), DbValue_initLang("COLUMN_CHECK"), &GuiItemTable_clickAddColumn, FALSE, TRUE, DbFormat_CHECK);
+		//GuiItemMenu_addItemEmpty(newColumn);
+		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_insight()), DbValue_initLang("COLUMN_SUMMARY"), &GuiItemTable_clickAddColumn, FALSE, TRUE, DbFormat_SUMMARY);
+		//GuiItemMenu_addItemEmpty(newColumn);
+		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_link()), DbValue_initLang("COLUMN_LINK_1"), &GuiItemTable_clickAddColumn, FALSE, FALSE, DbFormat_LINK_1);
+		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_link()), DbValue_initLang("COLUMN_LINK_N"), &GuiItemTable_clickAddColumn, FALSE, FALSE, DbFormat_LINK_N);
+		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_link()), DbValue_initLang("COLUMN_LINK_MIRRORED"), &GuiItemTable_clickAddColumn, FALSE, FALSE, DbFormat_LINK_MIRRORED);
+		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_link()), DbValue_initLang("COLUMN_LINK_JOINTED"), &GuiItemTable_clickAddColumn, FALSE, FALSE, DbFormat_LINK_JOINTED);
+		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_link()), DbValue_initLang("COLUMN_LINK_FILTERED"), &GuiItemTable_clickAddColumn, FALSE, TRUE, DbFormat_LINK_FILTERED);
+		//GuiItemMenu_addItemEmpty(newColumn);
+		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_file()), DbValue_initLang("COLUMN_FILE_1"), &GuiItemTable_clickAddColumn, FALSE, FALSE, DbFormat_FILE_1);
+		GuiItemMenu_addItemIcon(newColumn, GuiImage_new1(UiIcons_init_column_file()), DbValue_initLang("COLUMN_FILE_N"), &GuiItemTable_clickAddColumn, FALSE, FALSE, DbFormat_FILE_N);
+	}
+
+	//top add record
+	{
+		GuiItem_addSubName(&ids_layout->base, "+record_top", GuiItemButton_newAlphaEx(Quad2i_init4(0, 0, 1, 1), DbValue_initStaticCopyCHAR("@"), &GuiItemTable_clickAddRecord));
+	}
+
+	//Id description
+	{
+		GuiItemMenu* mn = (GuiItemMenu*)GuiItem_addSubName(&ids_layout->base, "id_columns", GuiItemMenu_new(Quad2i_init4(1, 0, self->showChangeOrder + 1, 1), DbValue_initLang("ROWS_TITLES"), FALSE));
+		GuiItemMenu_setContext(mn, GuiItemTable_buildIDShowedList(Quad2i_init(), self->viewRow));
+
+		GuiItem_setDropIN(&mn->base, "column", DbRows_initEmpty());
+		GuiItem_setDropCallback(&mn->base, &GuiItemTable_callbackDropIdColumn);
+		mn->base.dropDontRemove = TRUE;
+	}
+
 	//order
 	if (self->showChangeOrder)
 	{
-		self->subs_start_rowOptionOrder = layout->base.subs.num;
+		self->subs_ids_start_rowOptionOrder = ids_layout->base.subs.num;
 		for (r = 0; r < self->num_rows_max; r++)
 		{
 			char nameId[64];
 			snprintf(nameId, 64, "%lld_o", r);
 
-			GuiItem* drag = GuiItem_addSubName(&layout->base, nameId, GuiItemBox_newEmpty(Quad2i_init4(0, header_y + r * RS, 1, RS)));
+			GuiItem* drag = GuiItem_addSubName(&ids_layout->base, nameId, GuiItemBox_newEmpty(Quad2i_init4(0, header_y + r * RS, 1, RS)));
 			GuiItem_setIcon(drag, GuiImage_new1(UiIcons_init_reoder()));
 			GuiItem_setDrop(drag, self->changeOrderNameSrc, self->changeOrderNameDst, FALSE, DbRows_initCopy(&self->filter), -1);
 			drag->dropDontRemove = TRUE;
@@ -2995,7 +3537,7 @@ GuiItemLayout* GuiItemTable_resize(GuiItemTable* self, GuiItemLayout* layout, Wi
 	}
 
 	//cards
-	self->subs_start_rowOptionCards = layout->base.subs.num;
+	self->subs_ids_start_rowOptionCards = ids_layout->base.subs.num;
 	for (r = 0; r < self->num_rows_max; r++)
 	{
 		char nameId[64];
@@ -3004,42 +3546,78 @@ GuiItemLayout* GuiItemTable_resize(GuiItemTable* self, GuiItemLayout* layout, Wi
 		const Quad2i grid = Quad2i_init4(self->showChangeOrder, header_y + r * RS, 1, RS);
 
 		//card button
-		GuiItem_addSubName(&layout->base, nameId, GuiItemButton_newImage(grid, GuiImage_new1(UiIcons_init_card()), TRUE, &GuiItemTable_clickShowPage));
+		GuiItem_addSubName(&ids_layout->base, nameId, GuiItemButton_newImage(grid, GuiImage_new1(UiIcons_init_card()), TRUE, &GuiItemTable_clickShowPage));
 	}
 
-	width_sum = GuiItemTable_getColumnIdsWidth(self);
 	//rows ids(first column)
-	self->subs_start_rowOption = layout->base.subs.num;
+	self->subs_ids_start_rowOption = ids_layout->base.subs.num;
 	for (r = 0; r < self->num_rows_max; r++)
 	{
 		char nameId[64];
 		snprintf(nameId, 64, "%lld_i", r);
 
-		const Quad2i grid = Quad2i_init4(self->showChangeOrder + 1, header_y + r * RS, width_sum, RS);
+		const Quad2i grid = Quad2i_init4(self->showChangeOrder + 1, header_y + r * RS, 1, RS);
 		if (self->showAddButton)
 		{
-			GuiItem_addSubName(&layout->base, nameId, GuiItemButton_newClassicEx(grid, DbValue_initLang("ADD"), &UiDialogLink_clickLinkDialogAddOne));
+			GuiItem_addSubName(&ids_layout->base, nameId, GuiItemButton_newClassicEx(grid, DbValue_initLang("ADD"), &UiDialogLink_clickLinkDialogAddOne));
 		}
 		else
 			if (self->showRemoveButton)
 			{
-				GuiItem_addSubName(&layout->base, nameId, GuiItemButton_newClassicEx(grid, DbValue_initStaticCopy(_UNI32("X")), &GuiItemTable_clickRemoveRow));
+				GuiItem_addSubName(&ids_layout->base, nameId, GuiItemButton_newClassicEx(grid, DbValue_initStaticCopy(_UNI32("X")), &GuiItemTable_clickRemoveRow));
 			}
 			else
 			{
-				GuiItemMenu* mn = (GuiItemMenu*)GuiItem_addSubName(&layout->base, nameId, GuiItemMenu_new(grid, DbValue_initGET(DbTable_getIdsColumn(GuiItemTable_getTable(self)), -1), FALSE));
+				GuiItemLayout* headColumn = GuiItemLayout_new(grid);
+				GuiItem_addSubName(&ids_layout->base, nameId, &headColumn->base);
+
+				//text
+				GuiItemMenu* mn = (GuiItemMenu*)GuiItem_addSubName(&headColumn->base, "id", GuiItemMenu_new(Quad2i_init4(0, 0, 1, RS), DbValue_initGET(DbTable_getIdsColumn(GuiItemTable_getTable(self)), -1), FALSE));
+				GuiItemLayout_addColumn(headColumn, 0, 99);
 				GuiItemMenu_addItem(mn, DbValue_initLang("CARD"), &GuiItemTable_clickShowPage);
 				if (!mode_summary)
 					GuiItemMenu_addItem(mn, DbValue_initLang("REMOVE"), &GuiItemTable_clickRemoveRow);
-				GuiItemMenu_setHighligthBackground(mn, TRUE);
+				GuiItemMenu_setHighligthBackground(mn, TRUE, 1.0f);
 				GuiItemMenu_setTransparent(mn, FALSE);
 				mn->base.drawTable = TRUE;
+
+				BIG idColumnsRow = DbRows_findOrCreateSubType(self->viewRow, "id_columns");
+				int ic = 0;
+				UBIG i = 0;
+				BIG it;
+				while ((it = DbColumnN_jump(DbRoot_subs(), idColumnsRow, &i, 1)) >= 0)
+				{
+					if (DbRows_isEnable(it))
+					{
+						DbColumn* idColumn = DbRoot_ref_column(it);
+
+						GuiItemLayout_addColumn(headColumn, 1 + ic, 99);
+						GuiItem* name = GuiItem_addSubName((GuiItem*)headColumn, "value", GuiItemTable_getCardSkinItem(Quad2i_init4(1 + ic, 0, 1, RS), DbValue_initGET(idColumn, -1), FALSE, self->searchHighlight));
+						name->drawTable = TRUE;
+						if (name->type == GuiItem_TEXT)
+							((GuiItemText*)name)->drawBackground = FALSE;
+						GuiItem_setTouchRecommand(name, DbValue_getOptionNumber(idColumnsRow, "edit", 0));
+
+						ic++;
+					}
+
+					i++;
+				}
 			}
+
+		GuiItemLayout_addColumn(ids_layout, grid.start.x, 99);
+	}
+
+	if (self->showAddRecord && !mode_summary)
+	{
+		self->subs_ids_add_record = ids_layout->base.subs.num;
+		GuiItemButton* b = (GuiItemButton*)GuiItem_addSubName(&ids_layout->base, "+record", GuiItemButton_newClassicEx(Quad2i_init(), DbValue_initStaticCopyCHAR("+"), &GuiItemTable_clickAddRecord));
+		GuiItem_setShow(&b->base, FALSE);	//update will set it visible
 	}
 
 	//cells
-	self->subs_start_rowCell = layout->base.subs.num;
-	//width_sum = 0;
+	self->subs_cells_start = cells_layout->base.subs.num;
+	width_sum = 0;// GuiItemTable_getColumnIdsWidth(self);
 	for (c = 0; c < N_COLS; c++)
 	{
 		const int width = GuiItemTable_getColumnWidth(self, c);
@@ -3050,20 +3628,74 @@ GuiItemLayout* GuiItemTable_resize(GuiItemTable* self, GuiItemLayout* layout, Wi
 
 			Quad2i q = Quad2i_init4(header_x + width_sum, header_y + r * RS, width, RS);
 
-			GuiItem* itt = GuiItem_addSubName(&layout->base, nameId, GuiItemTable_getCardSkinItem(q, DbRows_getSubsCell(self->viewRow, "columns", TRUE, c, -1), FALSE));// , FALSE));
+			GuiItem* itt = GuiItem_addSubName(&cells_layout->base, nameId, GuiItemTable_getCardSkinItem(q, DbRows_getSubsCell(self->viewRow, "columns", TRUE, c, -1), FALSE, self->searchHighlight));// , FALSE));
 			itt->drawTable = TRUE;
 		}
 
 		width_sum += width;
 	}
-	self->subs_end_rowCell = layout->base.subs.num;
+	self->subs_cells_end = cells_layout->base.subs.num;
 
-	if (self->showAddRecord && !mode_summary)
+	//insights
 	{
-		self->subs_start_add = layout->base.subs.num;
-		GuiItemButton* b = (GuiItemButton*)GuiItem_addSubName(&layout->base, "+record", GuiItemButton_newClassicEx(Quad2i_init4(0, self->num_rows_max, 1, 1), DbValue_initStaticCopyCHAR("+"), &GuiItemTable_clickAddRecord));
-		GuiItemButton_setCircle(b, TRUE);
-		GuiItem_setShow(&b->base, FALSE);	//update will set it visible
+		GuiItemLayout* ids_layout2 = GuiItemLayout_new(Quad2i_init4(0, 1, 1, 1));
+		//GuiItemLayout_setDrawBackground(ids_layout2, FALSE);
+		//GuiItemLayout_setBackgroundBlack(ids_layout2, TRUE);
+		GuiItemLayout_showScroll(ids_layout2, FALSE, FALSE);
+		GuiItemLayout_addColumn(ids_layout2, 0, 99);
+		GuiItem_addSubName(&layout->base, "ids_layout", &ids_layout2->base);
+
+		GuiItemLayout* cells_layout2 = GuiItemLayout_new(Quad2i_init4(1, 1, 1, 1));
+		//GuiItemLayout_setDrawBackground(cells_layout2, FALSE);
+		GuiItemLayout_showScroll(cells_layout2, FALSE, FALSE);
+		GuiItemLayout_setScrollH(cells_layout2, DbValue_initCopy(&self->scrollH));
+		GuiItem_addSubName(&layout->base, "cells_layout", &cells_layout2->base);
+
+		//num records
+		{
+			DbValue nrv = DbValue_initNumber(0);
+			nrv.staticPost = Std_newUNI_char("x");
+			GuiItemText* t = (GuiItemText*)GuiItem_addSubName(&ids_layout2->base, "#records", GuiItemText_new(Quad2i_init4(0, 0, 1, 1), TRUE, nrv, DbValue_initEmpty()));
+			GuiItemText_setWhiteBack(t, TRUE);
+		}
+
+		//columns
+		width_sum = 0;
+		for (c = 0; c < N_COLS; c++)
+		{
+			const int width = GuiItemTable_getColumnWidth(self, c);
+			DbColumn* col = GuiItemTable_getColumn(self, c);
+			BIG crow = GuiItemTable_getColumnRow(self, c);	//table/filter
+
+			char nameId[64];
+			snprintf(nameId, 64, "%lld_%lld_insight", c, r);
+
+			{
+				GuiItemLayout* headColumn = GuiItemLayout_new(Quad2i_init4(width_sum, 0, width, 1));
+				GuiItemLayout_setBackgroundWhite(headColumn, TRUE);
+				headColumn->extraSpace = 2;
+
+				GuiItemLayout_addColumn(headColumn, 0, 99);
+				GuiItemLayout_addColumn(headColumn, 1, 3);
+				GuiItem_addSubName(&cells_layout2->base, nameId, &headColumn->base);
+
+				//text
+				DbValue val = DbValue_initInsight(1, &self->filter, col);
+				GuiItem_addSubName(&headColumn->base, "value", GuiItemText_new(Quad2i_init4(0, 0, 1, 1), TRUE, val, DbValue_initEmpty()));
+
+				//function
+				GuiItemComboStatic* func = GuiItem_addSubName(&headColumn->base, "summary_func", GuiItemComboStatic_new(Quad2i_init4(1, 0, 1, 1), DbValue_initOption(crow, "insight_head_func", 0), 0, DbValue_initEmpty()));
+				int i;
+				for (i = 0; i < DbInsightSelectFunc_num(); i++)
+					GuiItemComboStatic_addItem(func, DbValue_initLang(DbInsightSelectFunc_getName(i)));
+			}
+
+			width_sum += width;
+		}
+
+		if (!isFilter)
+			GuiItem_addSubName(&cells_layout2->base, "+column_empty_box", GuiItemBox_newEmpty(Quad2i_init4(width_sum, 0, 2, 1)));
+
 	}
 
 	return layout;
@@ -3075,49 +3707,62 @@ void GuiItemTable_clickSelectRemove(GuiItem* item)
 	DbRoot_removeRow(row);
 }
 
+BOOL GuiItemTable_highlightEdit(GuiItem* item)
+{
+	GuiItemEdit* self = (GuiItemEdit*)item;
+	return GuiItemEdit_getNumber(self) > 0;
+}
+
 void GuiItemTable_rebuildSelectList(GuiItem* item)
 {
 	GuiItem_freeSubs(item);
 
-	GuiItemLayout* lines = (GuiItemLayout*)item;
+	GuiItemLayout* layout = (GuiItemLayout*)item;
 	BIG selectRow = GuiItem_findAttribute(item, "row");
-
 	DbTable* table = DbRoot_findParentTable(GuiItem_findAttribute(item, "tableRow"));
 
-	GuiItemLayout_addColumn(lines, 2, 3);
-	GuiItemLayout_addColumn(lines, 3, 10);
-	GuiItemLayout_addColumn(lines, 4, 4);
-	GuiItemLayout_addColumn(lines, 5, 15);
+	GuiItemLayout_addColumn(layout, 0, 2);
+	GuiItemLayout_addColumn(layout, 1, 20);
 
 	int y = 0;
+
+	//enable all
+	GuiItem_addSubName((GuiItem*)layout, "on", GuiItemCheck_new(Quad2i_init4(0, y++, 2, 1), DbValue_initOptionEnable(selectRow), DbValue_initLang("SELECT_ENABLE")));
+
 	UBIG i = 0;
 	BIG it;
 	while ((it = DbColumnN_jump(DbRoot_subs(), selectRow, &i, 1)) >= 0)
 	{
-		char nameId[64];
+		//skin
+		GuiItemLayout* skin = GuiItemLayout_new(Quad2i_init4(0, y++, 2, 1));
+		GuiItem_setAttribute((GuiItem*)skin, "row", it);
+		GuiItemLayout_addColumn(skin, 2, 3);
+		GuiItemLayout_addColumn(skin, 3, 6);
+		GuiItemLayout_addColumn(skin, 4, 4);
+		GuiItemLayout_addColumn(skin, 5, 6);
 
 		//drag
-		GuiItem* drag = GuiItem_addSubName((GuiItem*)lines, _GuiItemTable_getNameId(nameId, "%lld_drag", i), GuiItemBox_newEmpty(Quad2i_init4(0, y, 1, 1)));
+		GuiItem* drag = GuiItem_addSubName((GuiItem*)skin, "drag", GuiItemBox_newEmpty(Quad2i_init4(0, 0, 1, 1)));
 		GuiItem_setRow(drag, it, 0);
 		GuiItem_setIcon(drag, GuiImage_new1(UiIcons_init_reoder()));
 		GuiItem_setDrop(drag, "select", "select", FALSE, DbRows_initLinkN(DbRoot_subs(), selectRow), -1);
 
 		//on/off
-		GuiItem_addSubName((GuiItem*)lines, _GuiItemTable_getNameId(nameId, "%lld_on", i), GuiItemCheck_new(Quad2i_init4(1, y, 1, 1), DbValue_initOptionEnable(it), DbValue_initEmpty()));
+		GuiItem* on = GuiItem_addSubName((GuiItem*)skin, "on", GuiItemCheck_new(Quad2i_init4(1, 0, 1, 1), DbValue_initOptionEnable(it), DbValue_initEmpty()));
 
 		//and/or
 		GuiItem* andOr = 0;
-		if (y)
-			andOr = GuiItem_addSubName((GuiItem*)lines, _GuiItemTable_getNameId(nameId, "%lld_ascending", i), GuiItemComboStatic_new(Quad2i_init4(2, y, 1, 1), DbValue_initOption(it, "ascending", 0), Lang_find("BOOLEAN_OPTIONS"), DbValue_initEmpty()));
+		if (y > 2)
+			andOr = GuiItem_addSubName((GuiItem*)skin, "ascending", GuiItemComboStatic_new(Quad2i_init4(2, 0, 1, 1), DbValue_initOption(it, "ascending", 0), Lang_find("BOOLEAN_OPTIONS"), DbValue_initEmpty()));
 
 		//column
 		DbRows rows = DbRows_initLink1(DbRoot_ref(), DbRoot_findOrCreateChildType(it, "column"));
 		BIG columnRow = DbRows_getRow(&rows, 0);
 		DbColumn* column = DbRoot_findColumn(columnRow);
-		GuiItem* cbb = GuiItem_addSubName((GuiItem*)lines, _GuiItemTable_getNameId(nameId, "%lld_name", i), GuiItemComboDynamic_new(Quad2i_init4(3, y, 1, 1), TRUE, rows, DbValue_initOption(-1, "name", 0), DbRows_initSubs(table, "columns", TRUE), DbValue_initEmpty()));
+		GuiItem* cbb = GuiItem_addSubName((GuiItem*)skin, "columns", GuiItemComboDynamic_new(Quad2i_init4(3, 0, 1, 1), TRUE, rows, DbValue_initOption(-1, "name", 0), DbRows_initSubs(table, "columns", TRUE), DbValue_initEmpty()));
 
-		Quad2i editGrid = Quad2i_init4(5, y, 1, 1);
-		Quad2i removeGrid = Quad2i_init4(6, y, 1, 1);
+		Quad2i editGrid = Quad2i_init4(5, 0, 1, 1);
+		Quad2i removeGrid = Quad2i_init4(6, 0, 1, 1);
 
 		GuiItem* type = 0;
 		GuiItem* edit = 0;
@@ -3127,7 +3772,7 @@ void GuiItemTable_rebuildSelectList(GuiItem* item)
 			DbValue tp = DbValue_initOption(it, "func", 0);
 			const int fnIndex = DbValue_getNumber(&tp);
 			UNI* options = DbFilterSelectFunc_getList(DbColumnFormat_findColumn(column));
-			type = GuiItem_addSubName((GuiItem*)lines, _GuiItemTable_getNameId(nameId, "%lld_func", i), GuiItemComboStatic_new(Quad2i_init4(4, y, 1, 1), tp, options, DbValue_initEmpty()));
+			type = GuiItem_addSubName((GuiItem*)skin, "func", GuiItemComboStatic_new(Quad2i_init4(4, 0, 1, 1), tp, options, DbValue_initEmpty()));
 			Std_deleteUNI(options);
 
 			const char* funcName = DbFilterSelectFunc_getName(DbColumnFormat_findColumn(column), fnIndex);
@@ -3154,7 +3799,7 @@ void GuiItemTable_rebuildSelectList(GuiItem* item)
 								edit = GuiItemEdit_new(editGrid, DbValue_initOption(it, "value", 0), DbValue_initEmpty());
 
 								//combo(years, months, days, ...)
-								GuiItemComboStatic* combo = (GuiItemComboStatic*)GuiItemComboStatic_new(Quad2i_init4(6, y, 1, 1), DbValue_initOption(it, "valueEx", 0), 0, DbValue_initEmpty());
+								GuiItemComboStatic* combo = (GuiItemComboStatic*)GuiItemComboStatic_new(Quad2i_init4(6, 0, 1, 1), DbValue_initOption(it, "valueEx", 0), 0, DbValue_initEmpty());
 								GuiItemComboStatic_addItem(combo, DbValue_initLang("YEARS"));
 								GuiItemComboStatic_addItem(combo, DbValue_initLang("MONTHS"));
 								GuiItemComboStatic_addItem(combo, DbValue_initLang("DAYS"));
@@ -3162,8 +3807,8 @@ void GuiItemTable_rebuildSelectList(GuiItem* item)
 								GuiItemComboStatic_addItem(combo, DbValue_initLang("MINUTES"));
 								GuiItemComboStatic_addItem(combo, DbValue_initLang("SECONDS"));
 
-								GuiItem_addSubName((GuiItem*)lines, _GuiItemTable_getNameId(nameId, "%lld_valueEx", i), (GuiItem*)combo);
-								GuiItemLayout_addColumn(lines, 6, 4);
+								GuiItem_addSubName((GuiItem*)skin, "valueEx", (GuiItem*)combo);
+								GuiItemLayout_addColumn(skin, 6, 4);
 								removeGrid.start.x = 7;
 							}
 							else
@@ -3182,16 +3827,17 @@ void GuiItemTable_rebuildSelectList(GuiItem* item)
 							if (format == DbFormat_CHECK)
 							{
 								edit = GuiItemCheck_new(editGrid, DbValue_initOption(it, "value", 0), DbValue_initEmpty());
+								((GuiItemCheck*)edit)->center = TRUE;
 							}
 							else
 								edit = GuiItemEdit_new(editGrid, DbValue_initOption(it, "value", 0), DbValue_initEmpty());
 			}
 			if (edit)
-				GuiItem_addSubName((GuiItem*)lines, _GuiItemTable_getNameId(nameId, "%lld_value", i), edit);
+				GuiItem_addSubName((GuiItem*)skin, "value", edit);
 		}
 
 		//remove
-		GuiItem* remove = GuiItem_addSubName((GuiItem*)lines, _GuiItemTable_getNameId(nameId, "%lld_remove", i), GuiItemButton_newClassicEx(removeGrid, DbValue_initStaticCopyCHAR("X"), &GuiItemTable_clickSelectRemove));
+		GuiItem* remove = GuiItem_addSubName((GuiItem*)skin, "remove", GuiItemButton_newClassicEx(removeGrid, DbValue_initStaticCopyCHAR("X"), &GuiItemTable_clickSelectRemove));
 		GuiItem_setRow(remove, it, 0);
 
 		if (andOr)	GuiItem_setEnableCallback((GuiItem*)andOr, &GuiItem_enableEnableAttr);
@@ -3199,11 +3845,25 @@ void GuiItemTable_rebuildSelectList(GuiItem* item)
 		if (type)	GuiItem_setEnableCallback((GuiItem*)type, &GuiItem_enableEnableAttr);
 		if (edit)	GuiItem_setEnableCallback((GuiItem*)edit, &GuiItem_enableEnableAttr);
 
-		y++;
+		//GuiItem_setRow((GuiItem*)skin, it, 0);
+		GuiItem_setEnableCallback((GuiItem*)skin, &GuiItem_enableEnableParentAttr);
+		char nameId[64];
+		snprintf(nameId, 64, "%lld_line", i);
+		GuiItem_addSubName((GuiItem*)layout, nameId, (GuiItem*)skin);
+
 		i++;
 	}
 
-	GuiItemLayout_addRow((GuiItemLayout*)GuiItem_getParent(item), 2, y + 1);
+	//add
+	GuiItemButton* add = (GuiItemButton*)GuiItem_addSubName((GuiItem*)layout, "+", GuiItemButton_newBlackEx(Quad2i_init4(0, y++, 1, 1), DbValue_initStaticCopy(_UNI32("+")), &GuiItemTable_clickAddSubLine));
+	y++;
+
+	//maxRecords
+	GuiItem* maxRecords = GuiItem_addSubName((GuiItem*)layout, "maxRecords", GuiItemEdit_newEx(Quad2i_init4(0, y, 2, 2), DbValue_initOption(selectRow, "maxRecords", 0), DbValue_initLang("MAX_RECORDS"), 0));
+	GuiItemEdit_setHighlightCallback((GuiItemEdit*)maxRecords, &GuiItemTable_highlightEdit);
+
+	GuiItem_setEnableCallback((GuiItem*)add, &GuiItem_enableEnableAttr);
+	GuiItem_setEnableCallback((GuiItem*)maxRecords, &GuiItem_enableEnableAttr);
 }
 
 void GuiItemTable_clickAddSubLine(GuiItem* item)
@@ -3219,53 +3879,14 @@ void GuiItemTable_clickAddSubLine(GuiItem* item)
 	DbRows_free(&rows);
 }
 
-BOOL GuiItemTable_highlightEdit(GuiItem* item)
-{
-	GuiItemEdit* self = (GuiItemEdit*)item;
-	return GuiItemEdit_getNumber(self) > 0;
-}
-
 GuiItemLayout* GuiItemTable_buildSelectList(Quad2i grid, UBIG row, DbTable* table)
 {
 	GuiItemLayout* layout = GuiItemLayout_new(grid);
-	GuiItemLayout_addColumn(layout, 0, 30);
 
-	if (table)
-	{
-		BIG selectRow = DbRows_findOrCreateSubType(row, "select");
-		GuiItem_setAttribute((GuiItem*)layout, "row", selectRow);
-		GuiItem_setAttribute((GuiItem*)layout, "tableRow", DbTable_getRow(table));
+	BIG selectRow = DbRows_findOrCreateSubType(row, "select");
+	GuiItem_setAttribute((GuiItem*)layout, "row", selectRow);
+	GuiItem_setAttribute((GuiItem*)layout, "tableRow", DbTable_getRow(table));
 
-		//enable all
-		GuiItem_addSubName((GuiItem*)layout, "on", GuiItemCheck_new(Quad2i_init4(0, 0, 1, 1), DbValue_initOptionEnable(selectRow), DbValue_initLang("SELECT_ENABLE")));
-
-		//add
-		GuiItemButton* add = (GuiItemButton*)GuiItem_addSubName((GuiItem*)layout, "+", GuiItemButton_newBlackEx(Quad2i_init4(0, 1, 1, 1), DbValue_initStaticCopy(_UNI32("+")), &GuiItemTable_clickAddSubLine));
-
-		//lines
-		GuiItemLayout* lines = GuiItemLayout_new(Quad2i_init4(0, 2, 1, 1));
-		GuiItemLayout_setDrawBackground(lines, FALSE);
-		GuiItem_addSubName((GuiItem*)layout, "list", (GuiItem*)lines);
-		GuiItemLayout_setResize(lines, &GuiItemTable_rebuildSelectList);
-
-		int y = 0;
-		UBIG i = 0;
-		BIG it;
-		while ((it = DbColumnN_jump(DbRoot_subs(), selectRow, &i, 1)) >= 0)
-		{
-			i++;
-			y++;
-		}
-		GuiItemLayout_addRow(layout, 2, y + 1);
-
-		//maxRecords
-		GuiItem* maxRecords = GuiItem_addSubName((GuiItem*)layout, "maxRecords", GuiItemEdit_newEx(Quad2i_init4(0, 3, 1, 2), DbValue_initOption(selectRow, "maxRecords", 0), DbValue_initLang("MAX_RECORDS"), 0));
-		GuiItemEdit_setHighlightCallback((GuiItemEdit*)maxRecords, &GuiItemTable_highlightEdit);
-
-		GuiItem_setEnableCallback((GuiItem*)add, &GuiItem_enableEnableAttr);
-		GuiItem_setEnableCallback((GuiItem*)lines, &GuiItem_enableEnableAttr);
-		GuiItem_setEnableCallback((GuiItem*)maxRecords, &GuiItem_enableEnableAttr);
-	}
-
+	GuiItemLayout_setResize(layout, &GuiItemTable_rebuildSelectList);
 	return layout;
 }

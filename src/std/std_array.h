@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -142,7 +142,7 @@ void StdArr_swap(StdArr* self, UBIG iA, BIG iB)
 	self->ptrs[iB] = backup;
 }
 
-void* StdArr_get(StdArr* self, UBIG i)
+void* StdArr_get(const StdArr* self, UBIG i)
 {
 	return (i < self->num) ? self->ptrs[i] : 0;
 }

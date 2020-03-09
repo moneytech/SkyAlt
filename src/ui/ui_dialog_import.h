@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -41,21 +41,25 @@ void UiDialogImport_clickImport(GuiItem* item)
 		BOOL firstRowColumnNames = GuiItemCheck_isActive((GuiItemCheck*)GuiItem_findName(item, "rowColumnNames"));
 		BOOL recognizeColumnType = GuiItemCheck_isActive((GuiItemCheck*)GuiItem_findName(item, "recognizeColumnType"));
 
+
+//rozpoznat koncovku ...
+//nahrát více souborù ...
+
 		{
 			char* path = Std_newCHAR_uni(pathUNI);
-			char* path_folder;
+			/*char* path_folder;
 			char* path_name;
 			OsFile_getParts(path, &path_folder, &path_name);
-			UNI* pathNameUNI = Std_newUNI_char(path_name);
+			UNI* pathNameUNI = Std_newUNI_char(path_name);*/
 
 			if (type == UI_IMPORT_CSV)
 				IOCsv_read(path, firstRowColumnNames, recognizeColumnType, &rows);	//csv
 			else
 				IOTsv_read(path, firstRowColumnNames, recognizeColumnType, &rows);	//tsv
 
-			Std_deleteUNI(pathNameUNI);
+			/*Std_deleteUNI(pathNameUNI);
 			Std_deleteCHAR(path_folder);
-			Std_deleteCHAR(path_name);
+			Std_deleteCHAR(path_name);*/
 			Std_deleteCHAR(path);
 		}
 	}
@@ -88,6 +92,8 @@ GuiItemLayout* UiDialogImport_newBase(BIG row, UINT importType)
 	//path
 	GuiItemEdit* path = (GuiItemEdit*)GuiItem_addSubName((GuiItem*)layout, "path", GuiItemEdit_new(Quad2i_init4(0, 0, 2, 2), DbValue_initEmpty(), DbValue_initLang("PATH")));
 	GuiItemEdit_setShowPicker(path, TRUE, TRUE, FALSE, TRUE, Lang_find("IMPORT"), 0);
+
+	_UNI32("*.csv;*.csv");
 
 	//options
 	GuiItem_addSubName((GuiItem*)layout, "importAs", GuiItemComboStatic_newEx(Quad2i_init4(0, 3, 2, 1), DbValue_initNumber(importType), Lang_find("IMPORT_OPTIONS"), DbValue_initEmpty(), &UiDialogImport_clickType));

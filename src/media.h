@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -15,7 +15,9 @@ typedef struct MediaLibrary_s MediaLibrary;
 
 BOOL MediaLibrary_new(void);
 void MediaLibrary_delete(void);
-BOOL MediaLibrary_add(FileRow fileId, Vec2i img_rectSize, BOOL* out_image, BOOL* out_audio, BOOL* out_text);
+BOOL MediaLibrary_addImage(FileRow fileId, Vec2i img_rectSize);
+BOOL MediaLibrary_addAudio(FileRow fileId);
+BOOL MediaLibrary_add(FileRow fileId, Vec2i img_rectSize, BOOL* out_image, BOOL* out_audio, BOOL* out_text, BOOL* out_map);
 BOOL MediaLibrary_addImageBuffer(const char* url, const char* ext, UCHAR* buff, UBIG bytes, Vec2i rectSize);
 
 BOOL MediaLibrary_hasImageBuffer(const char* url, const char* ext, Vec2i imgSize);
@@ -26,7 +28,7 @@ BOOL MediaLibrary_imageBufferUpdate(const char* url, const char* ext, Vec2i imgS
 void MediaLibrary_imageDrawExt(FileRow fileId, Image4* img, Quad2i coord, int textH, Rgba cd);
 void MediaLibrary_imageDrawInfo(FileRow fileId, Image4* img, Quad2i coord, int textH, Rgba cd);
 BOOL MediaLibrary_imageDraw(FileRow fileId, Image4* img, Quad2i coord);
-BOOL MediaLibrary_imageBufferDraw(const char* url, const char* ext, Image4* img, Quad2i coord);
+BOOL MediaLibrary_imageBufferDraw(const char* url, const char* ext, Image4* img, Quad2i coord, float scale);
 
 void MediaLibrary_setVolume(float volume);
 BOOL MediaLibrary_isPlayingSomething(void);

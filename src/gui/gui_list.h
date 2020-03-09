@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -106,10 +106,10 @@ GuiItem* GuiItemList_newButtonsMenu(Quad2i grid, DbRows source, DbValue descript
 	return GuiItemList_new(grid, source, &layout->base, description);
 }
 
-void GuiItemList_disableScrollSend(GuiItemList* self)
+/*void GuiItemList_disableScrollSend(GuiItemList* self)
 {
 	self->scroll.sendScrollDown = FALSE;
-}
+}*/
 
 void GuiItemList_setShowScroll(GuiItemList* self, BOOL showScroll)
 {
@@ -137,6 +137,12 @@ void GuiItemList_setSource(GuiItemList* self, DbRows filter)
 {
 	DbRows_free(&self->filter);
 	self->filter = filter;
+}
+
+void GuiItemList_setScroll(GuiItemList* self, DbValue value)
+{
+	GuiScroll_free(&self->scroll);
+	self->scroll = GuiScroll_init(value);
 }
 
 void GuiItemList_setDrawBackground(GuiItemList* self, BOOL drawBackground)
@@ -449,6 +455,11 @@ GuiItemLayout* GuiItemList_resize(GuiItemList* self, GuiItemLayout* layout, Win*
 
 				cit = GuiItemButton_newClassicEx(Quad2i_init4(0, center, 1, 1), DbValue_initStaticCopy(_UNI32("X")), &GuiItemList_clickRemove);
 				cit->show = FALSE;
+
+				if (skin->type == GuiItem_LAYOUT && ((GuiItemLayout*)skin)->back_cd_value.column)
+					GuiItemButton_setBackgroundCdValue((GuiItemButton*)cit, TRUE, DbValue_initCopy(&((GuiItemLayout*)skin)->back_cd_value));
+
+
 				GuiItem_addSubName(&layout3->base, "x", cit);
 			}
 

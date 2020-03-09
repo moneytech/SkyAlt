@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -155,6 +155,26 @@ BIG DbColumn1_findRowPos(const DbColumn1* self, FileRow row)
 
 	return -1;
 }
+
+BIG DbColumn1_findRowScroll(const DbColumn1* self, BIG r)
+{
+	const UBIG NUM_ROWS = DbColumn_numRows(&self->base);
+	UBIG pos = 0;
+	UBIG i;
+	for (i = 0; i < NUM_ROWS; i++)
+	{
+		FileRow row = DbColumn1_getFileId(self, i);
+		if(FileRow_is(row))
+		{
+			if (FileRow_isRow(row, r))
+				return pos;
+
+			pos++;	//only for valid rows
+		}
+	}
+	return -1;
+}
+
 
 void DbColumn1_deleteRowData(DbColumn1* self, const UBIG r)
 {

@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -26,7 +26,7 @@ typedef struct GuiScroll_s
 
 	BOOL redraw;
 
-	BOOL sendScrollDown;
+	//BOOL sendScrollDown;
 
 	DbValue value;
 
@@ -35,7 +35,8 @@ typedef struct GuiScroll_s
 
 static UBIG GuiScroll_getWheel(const GuiScroll* self)
 {
-	return self->wheel;
+	return (self->data_height > self->screen_height) ? Std_bclamp(self->wheel, 0, (self->data_height - self->screen_height)) : 0;
+	//return self->wheel;
 }
 
 UBIG GuiScroll_getWheelRow(const GuiScroll* self)
@@ -46,11 +47,13 @@ UBIG GuiScroll_getWheelRow(const GuiScroll* self)
 void GuiScroll_setWheelDirect(GuiScroll* self, BIG wheel)
 {
 	self->wheel = wheel;
+	DbValue_setNumber(&self->value, wheel);
 }
 
 void GuiScroll_setWheel(GuiScroll* self, BIG wheelPixel)
 {
 	UBIG oldWheel = self->wheel;
+
 	self->wheel = (self->data_height > self->screen_height) ? Std_bclamp(wheelPixel, 0, (self->data_height - self->screen_height)) : 0;
 
 	if (oldWheel != self->wheel)
@@ -81,7 +84,14 @@ void GuiScroll_set(GuiScroll* self, UBIG data_height, UBIG screen_height, UBIG i
 	if (self->item_height == 0)
 		self->item_height = 1;
 
-	GuiScroll_setWheel(self, self->wheel);
+	//GuiScroll_setWheel(self, self->wheel);
+}
+
+void GuiScroll_setValue(GuiScroll* self, DbValue value)
+{
+	DbValue_free(&self->value);
+	self->value = value;
+	self->wheel = DbValue_getNumber(&self->value);
 }
 
 GuiScroll GuiScroll_init(DbValue value)
@@ -90,17 +100,18 @@ GuiScroll GuiScroll_init(DbValue value)
 	self.clickFront = FALSE;
 	self.clickRel = 0;
 	self.redraw = TRUE;
-	self.value = value;
-
-	self.wheel = DbValue_getNumber(&value);
+	self.value = DbValue_initEmpty();
 	self.data_height = 1;
 	self.screen_height = 1;
 	self.item_height = 1;
 
-	self.sendScrollDown = TRUE;
+	//self.sendScrollDown = TRUE;
 	self.timeWheel = 0;
 
 	self.cd = g_theme.main;
+
+	GuiScroll_setValue(&self, value);
+
 	return self;
 }
 
@@ -127,12 +138,6 @@ int GuiScroll_widthWin(Win* win)
 	return OsWinIO_cellSize() / 2;
 }
 
-void GuiScroll_setValue(GuiScroll* self, DbValue value)
-{
-	DbValue_free(&self->value);
-	self->value = value;
-	self->wheel = DbValue_getNumber(&self->value);
-}
 
 BOOL GuiScroll_is(const GuiScroll* self)
 {
@@ -141,8 +146,11 @@ BOOL GuiScroll_is(const GuiScroll* self)
 
 BOOL GuiScroll_getRedrawAndReset(GuiScroll* self)
 {
+	BIG orig_wheel = GuiScroll_getWheel(self);
+	self->wheel = DbValue_getNumber(&self->value);
+	self->redraw |= (orig_wheel != GuiScroll_getWheel(self));
+
 	BOOL r = self->redraw;
-	//if(r)
 	self->redraw = FALSE;
 	return r;
 }
@@ -159,7 +167,7 @@ static void _GuiScroll_updateV(const GuiScroll* self, Vec2i start, Win* win, Qua
 	else
 	{
 		outSlider->start.x = start.x;
-		outSlider->start.y = start.y + self->screen_height * (self->wheel / (double)self->data_height);
+		outSlider->start.y = start.y + self->screen_height * (GuiScroll_getWheel(self) / (double)self->data_height);
 
 		outSlider->size.x = GuiScroll_widthWin(win);
 		outSlider->size.y = self->screen_height * (self->screen_height / (double)self->data_height);
@@ -177,7 +185,7 @@ static void _GuiScroll_updateH(const GuiScroll* self, Vec2i start, Win* win, Qua
 	}
 	else
 	{
-		outSlider->start.x = start.x + self->screen_height * (self->wheel / (double)self->data_height);
+		outSlider->start.x = start.x + self->screen_height * (GuiScroll_getWheel(self) / (double)self->data_height);
 		outSlider->start.y = start.y;
 
 		outSlider->size.x = self->screen_height * (self->screen_height / (double)self->data_height);
@@ -240,7 +248,10 @@ static BIG _GuiScroll_getTempScroll(GuiScroll* self, const int srcl)
 
 void GuiScroll_touchV(GuiScroll* self, void* parent, Quad2i parentCoord, Vec2i start, Win* win)
 {
-	BIG orig_wheel = self->wheel;
+	BIG orig_wheel = GuiScroll_getWheel(self);
+	//self->wheel = DbValue_getNumber(&self->value);
+
+	
 
 	BOOL insideParent = Quad2i_inside(parentCoord, OsWinIO_getTouchPos());
 	if (OsWinIO_getTouch_action() == Win_TOUCH_WHEEL && insideParent && !(OsWinIO_getKeyExtra() & Win_EXTRAKEY_SHIFT))
@@ -252,12 +263,12 @@ void GuiScroll_touchV(GuiScroll* self, void* parent, Quad2i parentCoord, Vec2i s
 		//if (OsWinIO_getKeyEXTRA() & Win_EXTRAKEY_SHIFT)
 		//	scrll *= GuiScroll_getMaxRows(self) / 100;
 
-		GuiScroll_setWheel(self, self->wheel + _GuiScroll_getTempScroll(self, scrll));
-		if (orig_wheel != self->wheel) //let parent scroll
+		GuiScroll_setWheel(self, GuiScroll_getWheel(self) + _GuiScroll_getTempScroll(self, scrll));
+		if (orig_wheel != GuiScroll_getWheel(self)) //let parent scroll
 			OsWinIO_resetTouch();
 
-		if (!self->sendScrollDown)
-			OsWinIO_resetTouch();
+		//if (!self->sendScrollDown)
+		//	OsWinIO_resetTouch();
 	}
 
 	if (!GuiScroll_is(self))
@@ -317,24 +328,26 @@ void GuiScroll_touchV(GuiScroll* self, void* parent, Quad2i parentCoord, Vec2i s
 	if (endTouch)
 		OsWinIO_resetActiveRenderItem();
 
-	self->redraw |= (orig_wheel != self->wheel);
+	self->redraw |= (orig_wheel != GuiScroll_getWheel(self));
 }
 
 void GuiScroll_touchH(GuiScroll* self, void* parent, Quad2i parentCoord, Vec2i start, Win* win, BOOL needShiftWheel)
 {
-	BIG orig_wheel = self->wheel;
+	BIG orig_wheel = GuiScroll_getWheel(self);
+	//self->wheel = DbValue_getNumber(&self->value);
+
 
 	BOOL insideParent = Quad2i_inside(parentCoord, OsWinIO_getTouchPos());
 	if (OsWinIO_getTouch_action() == Win_TOUCH_WHEEL && insideParent && (!needShiftWheel || OsWinIO_getKeyExtra() & Win_EXTRAKEY_SHIFT))
 	{
 		BIG scrll = OsWinIO_getTouch_wheel();
 
-		GuiScroll_setWheel(self, self->wheel + _GuiScroll_getTempScroll(self, scrll));
-		if (orig_wheel != self->wheel) //let parent scroll
+		GuiScroll_setWheel(self, GuiScroll_getWheel(self) + _GuiScroll_getTempScroll(self, scrll));
+		if (orig_wheel != GuiScroll_getWheel(self)) //let parent scroll
 			OsWinIO_resetTouch();
 
-		if (!self->sendScrollDown)
-			OsWinIO_resetTouch();
+		//if (!self->sendScrollDown)
+		//	OsWinIO_resetTouch();
 	}
 
 	if (!GuiScroll_is(self))
@@ -394,19 +407,19 @@ void GuiScroll_touchH(GuiScroll* self, void* parent, Quad2i parentCoord, Vec2i s
 	if (endTouch)
 		OsWinIO_resetActiveRenderItem();
 
-	self->redraw |= (orig_wheel != self->wheel);
+	self->redraw |= (orig_wheel != GuiScroll_getWheel(self));
 }
 
 BOOL GuiScroll_tryDragScroll(GuiScroll* self, const int fast_dt, const int sign)
 {
-	BIG wheelOld = self->wheel;
+	BIG wheelOld = GuiScroll_getWheel(self);
 
 	const double dt = (1.0 / 2) / fast_dt;
 
 	if (Os_time() - self->timeWheel > dt)
-		GuiScroll_setWheel(self, self->wheel + _GuiScroll_getTempScroll(self, sign));
+		GuiScroll_setWheel(self, GuiScroll_getWheel(self) + _GuiScroll_getTempScroll(self, sign));
 
-	return self->wheel != wheelOld;
+	return GuiScroll_getWheel(self) != wheelOld;
 }
 
 BOOL GuiScroll_dragScrollV(GuiScroll* self, Quad2i coord)

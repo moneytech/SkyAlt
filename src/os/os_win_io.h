@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -429,6 +429,11 @@ void OsWinIO_tryRemoveCursorGuiItem(void* item)
 BOOL OsWinIO_isStartTouch(void)
 {
 	return g_winIO->m_touch_action == Win_TOUCH_DOWN_S || g_winIO->m_touch_action == Win_TOUCH_FORCE_DOWN_S;
+}
+
+BOOL OsWinIO_isEndTouch(void)
+{
+	return g_winIO->m_touch_action == Win_TOUCH_DOWN_E || g_winIO->m_touch_action == Win_TOUCH_DOWN_E;
 }
 
 BOOL OsWinIO_setCursorGuiItem(void* item)

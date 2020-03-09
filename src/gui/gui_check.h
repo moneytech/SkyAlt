@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -17,7 +17,12 @@ typedef struct GuiItemCheck_s
 	DbValue value;
 	DbValue description;
 
+	DbValue hasColors;
+	DbValue on_color;
+	DbValue off_color;
+
 	UINT numClickIn;
+	BOOL center;
 }GuiItemCheck;
 
 GuiItem* GuiItemCheck_newEx(Quad2i grid, DbValue value, DbValue description, GuiItemCallback* click)
@@ -28,9 +33,14 @@ GuiItem* GuiItemCheck_newEx(Quad2i grid, DbValue value, DbValue description, Gui
 	self->value = value;
 	self->description = description;
 
+	self->hasColors = DbValue_initEmpty();
+	self->on_color = DbValue_initEmpty();
+	self->off_color = DbValue_initEmpty();
+
 	GuiItem_setCallClick(&self->base, click);
 
 	self->numClickIn = 1;
+	self->center = FALSE;
 
 	return (GuiItem*)self;
 }
@@ -49,6 +59,10 @@ GuiItem* GuiItemCheck_newCopy(GuiItemCheck* src, BOOL copySub)
 	self->value = DbValue_initCopy(&src->value);
 	self->description = DbValue_initCopy(&src->description);
 
+	self->hasColors = DbValue_initCopy(&src->hasColors);
+	self->on_color = DbValue_initCopy(&src->on_color);
+	self->off_color = DbValue_initCopy(&src->off_color);
+
 	return (GuiItem*)self;
 }
 
@@ -57,13 +71,33 @@ void GuiItemCheck_delete(GuiItemCheck* self)
 	DbValue_free(&self->value);
 	DbValue_free(&self->description);
 
+	DbValue_free(&self->hasColors);
+	DbValue_free(&self->on_color);
+	DbValue_free(&self->off_color);
+
 	GuiItem_free(&self->base);
 	Os_free(self, sizeof(GuiItemCheck));
 }
 
-BOOL GuiItemCheck_isActive(GuiItemCheck* self)
+BOOL GuiItemCheck_isActive(const GuiItemCheck* self)
 {
 	return (DbValue_getNumber(&self->value) != 0);
+}
+
+void GuiItemCheck_setColors(GuiItemCheck* self, DbValue hasColors, DbValue on_color, DbValue off_color)
+{
+	DbValue_free(&self->hasColors);
+	DbValue_free(&self->on_color);
+	DbValue_free(&self->off_color);
+
+	self->hasColors = hasColors;
+	self->on_color = on_color;
+	self->off_color = off_color;
+}
+
+BOOL GuiItemCheck_hasColors(const GuiItemCheck* self)
+{
+	return DbValue_getNumber(&self->hasColors);
 }
 
 void GuiItemCheck_draw(GuiItemCheck* self, Image4* img, Quad2i coord, Win* win)
@@ -75,7 +109,7 @@ void GuiItemCheck_draw(GuiItemCheck* self, Image4* img, Quad2i coord, Win* win)
 	//if (self->base.drawTable)
 	Quad2i box = Quad2i_initMid(Quad2i_getMiddle(coord), Vec2i_init2(s, s));
 
-	if (!self->base.drawTable)
+	if (!self->base.drawTable && !self->center)
 		box.start.x = coord.start.x + cell / 4;
 
 	box.size.x = box.size.y;
@@ -105,8 +139,7 @@ void GuiItemCheck_draw(GuiItemCheck* self, Image4* img, Quad2i coord, Win* win)
 		const int sm = box.size.x / 3 * 1;
 		const int bg = box.size.x / 3 * 2;
 
-		Vec2i mid = Vec2i_init2(box.start.x + box.size.x / 3,
-			box.start.y + box.size.y - FAT);
+		Vec2i mid = Vec2i_init2(box.start.x + box.size.x / 3, box.start.y + box.size.y - FAT);
 
 		Image4_drawLine(img, mid, Vec2i_init2(mid.x - sm, mid.y - sm), FAT, self->base.front_cd);	//to left
 		Image4_drawLine(img, mid, Vec2i_init2(mid.x + bg, mid.y - bg), FAT, self->base.front_cd);	//to right
@@ -123,13 +156,16 @@ void GuiItemCheck_draw(GuiItemCheck* self, Image4* img, Quad2i coord, Win* win)
 
 void GuiItemCheck_update(GuiItemCheck* self, Quad2i coord, Win* win)
 {
-	GuiItem_setRedraw(&self->base, (DbValue_hasChanged(&self->value) || DbValue_hasChanged(&self->description)));
+	GuiItem_setRedraw(&self->base, (DbValue_hasChanged(&self->value) || DbValue_hasChanged(&self->description) || DbValue_hasChanged(&self->hasColors) || DbValue_hasChanged(&self->on_color) || DbValue_hasChanged(&self->off_color)));
 }
 
 void GuiItemCheck_touch(GuiItemCheck* self, Quad2i coord, Win* win)
 {
 	Rgba back_cd = g_theme.white;
 	Rgba front_cd = g_theme.black;
+
+	if(GuiItemCheck_hasColors(self))
+		back_cd = DbValue_getCd(GuiItemCheck_isActive(self) ? &self->on_color : &self->off_color);
 
 	if (self->base.touch && GuiItem_isEnable(&self->base) && OsWinIO_canActiveRenderItem(self))
 	{

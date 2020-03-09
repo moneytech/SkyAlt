@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -645,7 +645,9 @@ static void _GuiItemChart_drawRowX(GuiItemChart* self, Image4* img, DbColumn** r
 		DbColumn_getStringCopyWithFormatLong(rowsLines[i], it, &self->tempStr);
 		int px = area.start.x + move.x + (move.y - move.x) / 2;
 		Image4_drawBoxQuad(img, Quad2i_init4(px, titleY + cell * i - cell / 2, 1, cell), self->base.front_cd);
-		Image4_drawTextBackground(img, Vec2i_init2(px, titleY + cell * i), TRUE, font, self->tempStr.str, textH, 0, self->base.front_cd, self->base.back_cd, TITLE_SPACE_X);
+
+		//Image4_drawTextBackground(img, Vec2i_init2(px, titleY + cell * i), TRUE, font, self->tempStr.str, textH, 0, self->base.front_cd, self->base.back_cd, TITLE_SPACE_X);
+		Image4_drawTextAngle(img, Vec2i_init2(px, titleY + cell * i), TRUE, font, self->tempStr.str, textH, 0, self->base.front_cd, 45);
 	}
 }
 

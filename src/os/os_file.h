@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -165,7 +165,57 @@ BOOL OsFile_unlock(OsFile* self)
 	return FALSE;
 }*/
 
+
+char* OsFile_readLineEx(OsFile* self, BIG* seek, BIG* skipedLines)
+{
+	*seek = OsFile_getSeekPos(self);
+
+	char c;
+
+	//is end
+	if (OsFile_read(self, &c, 1) == 0)
+		return 0;
+	OsFile_seekRel(self, -1);
+
+	//skip empty
+	while (OsFile_read(self, &c, 1) == 1 && (c == '\r' || c == '\n'))
+	{
+		if(c == '\n')
+			(*skipedLines)++;
+	}
+	(*skipedLines)--;
+	OsFile_seekRel(self, -1);
+
+	//size
+	UBIG pos = OsFile_getSeekPos(self);
+	*seek = pos;
+	int n = 0;
+	while (OsFile_read(self, &c, 1) == 1 && c != '\r' && c != '\n')
+		n++;
+	if (n == 0)
+		return 0;
+
+	//alloc
+	char* ret = malloc(n + 1);
+	n = 0;
+
+	//fill
+	OsFile_seekAbs(self, pos);
+	while (OsFile_read(self, &c, 1) == 1 && c != '\r' && c != '\n')
+		ret[n++] = c;
+	ret[n] = 0;
+
+	return ret;
+}
+
 char* OsFile_readLine(OsFile* self)
+{
+	BIG seek = 0;
+	BIG skipLines = 0;
+	return OsFile_readLineEx(self, &seek, &skipLines);
+}
+
+/*char* OsFile_readLine(OsFile* self)
 {
 	char c;
 
@@ -198,6 +248,12 @@ char* OsFile_readLine(OsFile* self)
 
 	return ret;
 }
+
+char* OsFile_readLineEx(OsFile* self, BIG* seek)
+{
+	*seek = OsFile_getSeekPos(self);
+	return OsFile_readLine(self);
+}*/
 
 void OsFile_writeUNIch(OsFile* self, const UNI l)
 {
@@ -269,6 +325,18 @@ BIG OsFile_bytes(const char* path)
 	return st.st_size;
 #endif
 }
+
+BIG OsFile_getChangeTime(const char* path)
+{
+	if (path)
+	{
+		struct stat sb;
+		return stat(path, &sb) == 0 ? sb.st_mtime : -1;
+	}
+	return FALSE;
+}
+
+
 
 BIG OsFileDir_getFileList(const char* path, BOOL file_names, BOOL subdir_names, BOOL complete_path, char*** out)
 {

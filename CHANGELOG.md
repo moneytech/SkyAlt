@@ -38,3 +38,36 @@ Build.2 (30/Jan/2020)
 		Remote data sources(ODBC)
 
 	Ported: Linux
+
+Build.2.5 (10/Mar/2020)
+
+	Fixed:
+	    Map bbox limit
+	    Fast double-click on a cell
+	    Group view lanes remember scroll positions
+	    Many other small bugs
+
+	Changed:
+	    Map controls inside layout
+	    Table view has fixed 'id' column
+
+	Added:
+	    Color background option for Tags
+	    Color background option for Menu
+	    Color background option for Checkbox
+	    Map zoom +/-
+	    Map smooth zoom
+	
+	    'Add column to Filter' in Column setting
+	    'Add column to Short' in Column setting
+	    Add column Description edit-box
+	
+	    Table 'id' column can contain values from other column(s)
+	    Table bottom insights
+	
+	    Ctrl+'g' for jumping on specific table row
+	
+	    Ctrl+click on Combo will choose next option
+	
+	    Find in Table(+highlight)
+	    Find & replace in Table

@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -56,10 +56,10 @@ BOOL Map_new(void)
 
 	g_Map = Os_malloc(sizeof(Map));
 
-	g_Map->tilesBase = MapTiles_new("map_std.tiles");
+	g_Map->tilesBase = MapTiles_new("map_std.tiles", TRUE);
 	g_Map->tilesUser = 0;
 
-	g_Map->polyBase = MapPoly_newRead("map.poly");
+	g_Map->polyBase = MapPoly_newRead("map.poly", TRUE);
 
 	g_Map->ini = MapIni_new();
 
@@ -131,7 +131,7 @@ void Map_loadUserTiles(const char* path)
 	if (g_Map->tilesUser)
 		MapTiles_delete(g_Map->tilesUser);
 
-	g_Map->tilesUser = MapTiles_new(path);
+	g_Map->tilesUser = MapTiles_new(path, FALSE);
 }
 
 void Map_deleteTilesFile(void)

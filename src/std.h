@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -35,7 +35,7 @@ BIG StdArr_find(const StdArr* self, const void* ptr);
 BOOL StdArr_removeFind(StdArr* self, const void* ptr);
 BOOL StdArr_replace(StdArr* self, const void* old, void* nw);
 void StdArr_swap(StdArr* self, UBIG iA, BIG iB);
-void* StdArr_get(StdArr* self, UBIG i);
+void* StdArr_get(const StdArr* self, UBIG i);
 void* StdArr_last(StdArr* self);
 void StdArr_addArr(StdArr* self, StdArr* src);
 
@@ -135,11 +135,15 @@ char* Std_newCHAR_copyEx(const char* src, UBIG N, UNI exclude);
 void Std_deleteCHAR(char* self);
 void Std_deleteUNI(UNI* self);
 
+void Std_replaceCHAR(char** dst, const char* src);
 void Std_replaceUNI(UNI** dst, const UNI* src);
+void Std_replaceInsideUNI(UNI** dst, const UNI* find, const UNI* replace);
 void Std_replaceCharacters(UNI* self, UNI ch);
+BIG Std_findCHAR(const char* self, char ch);
 BIG Std_findUNI(const UNI* self, UNI ch);
 BIG Std_findUNIex(const UNI* self, UNI ch, UNI exclude);
 BIG Std_findUNI_last(const UNI* self, UNI ch);
+
 
 void Std_print(UNI cp);
 void Std_printUNI(const UNI* self);
@@ -161,6 +165,7 @@ BOOL Std_startWith(const UNI* self, const UNI* find);
 BOOL Std_startWith_small(const UNI* self, const UNI* find);
 BOOL Std_startWith_small_char(const UNI* self, const char* find);
 BIG Std_subUNI(const UNI* self, const UNI* find);
+BIG Std_subCHAR(const char* self, const char* find);
 BIG Std_subUNI_small(const UNI* self, const UNI* find);
 BIG Std_subUNI_small_char(const UNI* self, const char* find);
 UNI* Std_copyUNI(UNI* dst, UBIG dstMax_N, const UNI* src);
@@ -232,6 +237,7 @@ StdString StdString_init();
 StdString StdString_initCopy(const StdString* src);
 void StdString_freeIgnore(StdString* self);
 void StdString_free(StdString* self);
+UBIG StdString_size(const StdString* self);
 void StdString_empty(StdString* self);
 void StdString_resize(StdString* self, UBIG N);
 void StdString_fit(StdString* self);
@@ -297,6 +303,8 @@ Vec2f Vec2f_aprox(Vec2f a, Vec2f b, float t);
 double Vec2f_dot(Vec2f a, Vec2f b);
 double Vec2f_len(Vec2f a);
 double Vec2f_distance(Vec2f a, Vec2f b);
+Vec2f Vec2f_perpendicularX(Vec2f a);
+Vec2f Vec2f_perpendicularY(Vec2f a);
 
 typedef struct Vec3f_s
 {
@@ -306,6 +314,8 @@ Vec3f Vec3f_init(void);
 Vec3f Vec3f_init3(double x, double y, double z);
 Vec3f Vec3f_add(Vec3f p, Vec3f q);
 Vec3f Vec3f_mulV(Vec3f p, float t);
+Vec3f Vec3f_aprox(Vec3f a, Vec3f b, float t);
+BOOL Vec3f_cmp(Vec3f a, Vec3f b);
 
 typedef struct Quad2i_s
 {
@@ -354,6 +364,7 @@ Quad2f Quad2f_extend(const Quad2f a, const Quad2f b);
 Quad2f Quad2f_extend2(const Quad2f q, const Vec2f v);
 BOOL Quad2f_hasCover(const Quad2f a, const Quad2f b);
 Quad2f Quad2f_getIntersect(const Quad2f qA, const Quad2f qB);
+Vec2f Quad2f_getMiddle(const Quad2f q);
 //double Quad2f_getIntersectArea(Quad2f qA, Quad2f qB);
 void Quad2f_print(Quad2f q, const char* name);
 
@@ -465,6 +476,7 @@ void Image4_mulVSub(Image4* self, Vec2i start, Vec2i end, unsigned int alpha);
 void Image4_mulVSubQ(Image4* self, Quad2i coord, unsigned int alpha);
 void Image4_copyImage1(Image4* self, Vec2i start, Rgba cd, const Image1* src);
 void Image4_copyImage4(Image4* self, Vec2i start, Image4* src);
+void Image4_copyImage4_resize(Image4* self, Quad2i coord, Image4* src);
 void Image4_drawCircleRect(Image4* self, Vec2i mid, int rad, Rgba cd, Quad2i q);
 void Image4_drawCircle(Image4* self, Vec2i mid, int rad, Rgba cd);
 void Image4_drawCircleLineRect(Image4* self, Vec2i mid, int rad, float fat, Rgba cd, Quad2i q);
@@ -484,6 +496,7 @@ Quad2i Image4_getUnderline(Vec2i pos, BOOL centerText, Vec2i textSize);
 Quad2i Image4_drawTextCoord(Vec2i s, BOOL center, OsFont* font, const UNI* text, const int Hpx, const int betweenLinePx);
 void Image4_drawText(Image4* img, Vec2i s, BOOL center, OsFont* font, const UNI* text, const int Hpx, const int betweenLinePx, Rgba cd);
 void Image4_drawTextBackground(Image4* img, Vec2i s, BOOL center, OsFont* font, const UNI* text, const int Hpx, const int betweenLinePx, Rgba text_cd, Rgba back_cd, int addSpace);
+void Image4_drawTextAngle(Image4* img, Vec2i s, BOOL center, OsFont* font, const UNI* text, const int Hpx, const int betweenLinePx, Rgba cd, int angleDeg);
 UBIG Image4_numTextLines(Quad2i coord, OsFont* font, const UNI* text, const int Hpx);
 const UNI* Image4_skipTextLines(Quad2i coord, OsFont* font, const UNI* text, const int Hpx, const UBIG skipLines);
 int Image4_drawTextMulti(Image4* img, Quad2i coord, BOOL center, OsFont* font, const UNI* text, const int Hpx, const int betweenLinePx, Rgba cd);
@@ -496,10 +509,10 @@ UBIG StdBIndex_size(const StdBIndex* self);
 BIG StdBIndex_search(const StdBIndex* self, BIG hash);
 void StdBIndex_add(StdBIndex* self, BIG hash, UBIG id);
 
-double StdMap_getMetersPerPixel(double lat, int z);
-Vec2f StdMap_getTile(double lon, double lat, int z);
-Vec2f StdMap_getLonLat(double tileX, double tileY, int z);
-Quad2f StdMap_lonLatToTileBbox(Vec2i res, const int tilePx, double lon, double lat, int z);
+double StdMap_getMetersPerPixel(double lat, double z);
+Vec2f StdMap_getTile(double lon, double lat, double z);
+Vec2f StdMap_getLonLat(double tileX, double tileY, double z);
+Quad2f StdMap_lonLatToTileBbox(Vec2i res, const int tilePx, double lon, double lat, double z);
 
 double Std_timeAprox2(double startTime, double jumpTime);
 double Std_timeAprox3(double startTime, double jumpTime);

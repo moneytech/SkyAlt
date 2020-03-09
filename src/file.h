@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -21,6 +21,7 @@ typedef struct FileRow_s
 FileRow FileRow_init(BIG row);
 FileRow FileRow_initEmpty();
 BOOL FileRow_cmp(const FileRow a, const FileRow b);
+BOOL FileRow_isRow(const FileRow self, BIG row);
 BOOL FileRow_is(const FileRow self);
 void FileRow_invalidate(FileRow* self);
 BIG FileRow_getBIG(FileRow self);

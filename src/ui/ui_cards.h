@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -42,8 +42,8 @@ static GuiItem* UiRootCard_build(GuiItemLayout* layout, UBIG row, DbValue scroll
 		{
 			//Hidden
 			GuiItemMenu* columns = (GuiItemMenu*)GuiItem_addSubName((GuiItem*)layoutMenu, "columns", GuiItemMenu_new(Quad2i_init4(2, 0, 2, 1), DbValue_initLang("COLUMNS"), FALSE));
-			GuiItemMenu_setContext(columns, GuiItemTable_buildShowedList(row));
-			GuiItemMenu_setHighligthBackground(columns, DbRows_hasColumnsSubDeactive(row, "columns"));
+			GuiItemMenu_setContext(columns, GuiItemTable_buildShowedList(Quad2i_init(), row));
+			GuiItemMenu_setHighligthBackground(columns, DbRows_hasColumnsSubDeactive(row, "columns"), 0.5f);
 			GuiItemMenu_setTransparent(columns, FALSE);
 			GuiItem_setIcon((GuiItem*)columns, GuiImage_new1(UiIcons_init_table_hide()));
 			GuiItemMenu_setCenter(columns, FALSE);

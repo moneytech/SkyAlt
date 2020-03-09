@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -338,6 +338,20 @@ void Std_deleteUNI(UNI* self)
 	Os_free(self, Std_sizeUNI(self) * sizeof(UNI));
 }
 
+
+void Std_replaceCHAR(char** dst, const char* src)
+{
+	UBIG n = Std_sizeCHAR(*dst);
+
+	if (n == Std_sizeCHAR(src))
+		Os_memcpy(*dst, src, n * sizeof(char));
+	else
+	{
+		Std_deleteCHAR(*dst);
+		*dst = Std_newCHAR(src);
+	}
+}
+
 void Std_replaceUNI(UNI** dst, const UNI* src)
 {
 	UBIG n = Std_sizeUNI(*dst);
@@ -350,6 +364,24 @@ void Std_replaceUNI(UNI** dst, const UNI* src)
 		*dst = Std_newUNI(src);
 	}
 }
+
+void Std_replaceInsideUNI(UNI** dst, const UNI* find, const UNI* replace)
+{
+	UBIG findN = Std_sizeUNI(find);
+	UBIG replaceN = Std_sizeUNI(replace);
+
+	BIG cp;
+	BIG p = 0;
+	while ((cp = Std_subUNI((*dst) + p, find)) >= 0)
+	{
+		p += cp;
+		*dst = Std_removeChars(*dst, p, findN);
+		*dst = Std_insertUNI(*dst, replace, p);
+
+		p += replaceN;
+	}
+}
+
 
 void Std_replaceCharacters(UNI* self, UNI ch)
 {
@@ -370,7 +402,21 @@ BIG Std_findUNI(const UNI* self, UNI ch)
 		i++;
 		self++;
 	}
-	return(ch == 0) ? i : -1;
+	return (ch == 0) ? i : -1;
+}
+
+
+BIG Std_findCHAR(const char* self, char ch)
+{
+	UBIG i = 0;
+	while (self && *self)
+	{
+		if (*self == ch)
+			return i;
+		i++;
+		self++;
+	}
+	return (ch == 0) ? i : -1;
 }
 
 BIG Std_findUNIex(const UNI* self, UNI ch, UNI exclude)
@@ -605,6 +651,20 @@ BIG Std_subUNI(const UNI* self, const UNI* find)
 	return self == find ? 0 : -1;
 }
 
+BIG Std_subCHAR(const char* self, const char* find)
+{
+	BIG pos = 0;
+	while (self && *self)
+	{
+		if (Std_startWithCHAR(self, find))
+			return pos;
+		self++;
+		pos++;
+	}
+	return self == find ? 0 : -1;
+}
+
+
 BIG Std_subUNI_small(const UNI* self, const UNI* find)
 {
 	BIG pos = 0;
@@ -706,7 +766,7 @@ const char* Std_findSubCHAR(const char* self, const char* find)
 
 BOOL Std_isDigit(char ch)
 {
-	return ch == '.' || ch == ',' || ch == '+' || ch == '-' || (ch >= '0' || ch <= '9');
+	return ch == '.' || ch == ',' || ch == '+' || ch == '-' || (ch >= '0' && ch <= '9');
 }
 BOOL Std_isNotDigit(char ch)
 {
@@ -767,7 +827,7 @@ double Std_getNumberFromUNI_n(const UNI* str, BIG max_n)
 
 	char asc[64 + 1];
 
-	int i = 0;
+	BIG i = 0;
 	while (str && *str && i < max_n)
 		asc[i++] = *(str++);
 	asc[i] = 0;
@@ -780,6 +840,17 @@ double Std_getNumberFromUNI_n(const UNI* str, BIG max_n)
 			asc[i] = '.';
 		i++;
 	}
+
+	//remove spaces
+	i = 0;
+	BIG p = 0;
+	while (asc[i])
+	{
+		if (asc[i] != ' ')
+			asc[p++] = asc[i];
+		i++;
+	}
+	asc[p] = 0;
 
 	return Os_atof(asc);
 }
@@ -1333,7 +1404,10 @@ void StdString_free(StdString* self)
 	Std_deleteUNI(self->str);
 	StdString_freeIgnore(self);
 }
-
+UBIG StdString_size(const StdString* self)
+{
+	return Std_sizeUNI(self->str);
+}
 void StdString_empty(StdString* self)
 {
 	if (self->n)

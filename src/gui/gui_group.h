@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -98,6 +98,11 @@ UINT GuiItemGroup_getLaneSelect(const GuiItemGroup* self, UBIG c)
 	return Std_bmax(0, DbRows_getSubsOptionNumber(self->viewRow, "group", FALSE, c, "select", FALSE));
 }
 
+DbValue GuiItemGroup_getLaneScroll(const GuiItemGroup* self, UBIG c)
+{
+	return DbRows_getSubsOption(self->viewRow, "group", FALSE, c, "scroll", FALSE);
+}
+
 void GuiItemGroup_setLaneSelect(GuiItemGroup* self, int c, UINT pos)
 {
 	DbRows_setSubsOptionNumber(self->viewRow, "group", FALSE, c, "select", FALSE, pos);
@@ -127,7 +132,7 @@ void GuiItemGroup_clickAddColumn(GuiItem* self)
 	GuiItemGroup* group = GuiItem_findParentType(self, GuiItem_GROUP);
 	if (group)
 	{
-		DbRows_getAddSubsLine(group->viewRow, "group");
+		DbRows_addSubsLine(group->viewRow, "group");
 		GuiItem_setResize(&group->base, TRUE);
 	}
 }
@@ -157,7 +162,7 @@ void GuiItemGroup_clickShowRecords(GuiItem* self)
 		GuiItemLayout_addRow(layout, 0, 100);
 
 		//Table
-		GuiItem_addSubName((GuiItem*)layout, "table", (GuiItem*)GuiItemTable_new(Quad2i_init4(0, 0, 1, 1), guiRow, DbRows_initLinkN(DbFilter_getColumnGroupRows(group->filter.filter), srcRow), TRUE, FALSE, DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initStaticCopyCHAR("0 0 0 0")));
+		GuiItem_addSubName((GuiItem*)layout, "table", (GuiItem*)GuiItemTable_new(Quad2i_init4(0, 0, 1, 1), guiRow, DbRows_initLinkN(DbFilter_getColumnGroupRows(group->filter.filter), srcRow), TRUE, FALSE, DbValue_initEmpty(), DbValue_initEmpty(), DbValue_initStaticCopyCHAR("0 0 0 0"), DbValue_initEmpty()));
 
 		GuiItemRoot_addDialogLayout(GuiItemRoot_createDialogLayout(Vec2i_init2(50, 20), DbValue_initLang("GROUP"), (GuiItem*)layout, 0));
 	}
@@ -184,7 +189,7 @@ void GuiItemGroup_clickSelectRow(GuiItem* self)
 	}
 }
 
-GuiItemList* GuiItemGroup_getLaneList(Quad2i grid, DbColumn* columnLane, DbFilter* filter, BIG* selectRow, BIG selectPos, GuiItemCallback* clickSelectRow, GuiItemCallback* clickShowRecords)
+GuiItemList* GuiItemGroup_getLaneList(Quad2i grid, DbColumn* columnLane, DbFilter* filter, BIG* selectRow, BIG selectPos, DbValue scroll, GuiItemCallback* clickSelectRow, GuiItemCallback* clickShowRecords)
 {
 	//list
 	DbRows ids = DbRows_initLinkN(DbFilter_getColumnGroupSubs(filter), *selectRow);
@@ -207,7 +212,7 @@ GuiItemList* GuiItemGroup_getLaneList(Quad2i grid, DbColumn* columnLane, DbFilte
 		GuiItemLayout_addColumn(skin2, 0, 99);
 		skin2->drawBackground = FALSE;
 
-		GuiItem* name = GuiItem_addSubName((GuiItem*)skin2, "value", GuiItemTable_getCardSkinItem(Quad2i_init4(0, 0, 1, 1), DbValue_initGET(columnLane, -1), FALSE));// , TRUE));
+		GuiItem* name = GuiItem_addSubName((GuiItem*)skin2, "value", GuiItemTable_getCardSkinItem(Quad2i_init4(0, 0, 1, 1), DbValue_initGET(columnLane, -1), FALSE, DbValue_initEmpty()));// , TRUE));
 		if (name->type == GuiItem_TEXT)
 			((GuiItemText*)name)->drawBackground = FALSE;
 		GuiItem_setTouchRecommand(name, FALSE);
@@ -232,6 +237,10 @@ GuiItemList* GuiItemGroup_getLaneList(Quad2i grid, DbColumn* columnLane, DbFilte
 	//list
 	GuiItemList* list = (GuiItemList*)GuiItemList_new(grid, ids, (GuiItem*)skin, DbValue_initEmpty());
 	GuiItemList_setShowBorder(list, FALSE);
+	GuiItemList_setScroll(list, scroll);
+
+	//int scrollPos = DbValue_getNumber(&scroll);
+
 
 	return list;
 }
@@ -282,7 +291,7 @@ GuiItemLayout* GuiItemGroup_resize(GuiItemGroup* self, GuiItemLayout* layout, Wi
 
 		GuiItem_setAttribute((GuiItem*)layColumn, "c", c);
 
-		GuiItem_setChangeSize(&layColumn->base, TRUE, DbValue_initOption(crow, "width", 0), FALSE);
+		GuiItem_setChangeSize(&layColumn->base, TRUE, DbValue_initOption(crow, "width", 0), FALSE, FALSE, g_theme.white);
 
 		//header
 		{
@@ -306,7 +315,7 @@ GuiItemLayout* GuiItemGroup_resize(GuiItemGroup* self, GuiItemLayout* layout, Wi
 
 		if (column)
 		{
-			GuiItemList* list = (GuiItemList*)GuiItemGroup_getLaneList(Quad2i_init4(0, 1, 1, 1), GuiItemGroup_getLane(self, c), self->filter.filter, &selectRow, selectPos, &GuiItemGroup_clickSelectRow, &GuiItemGroup_clickShowRecords);
+			GuiItemList* list = (GuiItemList*)GuiItemGroup_getLaneList(Quad2i_init4(0, 1, 1, 1), GuiItemGroup_getLane(self, c), self->filter.filter, &selectRow, selectPos, GuiItemGroup_getLaneScroll(self, c), &GuiItemGroup_clickSelectRow, &GuiItemGroup_clickShowRecords);
 			GuiItem_addSubName((GuiItem*)layColumn, "list", (GuiItem*)list);
 		}
 

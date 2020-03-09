@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -209,6 +209,9 @@ static void _Win_setKeyExtra(GdkModifierType state, UNI key)
 		if (key == GDK_KEY_space) key_extra |= Win_EXTRAKEY_SELECT_COLUMN;
 
 		if (key == GDK_KEY_r || key == GDK_KEY_R) key_extra |= Win_EXTRAKEY_ADD_RECORD;
+
+		if (key == GDK_KEY_g || key == GDK_KEY_G) key_extra |= Win_EXTRAKEY_GOTO;
+		
 	}
 	else
 	{

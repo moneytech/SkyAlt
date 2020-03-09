@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -13,6 +13,8 @@
 
 typedef struct DbTable_s
 {
+	char* extra_name;
+
 	DbTables* parent;
 	FileRow fileId;
 
@@ -77,6 +79,14 @@ DbTable* DbTable_new(FileRow fileId, DbTables* parent)
 	return self;
 }
 
+DbTable* DbTable_newExtra(const char* name)
+{
+	DbTable* self = DbTable_new(FileRow_initEmpty(), 0);
+	self->extra_name = Std_newCHAR(name);
+	return self;
+}
+
+
 void DbTable_clear(DbTable* self)
 {
 	DbColumns_clear(self->columns);
@@ -92,6 +102,9 @@ void DbTable_delete(DbTable* self)
 {
 	DbTable_clear(self);
 	DbColumns_delete(self->columns);
+
+	Std_deleteCHAR(self->extra_name);
+
 	Os_free(self, sizeof(DbTable));
 }
 
@@ -139,6 +152,76 @@ void DbTable_setName(DbTable* self, const UNI* name)
 	DbRoot_setName(DbTable_getRow(self), name);
 }
 
+
+const char* DbTable_getExtraName(const DbTable* self)
+{
+	return self->extra_name;
+}
+void DbTable_setExtraName(DbTable* self, const char* name)
+{
+	Std_deleteCHAR(self->extra_name);
+	self->extra_name = Std_newCHAR(name);
+}
+
+DbColumn* DbTable_findColumnName(DbTable* self, const char* name)
+{
+	UBIG i;
+	for (i = 0; i < DbColumns_num(self->columns); i++)
+	{
+		DbColumn* column = DbColumns_get(self->columns, i);
+		if (Std_cmpCHAR(column->extra_name, name))
+			return column;
+	}
+	return 0;
+}
+
+DbColumn* DbTable_addColumn1(DbTable* self, const char* name, DbTable* btable)
+{
+	DbColumn* column = (DbColumn*)DbColumn1_new(self->columns, (btable ? DbFormat_LINK_1 : DbFormat_NUMBER_1), btable);
+	DbColumn_setExtraName(column, name);
+	_DbColumns_add(self->columns, column);
+	return column;
+}
+DbColumn* DbTable_addColumnN(DbTable* self, const char* name, DbTable* btable)
+{
+	DbColumn* column = (DbColumn*)DbColumnN_new(self->columns, (btable ? DbFormat_LINK_N : DbFormat_NUMBER_N), btable);
+	DbColumn_setExtraName(column, name);
+	_DbColumns_add(self->columns, column);
+	return column;
+}
+DbColumn* DbTable_addColumnString32(DbTable* self, const char* name)
+{
+	DbColumn* column = (DbColumn*)DbColumnString32_new(self->columns, DbFormat_TEXT);
+	DbColumn_setExtraName(column, name);
+	_DbColumns_add(self->columns, column);
+	return column;
+}
+
+
+
+
+void DbTable_setDefaults(DbTable* self, BIG row)
+{
+	UBIG i;
+	for (i = 0; i < DbColumns_num(self->columns); i++)
+	{
+		DbColumn* column = DbColumns_get(self->columns, i);
+
+		DbColumnTYPE columnType = DbColumnFormat_findColumnType(column->type);
+		switch (columnType)
+		{
+			case DbColumn_1: DbColumn1_set((DbColumn1*)column, row, column->default_number);	break;
+			case DbColumn_N: DbColumnN_set((DbColumnN*)column, row, column->default_number);	break;
+			case DbColumn_STRING_32: DbColumnString32_setCopy((DbColumnString32*)column, row, column->default_text);	break;
+		}
+	}
+}
+
+
+
+
+
+
 void DbTable_setRemote(DbTable* self, BIG remoteRow)
 {
 	self->remoteRow = remoteRow;
@@ -165,6 +248,13 @@ BIG DbTable_jumpRowsFrom0(DbTable* self, UBIG index) //try to jump over deleted 
 BOOL DbTable_isRowActive(const DbTable* self, const BIG r)
 {
 	return r >= 0 && r < DbTable_numRows(self) && DbColumn1_isValid(self->rows, r);
+}
+
+FileRow DbTable_getFileRow(const DbTable* self, const BIG r)
+{
+	if (r >= 0 && r < DbTable_numRows(self))
+		return DbColumn1_getFileId(self->rows, r);
+	return FileRow_initEmpty();
 }
 
 BIG DbTable_jumpRows(DbTable* self, UBIG* pos, BIG jumps) //try to jump over deleted lines
@@ -226,6 +316,11 @@ BIG DbTable_firstRow(DbTable* self)
 BIG DbTable_findRow(const DbTable* self, FileRow row)
 {
 	return self->rows && FileRow_is(row) ? DbColumn1_findRowPos(self->rows, row) : -1;
+}
+
+BIG DbTable_findRowScroll(const DbTable* self, BIG row)
+{
+	return self->rows && row >= 0 ? DbColumn1_findRowScroll(self->rows, row) : -1;
 }
 
 UBIG DbTable_addRowEx(DbTable* self, FileRow row)
@@ -328,8 +423,8 @@ DbColumn* DbTable_createColumnFormat(DbTable* self, DbFormatTYPE format, const U
 	if (format == DbFormat_MENU || format == DbFormat_TAGS)
 		btable = DbRoot_getInfoTable();
 
-	if (!name)
-		name = Lang_find(DbColumnFormat_findColumnLang(format));
+	//if (!name)
+	//	name = Lang_find(DbColumnFormat_findColumnLang(format));
 
 	DbColumnTYPE columnType = DbColumnFormat_findColumnType(format);
 	switch (columnType)
@@ -440,13 +535,14 @@ BOOL DbTable_isChangedSave(const DbTable* self)
 			return TRUE;
 	return FALSE;
 }
-BOOL DbTable_isChangedExe(const DbTable* self)
+BOOL DbTable_isChangedExe(DbTable* self)
 {
+	BOOL changed = FALSE;
 	int i;
 	for (i = 0; i < DbColumns_num(self->columns); i++)
-		if (DbColumn_isChangedExe(DbColumns_get(self->columns, i)))
-			return TRUE;
-	return FALSE;
+		changed |= DbColumn_isChangedExe(DbColumns_get(self->columns, i));
+
+	return changed;
 }
 
 UBIG DbTable_numChanges(const DbTable* self)
@@ -904,3 +1000,4 @@ void DbTables_refreshRemote(DbTables* self, BIG remoteRow)
 			DbTable_refreshRemote(table);
 	}
 }
+

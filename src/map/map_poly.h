@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -199,15 +199,13 @@ MapPoly* MapPoly_new(const char* path)
 	return self;
 }
 
-MapPoly* MapPoly_newRead(const char* path)
+MapPoly* MapPoly_newRead(const char* path, BOOL printWarning)
 {
-	MapPoly* self = 0;
+	MapPoly* self = MapPoly_new(path);
 
 	OsFile file;
 	if (OsFile_init(&file, path, OsFile_R))
 	{
-		self = MapPoly_new(path);
-
 		UBIG num_items;
 		OsFile_read(&file, &num_items, sizeof(UBIG));
 		_MapPoly_resize(self, num_items);
@@ -228,6 +226,9 @@ MapPoly* MapPoly_newRead(const char* path)
 
 		OsFile_free(&file);
 	}
+	else
+		if (printWarning)
+			printf("Warning: MapTiles cache file(%s) is missing\n", path);
 
 	return self;
 }
@@ -717,7 +718,7 @@ void MapPoly_createCache(void)
 	MapPoly_delete(map);
 
 	//test - remove ...
-	map = MapPoly_newRead("map.poly");
+	map = MapPoly_newRead("map.poly", FALSE);
 	MapPoly_delete(map);
 
 	printf("done\n");

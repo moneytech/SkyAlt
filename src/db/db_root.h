@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -16,7 +16,7 @@ typedef struct DbRoot_s
 	//info tble
 	DbTable* info;
 	DbColumnString32* info_options;
-	DbColumnN* info_subs2;
+	DbColumnN* info_subs;
 	DbColumn1* info_ref;
 
 	//map table
@@ -66,7 +66,7 @@ DbColumnString32* DbRoot_getColumnOptions(void)
 
 DbColumnN* DbRoot_subs(void)
 {
-	return g_DbRoot->info_subs2;
+	return g_DbRoot->info_subs;
 }
 BIG DbRoot_subs_row(BIG row)
 {
@@ -170,7 +170,7 @@ static BOOL _DbRoot_isEnable(BIG row)
 {
 	return _DbRoot_getOptionNumber(row, "enable", 1) > 0;
 }
-static void _DbRoot_setEnable(BIG row, BOOL enable)
+void DbRoot_setEnable(BIG row, BOOL enable)
 {
 	_DbRoot_setOptionNumber(row, "enable", enable);
 }
@@ -339,7 +339,7 @@ static void _DbRoot_updateParentsInner(BIG row)
 static void _DbRoot_updateParents()
 {
 	const UBIG num_rows = DbTable_numRows(g_DbRoot->info);
-	const UBIG numChanges = g_DbRoot->info_subs2->base.numChanges;
+	const UBIG numChanges = g_DbRoot->info_subs->base.numChanges;
 
 	if (g_DbRoot->parentRows.num != num_rows || g_DbRoot->parent_subs_changes != numChanges)
 	{
@@ -509,7 +509,7 @@ BIG DbRoot_createView_cards(const BIG parentRow)
 		UBIG groupRow = DbTable_addRow(g_DbRoot->info);
 		_DbRoot_setType(groupRow, "group");
 		DbColumnN_add(DbRoot_subs(), r, groupRow);
-		_DbRoot_setEnable(groupRow, FALSE);	//default = not visible
+		DbRoot_setEnable(groupRow, FALSE);	//default = not visible
 
 		//add one
 		UBIG oneRow = DbTable_addRow(g_DbRoot->info);
@@ -629,7 +629,7 @@ BIG DbRoot_createView_chart(const BIG parentRow)
 		UBIG groupRow = DbTable_addRow(g_DbRoot->info);
 		_DbRoot_setType(groupRow, "group");
 		DbColumnN_add(DbRoot_subs(), r, groupRow);
-		_DbRoot_setEnable(groupRow, FALSE);	//default = not visible
+		DbRoot_setEnable(groupRow, FALSE);	//default = not visible
 
 		//add one
 		UBIG oneRow = DbTable_addRow(g_DbRoot->info);
@@ -678,7 +678,7 @@ BIG DbRoot_createView_map(const BIG parentRow)
 		UBIG groupRow = DbTable_addRow(g_DbRoot->info);
 		_DbRoot_setType(groupRow, "group");
 		DbColumnN_add(DbRoot_subs(), r, groupRow);
-		_DbRoot_setEnable(groupRow, FALSE);	//default = not visible
+		DbRoot_setEnable(groupRow, FALSE);	//default = not visible
 
 		//add one
 		UBIG oneRow = DbTable_addRow(g_DbRoot->info);
@@ -923,10 +923,10 @@ static void _DbRoot_createInfo(void)
 	g_DbRoot->info->fileId = FileRow_init(1);
 
 	g_DbRoot->info_options = DbColumns_addColumnString32(g_DbRoot->info->columns);
-	g_DbRoot->info_subs2 = DbColumns_addColumnN(g_DbRoot->info->columns, g_DbRoot->info);
+	g_DbRoot->info_subs = DbColumns_addColumnN(g_DbRoot->info->columns, g_DbRoot->info);
 	g_DbRoot->info_ref = DbColumns_addColumn1(g_DbRoot->info->columns, g_DbRoot->info);
 
-	g_DbRoot->info_subs2->base.fileId = FileRow_init(1);		//first columnRow created by user is 7 !!!
+	g_DbRoot->info_subs->base.fileId = FileRow_init(1);		//first columnRow created by user is 7 !!!
 	g_DbRoot->info_ref->base.fileId = FileRow_init(2);
 	g_DbRoot->info_options->base.fileId = FileRow_init(3);
 }
@@ -1030,6 +1030,21 @@ static BIG _DbRoot_getGroupColumnRow(const BIG row)
 	}
 	return -1;
 }
+
+
+BIG DbRoot_findSubLineRefRow(BIG row, BIG findRow)
+{
+	UBIG i = 0;
+	BIG it;
+	while ((it = DbColumnN_jump(DbRoot_subs(), row, &i, 1)) >= 0)
+	{
+		if (DbRoot_ref_row(it) == findRow)
+			return it;
+		i++;
+	}
+	return -1;
+}
+
 
 static void _DbRoot_updateColumns(BIG tableSubRow)
 {
@@ -1359,6 +1374,65 @@ static void _DbRoot_updateViewSummary(BIG viewsRow, BIG viewRow)
 	}
 }
 
+void DbRoot_updateColumnsIds(BIG row)
+{
+	const DbTable* table = DbRoot_findParentTable(row);
+	const BIG idColumnsRow = DbRows_findOrCreateSubType(row, "id_columns");
+
+	const BIG orig_idColumnsRow = DbRows_findOrCreateSubType(DbTable_getRow(table), "id_columns");
+
+	BIG i;
+	for (i = 0; i < DbColumns_num(table->columns); i++)
+	{
+		DbColumn* col = DbColumns_get(table->columns, i);
+		if (col == &table->rows->base)
+			continue;
+
+		BOOL found = FALSE;
+		BIG it;
+		UBIG i5 = 0;
+		while ((it = DbColumnN_jump(DbRoot_subs(), idColumnsRow, &i5, 1)) >= 0)
+		{
+			if (DbRoot_ref_column(it) < 0)
+				DbRoot_removeRow(it);
+			else
+				if (DbRoot_ref_column(it) == col)
+				{
+					found = TRUE;
+					break;
+				}
+			i5++;
+		}
+
+		if (!found)
+		{
+			//new row
+			UBIG r = DbTable_addRow(g_DbRoot->info);
+
+			const BIG colRow = DbColumn_getRow(col);
+
+			BIG origLaneRow = DbRoot_findSubLineRefRow(orig_idColumnsRow, colRow);
+			if(origLaneRow >= 0)
+				DbTable_copyRow(g_DbRoot->info, r, origLaneRow);
+			else
+			{
+				DbRoot_setEnable(r, FALSE);
+				DbColumn1_set(DbRoot_ref(), r, colRow);
+			}
+
+			//BIG origColumnRow = DbColumn_getRow(col);
+			//DbColumn1_set(DbRoot_ref(), r, origColumnRow);
+
+			
+
+			//DbRoot_setEnable(r, _DbRoot_isEnable(origLaneRow));
+			//_DbRoot_setOptionNumber(r, "enable", 0);
+
+			DbColumnN_add(DbRoot_subs(), idColumnsRow, r);
+		}
+	}
+}
+
 static void _DbRoot_updateView(BIG viewsRow)
 {
 	DbTable* table = DbRoot_findParentTable(viewsRow);
@@ -1407,8 +1481,7 @@ static void _DbRoot_updateView(BIG viewsRow)
 
 		const BOOL isSummaryTable = DbRoot_isTypeView_summary(viewRow);
 		//const BOOL isMap = DbRoot_isTypeView_map(viewRow);
-
-//DbTable* table2 = DbRoot_findParentTable(viewRow);
+		//DbTable* table2 = DbRoot_findParentTable(viewRow);
 
 		if (isSummaryTable)
 			_DbRoot_updateViewSummary(viewsRow, viewRow);
@@ -1482,6 +1555,10 @@ static void _DbRoot_updateView(BIG viewsRow)
 				}
 			i4++;
 		}
+
+		if (DbRoot_isTypeView_filter(viewRow) || isSummaryTable)
+			DbRoot_updateColumnsIds(viewRow);
+
 		i3++;
 	}
 }
@@ -1520,6 +1597,8 @@ void DbRoot_updateTable(BIG folderRow, BOOL remote)
 
 				i2++;
 			}
+
+			DbRoot_updateColumnsIds(tableRow);
 		}
 		else
 			if (_DbRoot_cmpType(tableRow, "page"))

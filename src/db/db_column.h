@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -48,6 +48,13 @@ typedef struct DbColumn_s
 	DbJointed* links_jointed;
 
 	BOOL err;
+
+	char* extra_name;
+
+
+	double default_number;
+	UNI* default_text;
+
 } DbColumn;
 
 DbColumn DbColumn_init(DbColumnTYPE type, DbFormatTYPE format, DbColumns* parent, double defValue)
@@ -84,8 +91,26 @@ DbColumn DbColumn_init(DbColumnTYPE type, DbFormatTYPE format, DbColumns* parent
 
 	self.err = FALSE;
 
+	self.extra_name = 0;
+
+
+	self.default_number = 0;
+	self.default_text = 0;
+
 	return self;
 }
+
+const char* DbColumn_getExtraName(const DbColumn* self)
+{
+	return self->extra_name;
+}
+void DbColumn_setExtraName(DbColumn* self, const char* name)
+{
+	Std_deleteCHAR(self->extra_name);
+	self->extra_name = Std_newCHAR(name);
+}
+
+
 
 BOOL DbColumn_isErr(const DbColumn* self)
 {
@@ -248,10 +273,38 @@ void DbColumn_freeFilterAndInsight(DbColumn* self)
 	DbColumn_setLinkJointed(self, 0);
 }
 
+
+
+void DbColumn_setDefaultString32(DbColumn* self, const UNI* text)
+{
+	Std_deleteUNI(self->default_text);
+	self->default_number = 0;
+	self->default_text = Std_newUNI(text);
+}
+
+void DbColumn_setDefaultNumber(DbColumn* self, double number)
+{
+	DbColumn_setDefaultString32(self, 0);
+
+	DbColumnTYPE columnType = DbColumnFormat_findColumnType(self->type);
+	switch (columnType)
+	{
+		case DbColumn_1:	self->default_number = number;	break;
+		case DbColumn_N:	self->default_number = number;	break;
+		case DbColumn_STRING_32: self->default_text = Std_newNumberPrecision(number, -1);	break;
+	}
+}
+
+
+
 void DbColumn_free(DbColumn* self)
 {
+	DbColumn_setDefaultString32(self, 0);
+
 	TableItems_free(&self->data);
 	TableItems_free(&self->changes);
+
+	Std_deleteCHAR(self->extra_name);
 }
 
 void DbColumn_clearItems(DbColumn* self)
@@ -344,7 +397,7 @@ BOOL DbColumn_isChangedSave(const DbColumn* self)
 {
 	return TableItems_isChangedSave(&self->changes);
 }
-BOOL DbColumn_isChangedExe(const DbColumn* self)
+BOOL DbColumn_isChangedExe(DbColumn* self)
 {
 	return TableItems_isChangedExe(&self->changes);
 }
@@ -379,3 +432,15 @@ BOOL DbColumn_isType1(const DbColumn* self)
 {
 	return self->type == DbColumn_1;
 }
+
+BOOL DbColumn_isFindAndReplace(const DbColumn* self)
+{
+	if (self->type == DbColumn_STRING_32)
+		return TRUE;
+
+	if (self->type == DbColumn_1)
+		return self->format == DbFormat_NUMBER_1 || self->format == DbFormat_CURRENCY || self->format == DbFormat_PERCENTAGE;
+
+	return FALSE;
+}
+

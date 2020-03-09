@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -21,6 +21,7 @@ typedef struct GuiItemLayout_s
 	BOOL drawBackground;
 	BOOL drawBackgroundWhite;
 	BOOL drawBackgroundBlack;
+	BOOL drawBackgroundGrey;
 
 	BOOL drawBackgroundMain;
 	BOOL drawBorder;
@@ -28,6 +29,10 @@ typedef struct GuiItemLayout_s
 	BOOL drawBorderError; //for step
 
 	BOOL whiteScroll;
+
+	DbValue back_cd_value;
+	Rgba back_cd;
+
 
 	//BOOL drawShadows;
 	int extraSpace;
@@ -70,6 +75,7 @@ void GuiItemLayout_initScroll(GuiItemLayout* self, Quad2i grid, GuiItemCallback*
 	self->drawBackgroundMain = FALSE;
 	self->drawBackgroundError = FALSE;
 	self->drawBackgroundBlack = FALSE;
+	self->drawBackgroundGrey = FALSE;
 
 	self->drawBorder = FALSE;
 	self->drawBorderError = FALSE;
@@ -93,6 +99,8 @@ void GuiItemLayout_initScroll(GuiItemLayout* self, Quad2i grid, GuiItemCallback*
 	self->imgBackground = Image4_init();
 
 	self->whiteScroll = FALSE;
+
+	self->back_cd_value = DbValue_initEmpty();
 
 	GuiItem_setCallClick(&self->base, click);
 }
@@ -149,6 +157,8 @@ void GuiItemLayout_initCopy(GuiItemLayout* self, GuiItemLayout* src, BOOL copySu
 	self->scrollH = GuiScroll_initCopy(&src->scrollH);
 	self->scrollV = GuiScroll_initCopy(&src->scrollV);
 
+	self->back_cd_value = DbValue_initCopy(&src->back_cd_value);
+
 	self->imgBackground = Image4_initCopy(&src->imgBackground);
 }
 
@@ -167,6 +177,8 @@ void GuiItemLayout_free(GuiItemLayout* self)
 
 	GuiScroll_free(&self->scrollV);
 	GuiScroll_free(&self->scrollH);
+
+	DbValue_free(&self->back_cd_value);
 
 	Image4_free(&self->imgBackground);
 
@@ -208,6 +220,13 @@ void GuiItemLayout_setResize(GuiItemLayout* self, GuiItemCallback* resize)
 	self->resize = resize;
 }
 
+
+void GuiItemLayout_setBackgroundCdValue(GuiItemLayout* self, DbValue back_cd_value)
+{
+	self->back_cd_value = back_cd_value;
+	self->drawBackground = (back_cd_value.column != 0);
+}
+
 void GuiItemLayout_setBackgroundWhite(GuiItemLayout* self, BOOL drawBackgroundWhite)
 {
 	self->drawBackgroundWhite = drawBackgroundWhite;
@@ -216,6 +235,11 @@ void GuiItemLayout_setBackgroundBlack(GuiItemLayout* self, BOOL drawBackgroundBl
 {
 	self->drawBackgroundBlack = drawBackgroundBlack;
 }
+void GuiItemLayout_setBackgroundGrey(GuiItemLayout* self, BOOL drawBackgroundGrey)
+{
+	self->drawBackgroundGrey = drawBackgroundGrey;
+}
+
 void GuiItemLayout_setBackgroundMain(GuiItemLayout* self, BOOL drawBackgroundMain)
 {
 	self->drawBackgroundMain = drawBackgroundMain;
@@ -254,15 +278,14 @@ void GuiItemLayout_setWheelV(GuiItemLayout* self, UBIG wheel)
 {
 	GuiScroll_setWheelDirect(&self->scrollV, wheel);
 }
+void GuiItemLayout_setWheelH(GuiItemLayout* self, UBIG wheel)
+{
+	GuiScroll_setWheelDirect(&self->scrollH, wheel);
+}
 
 void GuiItemLayout_setDrawBorder(GuiItemLayout* self, BOOL drawBorder)
 {
 	self->drawBorder = drawBorder;
-}
-
-void GuiItemLayout_setScrollVPos(GuiItemLayout* self, BIG pos)
-{
-	GuiScroll_setWheelDirect(&self->scrollV, pos);
 }
 
 void GuiItemLayout_resizeArrayColumn(GuiItemLayout* self, UINT n)
@@ -359,8 +382,8 @@ BOOL GuiItemLayout_hasScrollV(const GuiItemLayout* self)
 
 BOOL GuiItemLayout_hasScrollH(const GuiItemLayout* self)
 {
-	if (self->showScrollH)
-		return GuiScroll_is(&self->scrollH);
+	//if (self->showScrollH)
+	//	return GuiScroll_is(&self->scrollH);
 
 	return(GuiScroll_is(&self->scrollH) && self->showScrollH);
 }
@@ -409,6 +432,11 @@ void GuiItemLayout_draw(GuiItemLayout* self, Image4* img, Quad2i coord, Win* win
 void GuiItemLayout_drawPost(GuiItemLayout* self, Image4* img, Quad2i coord, Win* win)
 {
 	coord = GuiItemLayout_getCoordSpace(self, coord);
+
+	//if (coord.start.x == 0 && self->scrollV.value.column)
+	//	DbValue_setNumber(&self->scrollV.value, 0);
+		//self->scrollV.wheel = 0;
+		//printf("dd");
 
 	if (GuiItemLayout_hasScrollV(self))
 	{
@@ -463,12 +491,16 @@ void GuiItemLayout_drawPost(GuiItemLayout* self, Image4* img, Quad2i coord, Win*
 
 void GuiItemLayout_update(GuiItemLayout* self, Quad2i coord, Win* win)
 {
-	if (GuiItemLayout_hasScrollV(self))
+	DbValue_setRow(&self->back_cd_value, GuiItem_getRow(&self->base), 0);
+	if (DbValue_is(&self->back_cd_value))
+		self->back_cd = DbValue_getCd(&self->back_cd_value);
+
+	//if (GuiItemLayout_hasScrollV(self))
 		GuiItem_setRedraw(&self->base, GuiScroll_getRedrawAndReset(&self->scrollV));
-	if (GuiItemLayout_hasScrollH(self))
+	//if (GuiItemLayout_hasScrollH(self))
 		GuiItem_setRedraw(&self->base, GuiScroll_getRedrawAndReset(&self->scrollH));
 
-	GuiItem_setRedraw(&self->base, DbValue_hasChanged(&self->title));
+	GuiItem_setRedraw(&self->base, DbValue_hasChanged(&self->back_cd_value) || DbValue_hasChanged(&self->title));
 }
 
 void GuiItemLayout_touch(GuiItemLayout* self, Quad2i coord, Win* win)
@@ -488,11 +520,18 @@ void GuiItemLayout_touch(GuiItemLayout* self, Quad2i coord, Win* win)
 	if (self->drawBackgroundBlack)
 		back_cd = g_theme.black;
 
+	if (self->drawBackgroundGrey)
+		back_cd = Rgba_aprox(g_theme.white, g_theme.black, 0.3f);
+	
+
 	if (self->drawBackgroundError)
 		back_cd = g_theme.warning;
 
 	if (self->value.row >= 0 && self->value.row == self->highlightRow)
 		back_cd = Rgba_aprox(g_theme.background, g_theme.main, 0.5f);
+
+	if (DbValue_is(&self->back_cd_value))
+		back_cd = self->back_cd;
 
 	self->cdSelect = g_theme.main;
 	self->cdWarning = g_theme.warning;

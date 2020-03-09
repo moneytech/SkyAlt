@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -162,6 +162,8 @@ UNI* DbRoot_getName(BIG row, UNI* out, const UBIG outMaxSize);
 void DbRoot_setName(BIG row, const UNI* value);
 
 BIG DbRoot_addSubRow(const BIG parentRow, BIG pos);
+BIG DbRoot_findSubLineRefRow(BIG row, BIG findRow);
+void DbRoot_setEnable(BIG row, BOOL enable);
 
 BIG DbRoot_getOrigReference(const BIG row);
 BOOL DbRoot_isReference(const BIG row);
@@ -202,10 +204,6 @@ void DbRoot_mapDeleteGeolocation(void);
 
 void DbRoot_refresh(void);
 
-//DbInsight* DbRoot_addInsight(DbInsight* insight);
-//void DbRoot_removeInsight(DbInsight* insight);
-//DbTable* DbRoot_fillSummaryTable(BIG row, DbFilter* filter);
-
 OsODBC* DbRoot_connectRemote(BIG row, BOOL logErrors);
 void DbRoot_refreshRemoteNow(BIG row);
 OsDate DbRoot_getRemoteRefreshNextTime(BIG row);
@@ -214,6 +212,9 @@ BOOL DbRoot_tryUpdateFileIndexes(void);
 
 void DbRoot_print(BIG row, UINT deep);
 
+
+UBIG DbColumn_numChanges(const DbColumn* self);
+BOOL DbTable_isChangedExe(DbTable* self);
 BOOL DbTable_isLoaded(DbTable* self);
 BOOL DbTable_isSummary(const DbTable* self);
 DbColumn* DbTable_getIdsColumn(const DbTable* self);
@@ -224,6 +225,28 @@ void DbTable_loadLast(DbTable* self);
 const UNI* DbTable_getName(const DbTable* self, UNI* out, const UBIG outMaxSize);
 DbColumns* DbTable_getColumns(const DbTable* self);
 DbColumn* DbTable_createColumnFormat(DbTable* self, DbFormatTYPE format, const UNI* name, DbTable* btable);
+//BIG DbTable_findRowScroll(const DbTable* self, BIG row);
+
+
+
+DbTable* DbTable_newExtra(const char* name);
+void DbTable_delete(DbTable* self);
+const char* DbTable_getExtraName(const DbTable* self);
+void DbTable_setExtraName(DbTable* self, const char* name);
+DbColumn* DbTable_findColumnName(DbTable* self, const char* name);
+DbColumn* DbTable_addColumn1(DbTable* self, const char* name, DbTable* btable);
+DbColumn* DbTable_addColumnN(DbTable* self, const char* name, DbTable* btable);
+DbColumn* DbTable_addColumnString32(DbTable* self, const char* name);
+BIG DbTable_jumpRowsFrom0(DbTable* self, UBIG index);
+void DbTable_setDefaults(DbTable* self, BIG row);
+
+const char* DbColumn_getExtraName(const DbColumn* self);
+void DbColumn_setExtraName(DbColumn* self, const char* name);
+BIG DbColumn_jump(DbColumn* self, UBIG r, UBIG* pos, BIG jumps);
+
+void DbColumn_setDefaultNumber(DbColumn* self, double number);
+void DbColumn_setDefaultString32(DbColumn* self, const UNI* text);
+
 
 const UBIG DbColumns_num(const DbColumns* self);
 DbColumn* DbColumns_get(const DbColumns* self, const UINT i);
@@ -256,6 +279,7 @@ UNI* DbColumn_getOption(const DbColumn* self, const char* name, UNI* out, const 
 BOOL DbColumn_cmpOption(const DbColumn* self, const char* name, const UNI* compare);
 
 BOOL DbColumn_isType1(const DbColumn* self);
+BOOL DbColumn_isFindAndReplace(const DbColumn* self);
 
 DbColumn* DbColumn_moveToTable(DbColumn* self);
 
@@ -333,6 +357,7 @@ BIG DbValue_getRow(const DbValue* self);
 void DbValue_setRow(DbValue* self, BIG row, UBIG index);
 
 BOOL DbValue_isRowEnable(const DbValue* self);
+BOOL DbValue_is(const DbValue* self);
 
 BOOL DbValue_isType1(const DbValue* self);
 BOOL DbValue_isTypeN(const DbValue* self);
@@ -385,6 +410,8 @@ void DbValues_free(DbValues* self);
 DbValue* DbValues_add(DbValues* self, DbValue value);
 DbValue* DbValues_findRow(const DbValues* self, BIG row);
 void DbValues_updateText(DbValues* self);
+void DbValues_setRow(DbValues* self, BIG row);
+
 
 typedef struct DbRows_s
 {
@@ -438,9 +465,9 @@ DbColumn* DbRows_getSubsColumn(BIG row, const char* subType, BOOL onlyEnable, BI
 StdArr DbRows_getSubsColumns(BIG row, const char* subType, BOOL onlyEnable);
 BIG DbRows_getSubsRow(BIG row, const char* subType, BOOL onlyEnable, BIG index);
 UBIG DbRows_getSubsNum(BIG row, const char* subType, BOOL onlyEnable);
-DbValues DbRows_getOptions(BIG row, const char* subType, const char* valueType, BOOL onlyEnable);
+DbValues DbRows_getOptions(BIG propRow, const char* valueType, BOOL onlyEnable);
 DbRows DbRows_getSubsArray(BIG row, const char* subType);
-BIG DbRows_getAddSubsLine(BIG row, const char* subType);
+BIG DbRows_addSubsLine(BIG row, const char* subType);
 
 BOOL DbRows_hasChanged(DbRows* self);
 
@@ -466,15 +493,12 @@ void DbRows_insertIDbefore(DbRows* self, BIG row, BIG findRow);
 void DbRows_insertIDafter(DbRows* self, BIG row, BIG findRow);
 BOOL DbRows_isSubChild(DbRows* self, BIG origRow, BIG findRow);
 BIG DbRows_findLinkPos(DbRows* self, BIG findRow);
+BIG DbRows_findRowScroll(DbRows* self, BIG findRow);
 
 BOOL DbRows_getColumnMinMax(DbRows* self, DbColumn* column, double* mn, double* mx);
 BOOL DbRows_getColumnsMinMax(DbRows* self, DbColumn** columns, double* mn, double* mx);
 
 void DbColumn_addLinksToColumn(DbColumn* dst, DbColumn* src, DbRows* rows);
-
-//DbInsight* DbInsight_new(const DbInsightFunc* func, DbTable* srcTable, DbFilter* srcFilter, DbColumn* result_column);
-//void DbInsight_addItem(DbInsight* self, DbColumn* column);
-//BOOL DbInsight_execute(DbInsight* self);
 
 UBIG DbInsightSelectFunc_num(void);
 const char* DbInsightSelectFunc_getName(BIG index);

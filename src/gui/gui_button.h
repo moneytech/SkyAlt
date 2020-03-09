@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -37,12 +37,16 @@ typedef struct GuiItemButton_s
 	GuiItemButton_TYPE type;
 
 	BOOL textCenter;
+	BOOL drawBottomSepar;
 
 	GuiImage* image;
 	BOOL imageIcon;
 
 	BOOL useBackCd;
 	Rgba back_cd;
+	DbValue back_cd_value;
+
+	BOOL drawBackground;
 } GuiItemButton;
 
 GuiItem* GuiItemButton_new(Quad2i grid, DbValue text)
@@ -68,6 +72,10 @@ GuiItem* GuiItemButton_new(Quad2i grid, DbValue text)
 
 	self->useBackCd = FALSE;
 	self->back_cd = g_theme.main;
+	self->back_cd_value = DbValue_initEmpty();
+
+	self->drawBackground = TRUE;
+	self->drawBottomSepar = FALSE;
 
 	return(GuiItem*)self;
 }
@@ -153,6 +161,8 @@ GuiItem* GuiItemButton_newCopy(GuiItemButton* src, BOOL copySub)
 	if (self->image)
 		self->image = GuiImage_newCopy(src->image);
 
+	self->back_cd_value = DbValue_initCopy(&src->back_cd_value);
+
 	return(GuiItem*)self;
 }
 
@@ -163,16 +173,27 @@ void GuiItemButton_delete(GuiItemButton* self)
 
 	DbValue_free(&self->text);
 	DbValue_free(&self->description);
+	DbValue_free(&self->back_cd_value);
 
 	GuiItem_free(&self->base);
 	Os_free(self, sizeof(GuiItemButton));
 }
 
-void GuiItemButton_setWarningCd(GuiItemButton* self, BOOL active)
+void GuiItemButton_setBackgroundCd(GuiItemButton* self, BOOL active, Rgba back_cd)
 {
 	self->useBackCd = active;
 	if (active)
-		self->back_cd = g_theme.warning;
+		self->back_cd = back_cd;
+}
+void GuiItemButton_setWarningCd(GuiItemButton* self, BOOL active)
+{
+	GuiItemButton_setBackgroundCd(self, active, g_theme.warning);
+}
+void GuiItemButton_setBackgroundCdValue(GuiItemButton* self, BOOL active, DbValue back_cd_value)
+{
+	self->useBackCd = active;
+	if (active)
+		self->back_cd_value = back_cd_value;
 }
 
 void GuiItemButton_setDescription(GuiItemButton* self, DbValue description)
@@ -246,6 +267,14 @@ void GuiItemButton_drawPress(Image4* img, Rgba cd, Quad2i coord, BOOL left, BOOL
 	}
 }
 
+void GuiItemButton_drawSeparLine(GuiItemButton* self, Image4* img, Quad2i coord)
+{
+	if (self->drawBottomSepar)
+	{
+		Image4_drawBoxQuad(img, Quad2i_init4(coord.start.x, coord.start.y + coord.size.y - 1, coord.size.x, 1), g_theme.white);
+	}
+}
+
 void GuiItemButton_draw(GuiItemButton* self, Image4* img, Quad2i coord, Win* win)
 {
 	Rgba back_cd = self->base.back_cd;
@@ -271,7 +300,12 @@ void GuiItemButton_draw(GuiItemButton* self, Image4* img, Quad2i coord, Win* win
 				GuiImage_draw(self->image, img, _GuiItemButton_getImageCoord(self, coord), back_cd);
 		}
 		else
-			Image4_drawBoxQuad(img, coord, back_cd);
+			if (self->drawBackground)
+			{
+				Image4_drawBoxQuad(img, coord, back_cd);
+
+				GuiItemButton_drawSeparLine(self, img, coord);
+			}
 	}
 
 	//if (Std_sizeUNI(DbValue_result(&self->text)))
@@ -319,7 +353,10 @@ void GuiItemButton_draw(GuiItemButton* self, Image4* img, Quad2i coord, Win* win
 
 	if (self->stayPressed)
 	{
-		GuiItemButton_drawPress(img, self->base.front_cd, coord, (self->stayPressedLeft && !self->base.icon), self->stayPressedRight);
+		if (self->useBackCd)
+			Image4_drawBorder(img, origCoord, 3, self->base.front_cd);
+		else
+			GuiItemButton_drawPress(img, self->base.front_cd, coord, (self->stayPressedLeft && !self->base.icon), self->stayPressedRight);
 	}
 
 	if (self->base.drawTable)
@@ -343,7 +380,14 @@ void GuiItemButton_update(GuiItemButton* self, Quad2i coord, Win* win)
 	if (self->image)
 		changed |= GuiImage_update(self->image, _GuiItemButton_getImageCoord(self, coord).size);
 
-	GuiItem_setRedraw(&self->base, (changed || DbValue_hasChanged(&self->text) || DbValue_hasChanged(&self->description)));
+	if (self->useBackCd)
+	{
+		DbValue_setRow(&self->back_cd_value, GuiItem_getRow(&self->base), 0);
+		if (DbValue_is(&self->back_cd_value))
+			self->back_cd = DbValue_getCd(&self->back_cd_value);
+	}
+
+	GuiItem_setRedraw(&self->base, (changed || DbValue_hasChanged(&self->back_cd_value) || DbValue_hasChanged(&self->text) || DbValue_hasChanged(&self->description)));
 }
 
 void GuiItemButton_touch(GuiItemButton* self, Quad2i coord, Win* win)

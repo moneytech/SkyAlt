@@ -4,7 +4,7 @@
  * Use of this software is governed by the Business Source License included
  * in the LICENSE file and at www.mariadb.com/bsl11.
  *
- * Change Date: 2025-02-01
+ * Change Date: 2025-03-01
  *
  * On the date above, in accordance with the Business Source License, use
  * of this software will be governed by version 2 or later of the General
@@ -52,7 +52,7 @@ typedef struct OsFontLetters_s
 	OsFontLetter* m_letters;
 	UINT m_num;
 }OsFontLetters;
-OsFontLetters OsFontLetters_init()
+OsFontLetters OsFontLetters_init(void)
 {
 	OsFontLetters self;
 	self.m_letters = 0;
@@ -64,7 +64,7 @@ void OsFontLetters_free(OsFontLetters* self)
 	int i;
 	for (i = 0; i < self->m_num; i++)
 		OsFontLetter_free(&self->m_letters[i]);
-	free(self->m_letters);
+	Os_free(self->m_letters, self->m_num * sizeof(OsFontLetter));
 }
 OsFontLetter* OsFontLetters_get(OsFontLetters* self, UINT i)
 {
@@ -79,6 +79,47 @@ OsFontLetter* OsFontLetters_get(OsFontLetters* self, UINT i)
 	return &self->m_letters[i];
 }
 
+
+
+typedef struct OsFontAngle_s
+{
+	int angleDeg;
+	OsFontLetters* m_lettersH;
+	UINT m_num;
+}OsFontAngle;
+
+OsFontAngle OsFontAngle_init(const int angleDeg)
+{
+	OsFontAngle self;
+	self.m_lettersH = 0;
+	self.m_num = 0;
+	self.angleDeg = angleDeg;
+	return self;
+}
+void OsFontAngle_free(OsFontAngle* self)
+{
+	int i;
+	for (i = 0; i < self->m_num; i++)
+		OsFontLetters_free(&self->m_lettersH[i]);
+	Os_free(self->m_lettersH, self->m_num * sizeof(OsFontLetters));
+
+	self->m_lettersH = 0;
+	self->m_num = 0;
+}
+OsFontLetter* OsFontAngle_get(OsFontAngle* self, const UNI CH, const int Hpx)
+{
+	if (Hpx >= self->m_num)
+	{
+		UINT old = self->m_num;
+		self->m_num = Hpx + 1;
+		self->m_lettersH = Os_realloc(self->m_lettersH, self->m_num * sizeof(OsFontLetters));
+		for (; old < self->m_num; old++)
+			self->m_lettersH[old] = OsFontLetters_init();	//reset new one
+	}
+
+	return OsFontLetters_get(&self->m_lettersH[Hpx], CH);
+}
+
 typedef struct OsFont_s
 {
 	UNI* m_name;
@@ -86,21 +127,21 @@ typedef struct OsFont_s
 	FT_Face m_face;
 	int m_num_subpixels;	//1 or 3
 
-	OsFontLetters* m_lettersH;
-	UINT m_num_lettersH;
+	OsFontAngle* m_angles;
+	UINT m_num_angles;
 
-	OsLock lock;
+	//OsLock lock;
 }OsFont;
 
 void OsFont_clear(OsFont* self)
 {
 	int i;
-	for (i = 0; i < self->m_num_lettersH; i++)
-		OsFontLetters_free(&self->m_lettersH[i]);
-	free(self->m_lettersH);
+	for (i = 0; i < self->m_num_angles; i++)
+		OsFontAngle_free(&self->m_angles[i]);
+	Os_free(self->m_angles, self->m_num_angles *sizeof(OsFontAngle));
 
-	self->m_lettersH = 0;
-	self->m_num_lettersH = 0;
+	self->m_angles = 0;
+	self->m_num_angles = 0;
 }
 const char* OsFont_free(OsFont* self)
 {
@@ -112,8 +153,8 @@ const char* OsFont_free(OsFont* self)
 		err = "FT_Done_FreeType";
 
 	OsFont_clear(self);
-	free(self->m_name);
-	OsLock_free(&self->lock);
+	Std_deleteUNI(self->m_name);
+	//OsLock_free(&self->lock);
 	return err;
 }
 
@@ -124,16 +165,16 @@ static const char* OsFont_init(OsFont* self, const UNI* name)
 	self->m_name = Std_newUNI(name);
 	self->m_num_subpixels = 1;
 
-	self->m_lettersH = 0;
-	self->m_num_lettersH = 0;
+	self->m_angles = 0;
+	self->m_num_angles = 0;
 
 	self->m_face = 0;
 
 	if (FT_Init_FreeType(&self->m_library))
 		err = "FT_Init_FreeType";
 
-	if (!OsLock_init(&self->lock))
-		err = "OsLock_init";
+	//if (!OsLock_init(&self->lock))
+	//	err = "OsLock_init";
 
 	return err;
 }
@@ -168,7 +209,7 @@ BOOL OsFont_is(const OsFont* self, const UNI* name)
 	return Std_cmpUNI(self->m_name, name);
 }
 
-const char* OsFont_loadBitmap(OsFont* self, const UNI CH, const int Hpx, OsFontLetter* ret)
+const char* OsFont_loadBitmap(OsFont* self, OsFontLetter* letter, const UNI CH, const int Hpx, int angleDeg)
 {
 	const char* err = 0;
 	FT_Glyph glyph;
@@ -178,7 +219,7 @@ const char* OsFont_loadBitmap(OsFont* self, const UNI CH, const int Hpx, OsFontL
 
 	//transform
 	/*{
-		const float angle = M_PI / 4;
+		const float angle = angleDeg / 180 * M_PI;
 		FT_Matrix matrix;
 		matrix.xx = (FT_Fixed)(cos(angle) * 0x10000L);
 		matrix.xy = (FT_Fixed)(-sin(angle) * 0x10000L);
@@ -200,7 +241,7 @@ const char* OsFont_loadBitmap(OsFont* self, const UNI CH, const int Hpx, OsFontL
 
 	//transform
 	{
-		const double angle = 0;// M_PI / 4;	//45 degree - try 90deg to see bbox ...
+		const float angle = angleDeg / 180.0f * M_PI;	// M_PI / 4;	//45 degree - try 90deg to see bbox ...
 		FT_Matrix matrix;
 		matrix.xx = (FT_Fixed)(cos(angle) * 0x10000L);
 		matrix.xy = (FT_Fixed)(-sin(angle) * 0x10000L);
@@ -225,37 +266,45 @@ const char* OsFont_loadBitmap(OsFont* self, const UNI CH, const int Hpx, OsFontL
 		size.x = bitmap_glyph->bitmap.width / self->m_num_subpixels;
 		size.y = bitmap_glyph->bitmap.rows;
 
-		//ret->m_bytes_in_x = bitmap_glyph->bitmap.pitch;	//can't be use only m_size, because this number is can't be device by 3(RGB-LCD)
-		OsFontLetter_alloc(ret, Vec2i_init2(bitmap_glyph->left, bitmap_glyph->top - size.y), bitmap_glyph->bitmap.pitch, self->m_face->glyph->advance.x >> 6, size, bitmap_glyph->bitmap.buffer);
+		//letter->m_bytes_in_x = bitmap_glyph->bitmap.pitch;	//can't be use only m_size, because this number is can't be device by 3(RGB-LCD)
+		OsFontLetter_alloc(letter, Vec2i_init2(bitmap_glyph->left, bitmap_glyph->top - size.y), bitmap_glyph->bitmap.pitch, self->m_face->glyph->advance.x >> 6, size, bitmap_glyph->bitmap.buffer);
 	}
 
 	FT_Done_Glyph(glyph);
 	return err;
 }
 
-OsFontLetter OsFont_get(OsFont* self, const UNI CH, const int Hpx)
+OsFontLetter OsFont_get(OsFont* self, const UNI CH, const int Hpx, const int angleDeg)
 {
 	if (CH < 0)
 		return OsFontLetter_initEmpty();
 
-	OsLock_lock(&self->lock);
+	//OsLock_lock(&self->lock);
+	OsFontLetter* letter = 0;
 
-	if (Hpx >= self->m_num_lettersH)
+	//try find
+	int i;
+	for (i = 0; i < self->m_num_angles; i++)
 	{
-		UINT old = self->m_num_lettersH;
-		self->m_num_lettersH = Hpx + 1;
-		self->m_lettersH = Os_realloc(self->m_lettersH, self->m_num_lettersH * sizeof(OsFontLetters));
-		for (; old < self->m_num_lettersH; old++)
-			self->m_lettersH[old] = OsFontLetters_init();	//reset new one
+		if (self->m_angles[i].angleDeg == angleDeg)
+			letter = OsFontAngle_get(&self->m_angles[i], CH, Hpx);
 	}
-	OsFontLetter* letter = OsFontLetters_get(&self->m_lettersH[Hpx], CH);
+
+	//create new angle
+	if(!letter)
+	{
+		self->m_num_angles++;
+		self->m_angles = Os_realloc(self->m_angles, self->m_num_angles * sizeof(OsFontAngle));
+		self->m_angles[self->m_num_angles-1] = OsFontAngle_init(angleDeg);
+
+		letter = OsFontAngle_get(&self->m_angles[self->m_num_angles - 1], CH, Hpx);
+	}
 
 	if (!OsFontLetter_is(letter))
-	{
-		OsFont_loadBitmap(self, CH, Hpx, letter);
-	}
+		OsFont_loadBitmap(self, letter, CH, Hpx, angleDeg);
 
-	OsLock_unlock(&self->lock);
+
+	//OsLock_unlock(&self->lock);
 
 	return *letter;
 }
@@ -270,7 +319,7 @@ Vec2i OsFont_getTextSize(OsFont* self, const UNI* text, const int Hpx, const int
 	{
 		if (*text != '\n')
 		{
-			OsFontLetter l = OsFont_get(self, *text, Hpx);
+			OsFontLetter l = OsFont_get(self, *text, Hpx, 0);
 			max_x += l.m_len;
 			if (-l.move_y > max_down_move_y)
 				max_down_move_y = -l.move_y;
@@ -307,7 +356,7 @@ int OsFont_getCharPixelPos(OsFont* self, const int Hpx, const UNI* text, int cur
 
 	while (text && text[i] && i < cur_pos)
 	{
-		OsFontLetter l = OsFont_get(self, text[i], Hpx);
+		OsFontLetter l = OsFont_get(self, text[i], Hpx, 0);
 		pos += l.m_len;
 		i++;
 	}
@@ -322,7 +371,7 @@ int OsFont_getCursorPos(OsFont* self, const int Hpx, const UNI* text, int pixel_
 
 	while (text && text[i])
 	{
-		OsFontLetter l = OsFont_get(self, text[i], Hpx);
+		OsFontLetter l = OsFont_get(self, text[i], Hpx, 0);
 
 		if (pixel_x < (pos + l.m_len * 0.5f))	//m_bytes_in_x
 			break;
