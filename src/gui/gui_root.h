@@ -37,8 +37,6 @@ typedef struct GuiItemRoot_s
 
 	UBIG numChanges;
 	Quad2i redrawRect;
-
-	InterRoot* interpreter;
 } GuiItemRoot;
 
 GuiItemRoot* g_GuiItemRoot = 0;
@@ -79,8 +77,6 @@ void GuiItemRoot_delete(void)
 
 		_GuiItemRoot_deleteLevels();
 
-		InterRoot_delete(g_GuiItemRoot->interpreter);
-
 		Os_free(g_GuiItemRoot, sizeof(GuiItemRoot));
 		g_GuiItemRoot = 0;
 	}
@@ -117,8 +113,6 @@ BOOL GuiItemRoot_new(void)
 
 	OsLockEvent_init(&g_GuiItemRoot->syncEventStart);
 	OsLockEvent_init(&g_GuiItemRoot->syncEventEnd);
-
-	g_GuiItemRoot->interpreter = InterRoot_new("code.txt");
 
 	return TRUE;
 }
@@ -479,14 +473,6 @@ Quad2i _GuiItemRoot_guiDrawLayers(Win* win)
 		}
 	}
 
-	
-
-
-Image4 img = Win_getImage(g_GuiItemRoot->win);
-InterRoot_render(g_GuiItemRoot->interpreter, &img, win);
-rect = img.rect;
-//note: povoli _GuiItemRoot_guiTouchUpdateLevels()
-
 	Win_updateCursorReal(win);
 	return rect;
 }
@@ -562,9 +548,7 @@ THREAD_FUNC(GuiItemRoot_loop, param)
 	{
 		OsLockEvent_wait(&g_GuiItemRoot->syncEventStart, 0);
 
-InterRoot_update(g_GuiItemRoot->interpreter, Win_getImage(g_GuiItemRoot->win).size, g_GuiItemRoot->win);
-
-//		_GuiItemRoot_guiTouchUpdateLevels(g_GuiItemRoot->doUpdate, g_GuiItemRoot->win);
+		_GuiItemRoot_guiTouchUpdateLevels(g_GuiItemRoot->doUpdate, g_GuiItemRoot->win);
 		StdProgress_run(TRUE);
 
 		//OsThread_sleep(2000);
