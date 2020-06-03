@@ -22,7 +22,6 @@
 #include "media.h"
 #include "io.h"
 #include "ui.h"	//icons
-#include "interpreter.h"
 
 
 //header
